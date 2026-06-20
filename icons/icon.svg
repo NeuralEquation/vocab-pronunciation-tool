@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="MW pronunciation app icon">
+  <rect width="512" height="512" rx="96" fill="#101318"/>
+  <circle cx="256" cy="256" r="188" fill="#17283a"/>
+  <path d="M154 180h54l48 120 48-120h54v156h-40V230l-44 106h-36l-44-106v106h-40V180Z" fill="#eef3fb"/>
+  <path d="M132 372c62 42 186 42 248 0" fill="none" stroke="#77dda2" stroke-width="28" stroke-linecap="round"/>
+  <path d="M376 170c24 22 38 52 38 86s-14 64-38 86" fill="none" stroke="#59c2ff" stroke-width="24" stroke-linecap="round"/>
+  <path d="M410 126c38 34 62 80 62 130s-24 96-62 130" fill="none" stroke="#59c2ff" stroke-width="18" stroke-linecap="round" opacity=".72"/>
+</svg>

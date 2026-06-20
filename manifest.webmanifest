@@ -1,0 +1,20 @@
+{
+  "name": "Merriam-Webster 発音確認ツール",
+  "short_name": "MW発音確認",
+  "description": "速読英単語の小テスト前に、Merriam-Webster Learner's Dictionary APIで発音・品詞・短い定義を確認するPWAです。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101318",
+  "theme_color": "#101318",
+  "orientation": "portrait",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

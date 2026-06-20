@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101318">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="MW発音確認">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <title>Merriam-Webster 発音確認ツール</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101318;
+      --panel: #171c24;
+      --panel-2: #202735;
+      --line: #343d4d;
+      --text: #eef3fb;
+      --muted: #a7b2c2;
+      --accent: #59c2ff;
+      --accent-2: #77dda2;
+      --warn: #ffd36a;
+      --danger: #ff7c7c;
+      --ok: #71e59b;
+      --shadow: 0 14px 38px rgba(0, 0, 0, .34);
+      --radius: 8px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--bg); }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #172333 0, var(--bg) 42rem);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    button, input, textarea, select {
+      font: inherit;
+      color: inherit;
+    }
+    button {
+      border: 0;
+      border-radius: var(--radius);
+      min-height: 44px;
+      padding: 10px 14px;
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    button.primary { background: linear-gradient(135deg, #128bd5, #1cbf89); color: #fff; font-weight: 700; }
+    button.soft { border: 1px solid var(--line); background: #151a22; }
+    button.warn { background: #4a3515; color: #ffe2a0; }
+    button.danger { background: #4c2025; color: #ffd4d8; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #0f131a;
+      min-height: 44px;
+      padding: 10px 12px;
+      outline: none;
+    }
+    textarea { min-height: 118px; resize: vertical; }
+    label { display: block; color: var(--muted); font-size: .9rem; margin-bottom: 6px; }
+    a { color: var(--accent); }
+    .app {
+      width: min(960px, 100%);
+      margin: 0 auto;
+      padding: 16px;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      margin: 0 -16px 16px;
+      padding: 14px 16px;
+      background: rgba(16, 19, 24, .93);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+    .topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.18rem;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.05rem;
+    }
+    h3 { margin: 0 0 8px; font-size: 1rem; }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .pill, .stat, .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #121821;
+      color: var(--muted);
+      padding: 6px 10px;
+      font-size: .82rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .stat { border-radius: var(--radius); white-space: normal; }
+    .badge.ok { color: #adf5c6; border-color: #315e42; background: #132119; }
+    .badge.warn { color: #ffe0a0; border-color: #6a5222; background: #221a10; }
+    .badge.danger { color: #ffc4c9; border-color: #6a3238; background: #251317; }
+    .grid {
+      display: grid;
+      gap: 14px;
+    }
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(23, 28, 36, .94);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .note {
+      color: var(--muted);
+      font-size: .88rem;
+      margin: 8px 0 0;
+    }
+    .warning {
+      border-left: 4px solid var(--warn);
+      background: #241d11;
+      padding: 10px;
+      border-radius: var(--radius);
+      color: #ffdda0;
+      margin: 10px 0;
+    }
+    .danger-note {
+      border-left: 4px solid var(--danger);
+      background: #251317;
+      padding: 10px;
+      border-radius: var(--radius);
+      color: #ffc7cc;
+      margin: 10px 0;
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .tabs button[aria-selected="true"] {
+      outline: 2px solid var(--accent);
+      background: #17283a;
+    }
+    .range-card, .word-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #141922;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .range-card.next { border-color: #2f9ed8; }
+    .range-card.today { border-color: #52d48d; }
+    .range-head, .word-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .range-title, .word-title {
+      font-weight: 800;
+      font-size: 1.04rem;
+      overflow-wrap: anywhere;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: .86rem;
+      margin-top: 3px;
+    }
+    .progress {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: #0d1117;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 10px 0;
+    }
+    .mini {
+      background: #10151d;
+      border: 1px solid #283140;
+      border-radius: var(--radius);
+      padding: 8px;
+      color: var(--muted);
+      font-size: .84rem;
+    }
+    .mini strong { color: var(--text); display: block; font-size: 1rem; }
+    .hidden { display: none !important; }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      background: rgba(0, 0, 0, .72);
+      display: grid;
+      place-items: end center;
+      padding: 16px;
+    }
+    .modal {
+      width: min(560px, 100%);
+      max-height: 88vh;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #141922;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .modal ul { margin: 8px 0; padding-left: 1.2rem; }
+    .toast {
+      position: fixed;
+      left: 16px;
+      right: 16px;
+      bottom: 16px;
+      z-index: 80;
+      background: #0d151f;
+      border: 1px solid #31506f;
+      border-radius: var(--radius);
+      padding: 12px;
+      box-shadow: var(--shadow);
+    }
+    .switch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      margin: 6px 0;
+    }
+    .switch input { width: auto; min-height: auto; }
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .audio-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 10px 0;
+    }
+    .help-list { color: var(--muted); padding-left: 1.1rem; }
+    .help-list li { margin: 4px 0; }
+    @media (min-width: 760px) {
+      .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .row.single { grid-template-columns: 1fr; }
+      .wide { grid-column: 1 / -1; }
+      .layout { grid-template-columns: 340px 1fr; align-items: start; }
+      .modal-backdrop { place-items: center; }
+      .mini-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .audio-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="topline">
+        <div>
+          <h1>Merriam-Webster 発音確認</h1>
+          <div class="note">PCはデモ確認用、スマホで本番API確認する前提の単一HTMLです。</div>
+        </div>
+        <span id="modeBadge" class="badge ok">デモモード</span>
+      </div>
+      <div class="stats">
+        <div class="stat">今日のAPI使用量: <strong id="usageToday">0</strong></div>
+        <div class="stat">保存使用量: <strong id="storageSize">0KB</strong></div>
+        <div class="stat">範囲: <strong id="rangeCount">0</strong></div>
+        <div class="stat">未確認: <strong id="uncheckedCount">0</strong></div>
+      </div>
+      <div id="storageWarning"></div>
+    </header>
+
+    <nav class="tabs" aria-label="画面切り替え">
+      <button class="soft" data-tab="ranges" aria-selected="true">範囲</button>
+      <button class="soft" data-tab="import">登録</button>
+      <button class="soft" data-tab="backup">保存</button>
+    </nav>
+
+    <main class="grid layout">
+      <section class="panel">
+        <h2>APIキー設定</h2>
+        <div class="warning">
+          初期状態はデモモードです。ページ読み込み、単語登録、範囲を開く操作ではAPI通信しません。
+        </div>
+        <label for="apiKey">Learner's Dictionary APIキー</label>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="Learner's用キーをスマホ本番確認時に入力">
+        <label for="collegiateApiKey">Collegiate Dictionary APIキー（任意・フォールバック用）</label>
+        <input id="collegiateApiKey" type="password" autocomplete="off" placeholder="Collegiate用キー。必要な場合だけ入力">
+        <label for="dictionaryType">使用辞書</label>
+        <select id="dictionaryType">
+          <option value="learners">Learner's Dictionary（初期設定）</option>
+          <option value="collegiate">Collegiate Dictionary</option>
+        </select>
+        <label for="definitionLimit">保存する定義数</label>
+        <select id="definitionLimit">
+          <option value="2">最大2個</option>
+          <option value="3">最大3個</option>
+        </select>
+        <label class="switch"><input id="demoMode" type="checkbox"> デモモードON</label>
+        <label class="switch"><input id="saveKey" type="checkbox"> このブラウザにAPIキーを保存する</label>
+        <div class="actions">
+          <button class="soft" id="saveApiSettings">設定を保存</button>
+          <button class="danger" id="clearApiKey">APIキー削除</button>
+        </div>
+        <p class="note">初期辞書はLearner'sです。Collegiateは切り替え取得や単語ごとの手動フォールバック用です。APIキーはJSON/CSVエクスポートに含めません。</p>
+      </section>
+
+      <section class="panel tab-page" id="page-ranges">
+        <h2>範囲一覧</h2>
+        <div class="row">
+          <div>
+            <label for="rangeFilter">絞り込み</label>
+            <select id="rangeFilter">
+              <option value="all">すべて</option>
+              <option value="今日の範囲">今日の範囲</option>
+              <option value="次回の範囲">次回の範囲</option>
+              <option value="待機中">待機中</option>
+              <option value="単語未登録">単語未登録</option>
+              <option value="終了">終了</option>
+              <option value="削除予定">削除予定</option>
+              <option value="キャッシュ削除済み">キャッシュ削除済み</option>
+            </select>
+          </div>
+          <div>
+            <label for="rangeSort">並び替え</label>
+            <select id="rangeSort">
+              <option value="date">テスト日順</option>
+              <option value="material">教材名順</option>
+              <option value="status">状態順</option>
+              <option value="unchecked">未確認数が多い順</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="primary" id="openNext">次回の範囲を開く</button>
+          <button class="soft" id="seedSample">デモサンプル作成</button>
+        </div>
+        <div id="rangeList" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel tab-page hidden" id="page-import">
+        <h2>範囲登録</h2>
+        <div class="row">
+          <div>
+            <label for="material">教材名</label>
+            <input id="material" value="速読英単語">
+          </div>
+          <div>
+            <label for="rangeName">範囲名</label>
+            <input id="rangeName" placeholder="Section 59-60">
+          </div>
+          <div>
+            <label for="testDate">テスト日</label>
+            <input id="testDate" type="date">
+          </div>
+          <div>
+            <label for="weekday">曜日</label>
+            <select id="weekday">
+              <option value="">自動</option>
+              <option>月</option><option>火</option><option>水</option><option>木</option><option>金</option><option>土</option><option>日</option>
+            </select>
+          </div>
+          <div>
+            <label for="pages">ページ範囲</label>
+            <input id="pages" placeholder="312-320">
+          </div>
+          <div>
+            <label for="deleteAt">削除予定日時</label>
+            <input id="deleteAt" type="datetime-local">
+          </div>
+          <div class="wide">
+            <label for="memo">メモ</label>
+            <input id="memo" placeholder="小テストの注意など">
+          </div>
+          <div class="wide">
+            <label for="wordInput">単語リスト</label>
+            <textarea id="wordInput" placeholder="改行、カンマ、スペース、タブ区切りに対応。空でも範囲枠だけ作れます。"></textarea>
+          </div>
+        </div>
+        <div id="importPreview" class="note">登録前に追加数、重複数、無効数を表示します。</div>
+        <div class="actions">
+          <button class="primary" id="importRange">範囲を登録</button>
+          <button class="soft" id="clearImport">入力クリア</button>
+        </div>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+        <h2>実API確認用 小さなテスト範囲</h2>
+        <p class="note">完成後にスマホ本番環境で実APIを確認するための、1〜3語だけの範囲を作れます。作成だけではAPI通信しません。</p>
+        <div class="row single">
+          <div>
+            <label for="smallTestWords">テスト単語 1〜3語</label>
+            <input id="smallTestWords" placeholder="example audio pronunciation">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="warn" id="createSmallTest">小テスト範囲を作成</button>
+        </div>
+      </section>
+
+      <section class="panel tab-page hidden" id="page-backup">
+        <h2>バックアップ</h2>
+        <div class="actions">
+          <button class="soft" id="exportJson">JSONエクスポート</button>
+          <button class="soft" id="exportCsv">CSVエクスポート</button>
+          <button class="danger" id="wipeAll">全データ削除</button>
+        </div>
+        <label for="importJson" style="margin-top:12px">JSONインポート</label>
+        <textarea id="importJson" placeholder="エクスポートしたJSONを貼り付け"></textarea>
+        <div class="actions">
+          <button class="soft" id="appendJson">追加インポート</button>
+          <button class="warn" id="replaceJson">置き換えインポート</button>
+        </div>
+        <h3 style="margin-top:16px">使い方</h3>
+        <ul class="help-list">
+          <li>PCではデモモードのまま登録、保存、表示を確認します。</li>
+          <li>スマホではLearner's APIキーを入力し、実APIモードに切り替えてから「APIで取得」を押します。</li>
+          <li>実API取得前には必ず確認画面が出て、今回問い合わせる単語数を表示します。</li>
+          <li>キャッシュ済み単語は問い合わせ対象から外れます。</li>
+          <li>Learner'sで足りない単語は、単語カードの「Collegiate再取得」で確認後に取得できます。</li>
+        </ul>
+      </section>
+
+      <section class="panel hidden" id="wordPanel" style="grid-column:1/-1">
+        <div class="range-head">
+          <div>
+            <h2 id="openRangeTitle">単語確認</h2>
+            <div class="meta" id="openRangeMeta"></div>
+          </div>
+          <button class="soft" id="closeWords">閉じる</button>
+        </div>
+        <div class="row">
+          <div>
+            <label for="wordFilter">単語フィルター</label>
+            <select id="wordFilter">
+              <option value="all">すべて</option>
+              <option value="unchecked">未確認のみ</option>
+              <option value="checked">確認済みのみ</option>
+              <option value="hard">苦手のみ</option>
+              <option value="audio">音声ありのみ</option>
+              <option value="noaudio">音声なしのみ</option>
+              <option value="api-missing">API未取得のみ</option>
+              <option value="api-done">API取得済みのみ</option>
+            </select>
+          </div>
+          <div>
+            <label for="wordSort">並び替え</label>
+            <select id="wordSort">
+              <option value="order">登録順</option>
+              <option value="alpha">アルファベット順</option>
+              <option value="unchecked">未確認優先</option>
+              <option value="hard">苦手優先</option>
+              <option value="noaudio">音声なし優先</option>
+              <option value="plays">再生回数が少ない順</option>
+            </select>
+          </div>
+        </div>
+        <div id="wordList"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modalRoot" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const STORAGE_KEY = "mwPronunciationTool.v1";
+      const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
+      const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
+      const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
+      const TEST_WORD_LIMIT = 3;
+      const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+
+      const demoData = {
+        example: { prs: "ɪgˈzæmpəl", sound: "exampl01", fl: "noun", defs: ["something chosen to show what a group is like", "a person or way of behaving that should be copied"] },
+        audio: { prs: "ˈɑːdiˌoʊ", sound: "audio001", fl: "adjective", defs: ["relating to sound that is heard or recorded"] },
+        pronunciation: { prs: "prəˌnʌnsiˈeɪʃən", sound: "pronun02", fl: "noun", defs: ["the way in which a word or name is pronounced"] },
+        apple: { prs: "ˈæpəl", sound: "apple001", fl: "noun", defs: ["a round fruit with red, yellow, or green skin and firm white flesh"] },
+        science: { prs: "ˈsaɪəns", sound: "scienc02", fl: "noun", defs: ["knowledge about or study of the natural world based on facts learned through experiments"] },
+        diligent: { prs: "ˈdɪlɪdʒənt", sound: "dilige01", fl: "adjective", defs: ["showing care and effort in your work or duties"] }
+      };
+
+      const state = {
+        ranges: [],
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2 },
+        selectedRangeId: null,
+        lastImportWords: []
+      };
+
+      const $ = (id) => document.getElementById(id);
+
+      function uid(prefix) {
+        return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      function todayKey() {
+        return new Date().toISOString().slice(0, 10);
+      }
+
+      function localDateString(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, "0");
+        const d = String(date.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+
+      function localDateTimeString(date) {
+        const ymd = localDateString(date);
+        const h = String(date.getHours()).padStart(2, "0");
+        const m = String(date.getMinutes()).padStart(2, "0");
+        return `${ymd}T${h}:${m}`;
+      }
+
+      function parseWords(text) {
+        const seen = new Set();
+        let duplicates = 0;
+        let invalid = 0;
+        const words = [];
+        text.split(/[\s,、]+/).map(w => w.trim()).filter(Boolean).forEach(raw => {
+          const cleaned = raw.replace(/^[^A-Za-z'-]+|[^A-Za-z'-]+$/g, "");
+          if (!/^[A-Za-z][A-Za-z'-]{0,39}$/.test(cleaned)) {
+            invalid++;
+            return;
+          }
+          const normalized = cleaned.toLowerCase();
+          if (seen.has(normalized)) {
+            duplicates++;
+            return;
+          }
+          seen.add(normalized);
+          words.push({ raw: cleaned, normalized });
+        });
+        return { words, duplicates, invalid };
+      }
+
+      function createWord(raw, normalized) {
+        return {
+          id: uid("word"),
+          word: raw,
+          normalized,
+          pronunciation: "",
+          audioId: "",
+          audioUrl: "",
+          mwUrl: dictionaryUrl(normalized),
+          dictionarySource: "",
+          partOfSpeech: "",
+          definitions: [],
+          hasDefinition: false,
+          apiFetched: false,
+          hasAudio: false,
+          checked: false,
+          hard: false,
+          playCount: 0,
+          lastCheckedAt: "",
+          lastApiFetchedAt: "",
+          error: ""
+        };
+      }
+
+      function dictionaryUrl(word) {
+        return `https://www.merriam-webster.com/dictionary/${encodeURIComponent(word)}`;
+      }
+
+      function audioUrlFromId(audioId) {
+        if (!audioId) return "";
+        let subdir = audioId.charAt(0);
+        if (audioId.startsWith("bix")) subdir = "bix";
+        if (audioId.startsWith("gg")) subdir = "gg";
+        if (/^[0-9_]/.test(audioId)) subdir = "number";
+        return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${encodeURIComponent(audioId)}.mp3`;
+      }
+
+      function getApiKey(reference = "learners") {
+        if (reference === "collegiate") {
+          return state.settings.saveKey ? localStorage.getItem(COLLEGIATE_API_KEY_KEY) || "" : state.settings.collegiateApiKeySession || "";
+        }
+        return state.settings.saveKey ? localStorage.getItem(API_KEY_KEY) || "" : state.settings.apiKeySession || "";
+      }
+
+      function dictionaryLabel(reference) {
+        if (!reference) return "";
+        return reference === "collegiate" ? "Collegiate Dictionary" : "Learner's Dictionary";
+      }
+
+      function load() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            state.ranges = Array.isArray(parsed.ranges) ? parsed.ranges : [];
+            state.settings.demoMode = parsed.settings?.demoMode !== false;
+            state.settings.saveKey = parsed.settings?.saveKey === true;
+            state.settings.dictionaryType = parsed.settings?.dictionaryType || "learners";
+            state.settings.definitionLimit = Number(parsed.settings?.definitionLimit) || 2;
+          }
+          if (state.settings.saveKey) {
+            $("apiKey").value = localStorage.getItem(API_KEY_KEY) || "";
+            $("collegiateApiKey").value = localStorage.getItem(COLLEGIATE_API_KEY_KEY) || "";
+          }
+          $("demoMode").checked = state.settings.demoMode;
+          $("saveKey").checked = state.settings.saveKey;
+          $("dictionaryType").value = state.settings.dictionaryType;
+          $("definitionLimit").value = String(state.settings.definitionLimit);
+        } catch (err) {
+          toast("保存データの読み込みに失敗しました。JSONの破損があるかもしれません。");
+        }
+      }
+
+      function save() {
+        const payload = {
+          version: 1,
+          savedAt: new Date().toISOString(),
+          settings: {
+            demoMode: state.settings.demoMode,
+            saveKey: state.settings.saveKey,
+            dictionaryType: state.settings.dictionaryType,
+            definitionLimit: state.settings.definitionLimit
+          },
+          ranges: state.ranges
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+          render();
+          return true;
+        } catch (err) {
+          toast("保存に失敗しました。容量が近い可能性があります。JSONエクスポート後、APIキャッシュ削除を検討してください。", true);
+          return false;
+        }
+      }
+
+      function usageRecord() {
+        try {
+          const usage = JSON.parse(localStorage.getItem(API_USAGE_KEY) || "{}");
+          if (usage.date !== todayKey()) return { date: todayKey(), count: 0 };
+          return { date: usage.date, count: Number(usage.count) || 0 };
+        } catch {
+          return { date: todayKey(), count: 0 };
+        }
+      }
+
+      function setUsage(count) {
+        localStorage.setItem(API_USAGE_KEY, JSON.stringify({ date: todayKey(), count }));
+      }
+
+      function incrementUsage(by) {
+        const usage = usageRecord();
+        setUsage(usage.count + by);
+      }
+
+      function storageBytes() {
+        let total = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          const value = localStorage.getItem(key) || "";
+          total += new Blob([key + value]).size;
+        }
+        return total;
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+        return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+      }
+
+      function deleteAtFor(testDate, weekdayValue) {
+        const base = testDate ? new Date(`${testDate}T12:00:00`) : new Date();
+        const day = weekdayValue || weekdays[base.getDay()];
+        const add = day === "月" || day === "水" ? 1 : 1;
+        const d = new Date(base);
+        d.setDate(d.getDate() + add);
+        d.setHours(21, 0, 0, 0);
+        return localDateTimeString(d);
+      }
+
+      function statusForRange(range, nextId) {
+        if (!range.words.length) return "単語未登録";
+        const now = new Date();
+        const today = localDateString(now);
+        const deleteAt = range.deleteAt ? new Date(range.deleteAt) : null;
+        if (range.cacheClearedAt) return "キャッシュ削除済み";
+        if (deleteAt && now >= deleteAt) return "削除予定";
+        if (range.testDate === today) return "今日の範囲";
+        if (range.id === nextId) return "次回の範囲";
+        if (range.testDate && range.testDate > today) return "待機中";
+        if (range.testDate && range.testDate < today) return "終了";
+        return "待機中";
+      }
+
+      function nextRangeId() {
+        const today = localDateString(new Date());
+        const candidates = state.ranges
+          .filter(r => r.words.length && r.testDate >= today)
+          .sort((a, b) => a.testDate.localeCompare(b.testDate));
+        return candidates[0]?.id || "";
+      }
+
+      function statsForRange(range) {
+        const words = range.words || [];
+        const total = words.length;
+        const fetched = words.filter(w => w.apiFetched).length;
+        const audio = words.filter(w => w.hasAudio).length;
+        const noAudio = words.filter(w => w.apiFetched && !w.hasAudio).length;
+        const checked = words.filter(w => w.checked).length;
+        const hard = words.filter(w => w.hard).length;
+        return { total, fetched, audio, noAudio, checked, unchecked: total - checked, hard, pct: total ? Math.round(checked / total * 100) : 0 };
+      }
+
+      function render() {
+        const usage = usageRecord();
+        const bytes = storageBytes();
+        $("usageToday").textContent = usage.count;
+        $("storageSize").textContent = formatBytes(bytes);
+        $("rangeCount").textContent = state.ranges.length;
+        $("uncheckedCount").textContent = state.ranges.reduce((sum, r) => sum + statsForRange(r).unchecked, 0);
+        $("modeBadge").textContent = state.settings.demoMode ? "デモモード" : "実APIモード";
+        $("modeBadge").className = state.settings.demoMode ? "badge ok" : "badge danger";
+        renderStorageWarning(bytes);
+        renderRanges();
+        if (state.selectedRangeId) renderWords();
+      }
+
+      function renderStorageWarning(bytes) {
+        const mb = bytes / 1024 / 1024;
+        const root = $("storageWarning");
+        if (mb >= 4) root.innerHTML = `<div class="danger-note">保存使用量が4MBを超えています。エクスポートとAPIキャッシュ削除をおすすめします。</div>`;
+        else if (mb >= 3) root.innerHTML = `<div class="warning">保存使用量が3MBを超えています。不要なAPIキャッシュを削除すると軽くなります。</div>`;
+        else if (mb >= 2) root.innerHTML = `<div class="warning">保存使用量が2MBを超えました。スマホでは容量に注意してください。</div>`;
+        else root.innerHTML = "";
+      }
+
+      function renderRanges() {
+        const filter = $("rangeFilter").value;
+        const sort = $("rangeSort").value;
+        const nextId = nextRangeId();
+        let ranges = state.ranges.map(r => ({ ...r, status: statusForRange(r, nextId) }));
+        if (filter !== "all") ranges = ranges.filter(r => r.status === filter);
+        ranges.sort((a, b) => {
+          if (sort === "material") return (a.material || "").localeCompare(b.material || "ja");
+          if (sort === "status") return a.status.localeCompare(b.status, "ja");
+          if (sort === "unchecked") return statsForRange(b).unchecked - statsForRange(a).unchecked;
+          return (a.testDate || "9999").localeCompare(b.testDate || "9999");
+        });
+        if (!ranges.length) {
+          $("rangeList").innerHTML = `<div class="empty">範囲がありません。登録タブから範囲枠または単語リストを追加できます。</div>`;
+          return;
+        }
+        $("rangeList").innerHTML = ranges.map(range => {
+          const s = statsForRange(range);
+          const statusClass = range.status === "今日の範囲" ? "today" : range.status === "次回の範囲" ? "next" : "";
+          const badgeClass = range.status === "削除予定" ? "danger" : range.status === "今日の範囲" || range.status === "次回の範囲" ? "ok" : "warn";
+          return `
+            <article class="range-card ${statusClass}">
+              <div class="range-head">
+                <div>
+                  <div class="range-title">${escapeHtml(range.rangeName || "無題の範囲")}</div>
+                  <div class="meta">${escapeHtml(range.material || "")} / ${escapeHtml(range.testDate || "日付未設定")} ${escapeHtml(range.weekday || "")}</div>
+                </div>
+                <span class="badge ${badgeClass}">${range.status}</span>
+              </div>
+              <div class="progress" aria-label="進捗"><span style="width:${s.pct}%"></span></div>
+              <div class="mini-grid">
+                <div class="mini"><strong>${s.total}</strong>単語</div>
+                <div class="mini"><strong>${s.fetched}</strong>API取得済み</div>
+                <div class="mini"><strong>${s.unchecked}</strong>未確認</div>
+                <div class="mini"><strong>${s.hard}</strong>苦手</div>
+              </div>
+              <div class="meta">ページ: ${escapeHtml(range.pages || "-")} / 削除予定: ${escapeHtml(range.deleteAt || "-")}</div>
+              <div class="actions" style="margin-top:10px">
+                <button class="primary" data-action="open" data-id="${range.id}">開く</button>
+                <button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>
+                <button class="warn" data-action="clear-cache" data-id="${range.id}">キャッシュ削除</button>
+                <button class="danger" data-action="delete-range" data-id="${range.id}">範囲削除</button>
+              </div>
+            </article>`;
+        }).join("");
+      }
+
+      function renderWords() {
+        const range = state.ranges.find(r => r.id === state.selectedRangeId);
+        if (!range) return;
+        $("wordPanel").classList.remove("hidden");
+        $("openRangeTitle").textContent = `${range.rangeName || "無題の範囲"} の単語`;
+        const s = statsForRange(range);
+        $("openRangeMeta").textContent = `${range.material || ""} / ${range.testDate || "日付未設定"} / ${s.checked}/${s.total} 確認済み`;
+        let words = [...range.words];
+        const filter = $("wordFilter").value;
+        if (filter === "unchecked") words = words.filter(w => !w.checked);
+        if (filter === "checked") words = words.filter(w => w.checked);
+        if (filter === "hard") words = words.filter(w => w.hard);
+        if (filter === "audio") words = words.filter(w => w.hasAudio);
+        if (filter === "noaudio") words = words.filter(w => w.apiFetched && !w.hasAudio);
+        if (filter === "api-missing") words = words.filter(w => !w.apiFetched);
+        if (filter === "api-done") words = words.filter(w => w.apiFetched);
+        const sort = $("wordSort").value;
+        if (sort === "alpha") words.sort((a, b) => a.normalized.localeCompare(b.normalized));
+        if (sort === "unchecked") words.sort((a, b) => Number(a.checked) - Number(b.checked));
+        if (sort === "hard") words.sort((a, b) => Number(b.hard) - Number(a.hard));
+        if (sort === "noaudio") words.sort((a, b) => Number(a.hasAudio) - Number(b.hasAudio));
+        if (sort === "plays") words.sort((a, b) => a.playCount - b.playCount);
+        if (!words.length) {
+          $("wordList").innerHTML = `<div class="empty">表示できる単語がありません。</div>`;
+          return;
+        }
+        $("wordList").innerHTML = words.map(word => `
+          <article class="word-card">
+            <div class="word-head">
+              <div>
+                <div class="word-title">${escapeHtml(word.word)}</div>
+                <div class="meta">発音: ${escapeHtml(word.pronunciation || "未取得")} / ${escapeHtml(word.partOfSpeech || "品詞未取得")} / 再生 ${word.playCount || 0}回</div>
+              </div>
+              <span class="badge ${word.apiFetched ? "ok" : "warn"}">${word.apiFetched ? escapeHtml(dictionaryLabel(word.dictionarySource || "learners")) : "API未取得"}</span>
+            </div>
+            ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(truncateText(d, 120))}</div>`).join("")}</div>` : ""}
+            ${word.error ? `<div class="danger-note">${escapeHtml(word.error)}</div>` : ""}
+            <div class="audio-row">
+              <button class="primary" data-word-action="play" data-id="${word.id}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
+              <button class="soft" data-word-action="speak" data-id="${word.id}">読み上げ</button>
+              <button class="soft" data-word-action="mw" data-id="${word.id}">MWで開く</button>
+              <button class="soft" data-word-action="refetch" data-id="${word.id}">再取得</button>
+              <button class="soft" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate再取得</button>
+            </div>
+            <label class="switch"><input type="checkbox" data-word-action="checked" data-id="${word.id}" ${word.checked ? "checked" : ""}> 発音確認済み</label>
+            <label class="switch"><input type="checkbox" data-word-action="hard" data-id="${word.id}" ${word.hard ? "checked" : ""}> 苦手マーク</label>
+            <div class="meta">最終確認: ${escapeHtml(word.lastCheckedAt || "-")} / 最終API取得: ${escapeHtml(word.lastApiFetchedAt || "-")}</div>
+          </article>`).join("");
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch]));
+      }
+
+      function truncateText(value, max) {
+        const text = String(value || "").replace(/\s+/g, " ").trim();
+        return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+      }
+
+      function toast(message, isDanger = false) {
+        const el = $("toast");
+        el.textContent = message;
+        el.style.borderColor = isDanger ? "#763943" : "#31506f";
+        el.classList.remove("hidden");
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => el.classList.add("hidden"), 3600);
+      }
+
+      function showModal(html, onConfirm) {
+        const root = $("modalRoot");
+        root.innerHTML = `<div class="modal">${html}</div>`;
+        root.classList.remove("hidden");
+        root.querySelector("[data-modal-cancel]")?.addEventListener("click", closeModal);
+        root.querySelector("[data-modal-confirm]")?.addEventListener("click", async () => {
+          const confirmButton = root.querySelector("[data-modal-confirm]");
+          confirmButton.disabled = true;
+          try {
+            await onConfirm?.();
+            closeModal();
+          } finally {
+            confirmButton.disabled = false;
+          }
+        });
+      }
+
+      function closeModal() {
+        $("modalRoot").classList.add("hidden");
+        $("modalRoot").innerHTML = "";
+      }
+
+      function importPreview() {
+        const result = parseWords($("wordInput").value);
+        state.lastImportWords = result.words;
+        $("importPreview").textContent = `追加予定: ${result.words.length}語 / 重複: ${result.duplicates}語 / 無効: ${result.invalid}件`;
+      }
+
+      function buildRangeFromForm(words) {
+        const testDate = $("testDate").value;
+        const weekday = $("weekday").value || (testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "");
+        return {
+          id: uid("range"),
+          material: $("material").value.trim() || "その他",
+          rangeName: $("rangeName").value.trim() || "無題の範囲",
+          testDate,
+          weekday,
+          pages: $("pages").value.trim(),
+          memo: $("memo").value.trim(),
+          deleteAt: $("deleteAt").value || deleteAtFor(testDate, weekday),
+          cacheClearedAt: "",
+          createdAt: new Date().toISOString(),
+          words: words.map(w => createWord(w.raw, w.normalized))
+        };
+      }
+
+      function registerRange() {
+        const parsed = parseWords($("wordInput").value);
+        if (!$("rangeName").value.trim() && !parsed.words.length) {
+          toast("範囲名か単語リストを入力してください。", true);
+          return;
+        }
+        const range = buildRangeFromForm(parsed.words);
+        state.ranges.push(range);
+        save();
+        toast(parsed.words.length ? `${parsed.words.length}語を登録しました。API通信はしていません。` : "範囲枠を作成しました。API通信はしていません。");
+        switchTab("ranges");
+      }
+
+      function createSmallTestRange() {
+        const parsed = parseWords($("smallTestWords").value);
+        if (parsed.words.length < 1 || parsed.words.length > TEST_WORD_LIMIT) {
+          toast("実API確認用の小さなテスト範囲は1〜3語で作成してください。", true);
+          return;
+        }
+        const now = new Date();
+        const range = {
+          id: uid("range"),
+          material: "実API確認",
+          rangeName: `実API確認 ${parsed.words.length}語テスト`,
+          testDate: localDateString(now),
+          weekday: weekdays[now.getDay()],
+          pages: "1-3語",
+          memo: "スマホ本番環境で実API疎通確認するための小さな範囲。作成時はAPI通信なし。",
+          deleteAt: localDateTimeString(new Date(now.getTime() + 24 * 60 * 60 * 1000)),
+          cacheClearedAt: "",
+          createdAt: new Date().toISOString(),
+          words: parsed.words.map(w => createWord(w.raw, w.normalized))
+        };
+        state.ranges.push(range);
+        save();
+        toast(`実API確認用に${parsed.words.length}語の範囲を作成しました。取得時にも確認画面を出します。`);
+        switchTab("ranges");
+      }
+
+      function pendingWords(range) {
+        return range.words.filter(w => !w.apiFetched);
+      }
+
+      function confirmFetch(range, forceWordId = "", referenceOverride = "") {
+        let targets = forceWordId ? range.words.filter(w => w.id === forceWordId) : pendingWords(range);
+        const skipped = forceWordId ? 0 : range.words.length - targets.length;
+        const reference = referenceOverride || state.settings.dictionaryType || "learners";
+        if (!targets.length) {
+          toast("未取得の単語はありません。再取得したい場合は単語カードの再取得を使ってください。");
+          return;
+        }
+        const usage = usageRecord();
+        const modeLabel = state.settings.demoMode ? "デモモード" : "実APIモード";
+        if (!state.settings.demoMode && !getApiKey(reference)) {
+          toast(`実APIモードでは${dictionaryLabel(reference)}のAPIキー入力が必要です。API通信はしていません。`, true);
+          return;
+        }
+        if (!state.settings.demoMode && usage.count + targets.length > 1000) {
+          toast("今日のAPI使用量が1000回を超える見込みのため停止しました。", true);
+          return;
+        }
+        const caution = !state.settings.demoMode
+          ? `<div class="danger-note">実APIに問い合わせます。今回APIに問い合わせる単語数は <strong>${targets.length}語</strong> です。</div>`
+          : `<div class="warning">デモモードなので実API通信は行いません。今回のモック取得対象は <strong>${targets.length}語</strong> です。</div>`;
+        const highUsage = !state.settings.demoMode && usage.count + targets.length >= 900
+          ? `<div class="danger-note">今日の使用量が900回以上になります。単語数を必ず確認してください。</div>` : "";
+        showModal(`
+          <h2>API取得の確認</h2>
+          ${caution}
+          ${highUsage}
+          <ul>
+            <li>教材名: ${escapeHtml(range.material)}</li>
+            <li>範囲名: ${escapeHtml(range.rangeName)}</li>
+            <li>テスト日: ${escapeHtml(range.testDate || "-")}</li>
+            <li>使用辞書: ${dictionaryLabel(reference)}</li>
+            <li>フォールバック辞書: Collegiate Dictionary（自動取得OFF・単語ごとに確認後）</li>
+            <li>定義取得: ON（最大${state.settings.definitionLimit}個）</li>
+            <li>例文取得: OFF</li>
+            <li>モード: ${modeLabel}</li>
+            <li>今回APIに問い合わせる単語数: ${targets.length}</li>
+            <li>キャッシュ済みでスキップ: ${skipped}</li>
+            <li>今日のAPI使用量: ${usage.count}</li>
+            <li>取得後の予想使用量: ${state.settings.demoMode ? usage.count : usage.count + targets.length}</li>
+          </ul>
+          <div class="actions">
+            <button class="primary" data-modal-confirm>この内容で取得</button>
+            <button class="soft" data-modal-cancel>キャンセル</button>
+          </div>
+        `, () => fetchWords(range.id, targets.map(w => w.id), reference));
+      }
+
+      async function fetchWords(rangeId, wordIds, reference) {
+        const range = state.ranges.find(r => r.id === rangeId);
+        if (!range) return;
+        const targets = range.words.filter(w => wordIds.includes(w.id));
+        let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0;
+        for (const word of targets) {
+          try {
+            const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
+            Object.assign(word, result, {
+              apiFetched: true,
+              lastApiFetchedAt: new Date().toISOString(),
+              error: result.error || ""
+            });
+            success++;
+            if (word.hasAudio) audio++; else noAudio++;
+            if (word.hasDefinition) defYes++; else defNo++;
+            if (word.dictionarySource === "collegiate") collegiateCount++; else learnersCount++;
+          } catch (err) {
+            word.apiFetched = false;
+            word.error = err.message || "取得に失敗しました";
+            failed++;
+          }
+        }
+        if (!state.settings.demoMode) incrementUsage(success + failed);
+        save();
+        toast(`取得完了: 成功${success} / 失敗${failed} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
+      }
+
+      async function fetchDemo(word, reference = "learners") {
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const found = demoData[word] || null;
+        if (!found) {
+          return {
+            pronunciation: "",
+            audioId: "",
+            audioUrl: "",
+            mwUrl: dictionaryUrl(word),
+            dictionarySource: reference,
+            partOfSpeech: "",
+            definitions: [],
+            hasDefinition: false,
+            hasAudio: false,
+            error: "デモデータに情報がありません"
+          };
+        }
+        const definitions = found.defs.slice(0, state.settings.definitionLimit);
+        return {
+          pronunciation: found.prs,
+          audioId: found.sound,
+          audioUrl: audioUrlFromId(found.sound),
+          mwUrl: dictionaryUrl(word),
+          dictionarySource: reference,
+          partOfSpeech: found.fl,
+          definitions,
+          hasDefinition: definitions.length > 0,
+          hasAudio: true,
+          error: ""
+        };
+      }
+
+      async function fetchReal(word, apiKey, reference = "learners") {
+        if (!apiKey) throw new Error("APIキー未入力です");
+        const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(endpoint);
+        if (!response.ok) throw new Error(`APIエラー: HTTP ${response.status}`);
+        const data = await response.json();
+        if (!Array.isArray(data)) throw new Error("レスポンス形式が想定外です");
+        const entry = data.find(item => item && typeof item === "object" && item.hwi);
+        if (!entry) {
+          return {
+            pronunciation: "",
+            audioId: "",
+            audioUrl: "",
+            mwUrl: dictionaryUrl(word),
+            dictionarySource: reference,
+            partOfSpeech: "",
+            definitions: [],
+            hasDefinition: false,
+            hasAudio: false,
+            error: "単語が見つかりません"
+          };
+        }
+        const prs = entry.hwi?.prs || [];
+        const pronunciation = reference === "learners"
+          ? (prs.find(p => p.ipa)?.ipa || prs.find(p => p.mw)?.mw || "")
+          : (prs.find(p => p.mw)?.mw || prs.find(p => p.ipa)?.ipa || "");
+        const audioId = prs.find(p => p.sound?.audio)?.sound.audio || "";
+        const audioUrl = audioUrlFromId(audioId);
+        const definitions = Array.isArray(entry.shortdef)
+          ? entry.shortdef.slice(0, state.settings.definitionLimit).map(cleanDefinition).filter(Boolean)
+          : [];
+        return {
+          pronunciation,
+          audioId,
+          audioUrl,
+          mwUrl: dictionaryUrl(word),
+          dictionarySource: reference,
+          partOfSpeech: entry.fl || "",
+          definitions,
+          hasDefinition: definitions.length > 0,
+          hasAudio: Boolean(audioUrl),
+          error: audioUrl || definitions.length ? "" : "音声情報と定義がありません"
+        };
+      }
+
+      function cleanDefinition(text) {
+        return String(text || "")
+          .replace(/\{[^}]+\}/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function clearCache(rangeId) {
+        const range = state.ranges.find(r => r.id === rangeId);
+        if (!range) return;
+        showModal(`
+          <h2>APIキャッシュ削除</h2>
+          <div class="warning">削除対象: 発音表記、音声ID、音声URL、品詞、定義、使用辞書、API取得状態、エラー、最終API取得日。</div>
+          <p>残るデータ: 単語、教材名、範囲名、確認済み、苦手マーク、再生回数、メモ。</p>
+          <p>対象範囲: <strong>${escapeHtml(range.rangeName)}</strong> / ${range.words.length}語</p>
+          <div class="actions">
+            <button class="warn" data-modal-confirm>キャッシュのみ削除</button>
+            <button class="soft" data-modal-cancel>キャンセル</button>
+          </div>
+        `, () => {
+          range.words.forEach(w => {
+            w.pronunciation = "";
+            w.audioId = "";
+            w.audioUrl = "";
+            w.dictionarySource = "";
+            w.partOfSpeech = "";
+            w.definitions = [];
+            w.hasDefinition = false;
+            w.apiFetched = false;
+            w.hasAudio = false;
+            w.error = "";
+            w.lastApiFetchedAt = "";
+          });
+          range.cacheClearedAt = new Date().toISOString();
+          save();
+          toast("APIキャッシュのみ削除しました。");
+        });
+      }
+
+      function deleteRange(rangeId) {
+        const range = state.ranges.find(r => r.id === rangeId);
+        if (!range) return;
+        showModal(`
+          <h2>範囲削除</h2>
+          <div class="danger-note">単語リストごと削除します。この操作は元に戻せません。</div>
+          <p>対象: <strong>${escapeHtml(range.rangeName)}</strong> / ${range.words.length}語</p>
+          <div class="actions">
+            <button class="danger" data-modal-confirm>削除する</button>
+            <button class="soft" data-modal-cancel>キャンセル</button>
+          </div>
+        `, () => {
+          state.ranges = state.ranges.filter(r => r.id !== rangeId);
+          if (state.selectedRangeId === rangeId) state.selectedRangeId = null;
+          save();
+          $("wordPanel").classList.add("hidden");
+          toast("範囲を削除しました。");
+        });
+      }
+
+      function playOfficial(wordId) {
+        const word = findWord(wordId);
+        if (!word || !word.audioUrl) return;
+        const audio = new Audio(word.audioUrl);
+        audio.play().then(() => {
+          word.playCount = (word.playCount || 0) + 1;
+          save();
+        }).catch(() => toast("公式音声を再生できませんでした。MWリンクや読み上げを使ってください。", true));
+      }
+
+      function speakWord(wordId) {
+        const word = findWord(wordId);
+        if (!word || !("speechSynthesis" in window)) {
+          toast("このブラウザでは読み上げに対応していません。", true);
+          return;
+        }
+        const u = new SpeechSynthesisUtterance(word.word);
+        u.lang = "en-US";
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+      }
+
+      function findWord(wordId) {
+        for (const range of state.ranges) {
+          const word = range.words.find(w => w.id === wordId);
+          if (word) return word;
+        }
+        return null;
+      }
+
+      function findRangeByWord(wordId) {
+        return state.ranges.find(r => r.words.some(w => w.id === wordId));
+      }
+
+      function exportJson() {
+        const payload = {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          ranges: state.ranges
+        };
+        const text = JSON.stringify(payload, null, 2);
+        download(`mw-pronunciation-${todayKey()}.json`, text, "application/json");
+        toast(`JSONを書き出しました。APIキーは含まれていません。サイズ: ${formatBytes(new Blob([text]).size)}`);
+      }
+
+      function exportCsv() {
+        const rows = [["教材名", "範囲名", "テスト日", "単語", "使用辞書", "発音表記", "品詞", "定義1", "定義2", "定義3", "音声あり", "定義あり", "確認済み", "苦手", "再生回数"]];
+        state.ranges.forEach(r => r.words.forEach(w => rows.push([
+          r.material,
+          r.rangeName,
+          r.testDate,
+          w.word,
+          dictionaryLabel(w.dictionarySource || ""),
+          w.pronunciation,
+          w.partOfSpeech || "",
+          w.definitions?.[0] || "",
+          w.definitions?.[1] || "",
+          w.definitions?.[2] || "",
+          w.hasAudio ? "1" : "0",
+          w.hasDefinition ? "1" : "0",
+          w.checked ? "1" : "0",
+          w.hard ? "1" : "0",
+          String(w.playCount || 0)
+        ])));
+        const csv = rows.map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+        download(`mw-pronunciation-${todayKey()}.csv`, csv, "text/csv");
+      }
+
+      function download(filename, text, type) {
+        const blob = new Blob([text], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function importJson(replace) {
+        try {
+          const parsed = JSON.parse($("importJson").value);
+          const incoming = Array.isArray(parsed.ranges) ? parsed.ranges : [];
+          if (!incoming.length) {
+            toast("インポートできる範囲が見つかりません。", true);
+            return;
+          }
+          const run = () => {
+            state.ranges = replace ? incoming : state.ranges.concat(incoming);
+            save();
+            toast(`${incoming.length}件の範囲を${replace ? "置き換え" : "追加"}インポートしました。APIキーは読み込みません。`);
+          };
+          if (replace) {
+            showModal(`
+              <h2>置き換えインポート</h2>
+              <div class="danger-note">現在のデータをすべて置き換えます。</div>
+              <div class="actions"><button class="warn" data-modal-confirm>置き換える</button><button class="soft" data-modal-cancel>キャンセル</button></div>
+            `, run);
+          } else {
+            run();
+          }
+        } catch {
+          toast("JSONの読み込みに失敗しました。", true);
+        }
+      }
+
+      function wipeAll() {
+        showModal(`
+          <h2>全データ削除</h2>
+          <div class="danger-note">範囲、単語、進捗、APIキャッシュをすべて削除します。APIキーは別ボタンで削除できます。</div>
+          <div class="actions"><button class="danger" data-modal-confirm>全データ削除</button><button class="soft" data-modal-cancel>キャンセル</button></div>
+        `, () => {
+          state.ranges = [];
+          state.selectedRangeId = null;
+          save();
+          $("wordPanel").classList.add("hidden");
+          toast("全データを削除しました。");
+        });
+      }
+
+      function seedSample() {
+        const testDate = localDateString(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
+        const weekday = weekdays[new Date(`${testDate}T12:00:00`).getDay()];
+        state.ranges.push({
+          id: uid("range"),
+          material: "速読英単語",
+          rangeName: "Section 59-60 デモ",
+          testDate,
+          weekday,
+          pages: "312-320",
+          memo: "デモ確認用。API通信なし。",
+          deleteAt: deleteAtFor(testDate, weekday),
+          cacheClearedAt: "",
+          createdAt: new Date().toISOString(),
+          words: ["example", "audio", "pronunciation", "science", "diligent"].map(w => createWord(w, w))
+        });
+        save();
+        toast("デモサンプルを作成しました。API通信はしていません。");
+      }
+
+      function switchTab(name) {
+        document.querySelectorAll("[data-tab]").forEach(btn => btn.setAttribute("aria-selected", String(btn.dataset.tab === name)));
+        document.querySelectorAll(".tab-page").forEach(page => page.classList.add("hidden"));
+        $(`page-${name}`).classList.remove("hidden");
+      }
+
+      function bindEvents() {
+        document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+        $("saveApiSettings").addEventListener("click", () => {
+          const wantsSave = $("saveKey").checked;
+          const apiKey = $("apiKey").value.trim();
+          const collegiateApiKey = $("collegiateApiKey").value.trim();
+          const apply = () => {
+            state.settings.demoMode = $("demoMode").checked;
+            state.settings.saveKey = wantsSave;
+            state.settings.dictionaryType = $("dictionaryType").value;
+            state.settings.definitionLimit = Number($("definitionLimit").value) || 2;
+            state.settings.apiKeySession = wantsSave ? "" : apiKey;
+            state.settings.collegiateApiKeySession = wantsSave ? "" : collegiateApiKey;
+            if (wantsSave && apiKey) localStorage.setItem(API_KEY_KEY, apiKey);
+            if (wantsSave && collegiateApiKey) localStorage.setItem(COLLEGIATE_API_KEY_KEY, collegiateApiKey);
+            if (!wantsSave) {
+              localStorage.removeItem(API_KEY_KEY);
+              localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+            }
+            save();
+            toast("API設定を保存しました。保存だけではAPI通信しません。");
+          };
+          if (wantsSave && (apiKey || collegiateApiKey)) {
+            showModal(`
+              <h2>APIキー保存の確認</h2>
+              <div class="warning">このブラウザのlocalStorageにAPIキーを保存します。共有端末では保存しないでください。</div>
+              <div class="actions"><button class="warn" data-modal-confirm>保存する</button><button class="soft" data-modal-cancel>キャンセル</button></div>
+            `, apply);
+          } else apply();
+        });
+        $("clearApiKey").addEventListener("click", () => showModal(`
+          <h2>APIキー削除</h2>
+          <p>保存済みAPIキーと一時入力を削除します。</p>
+          <div class="actions"><button class="danger" data-modal-confirm>削除する</button><button class="soft" data-modal-cancel>キャンセル</button></div>
+        `, () => {
+          $("apiKey").value = "";
+          $("collegiateApiKey").value = "";
+          state.settings.apiKeySession = "";
+          state.settings.collegiateApiKeySession = "";
+          localStorage.removeItem(API_KEY_KEY);
+          localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+          save();
+          toast("APIキーを削除しました。");
+        }));
+        $("wordInput").addEventListener("input", importPreview);
+        $("testDate").addEventListener("change", () => {
+          const testDate = $("testDate").value;
+          const weekday = testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "";
+          if (!$("weekday").value) $("weekday").value = weekday;
+          $("deleteAt").value = deleteAtFor(testDate, $("weekday").value || weekday);
+        });
+        $("weekday").addEventListener("change", () => { $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value); });
+        $("importRange").addEventListener("click", registerRange);
+        $("clearImport").addEventListener("click", () => {
+          ["rangeName", "testDate", "pages", "deleteAt", "memo", "wordInput"].forEach(id => $(id).value = "");
+          $("weekday").value = "";
+          importPreview();
+        });
+        $("createSmallTest").addEventListener("click", createSmallTestRange);
+        $("rangeFilter").addEventListener("change", renderRanges);
+        $("rangeSort").addEventListener("change", renderRanges);
+        $("rangeList").addEventListener("click", (event) => {
+          const btn = event.target.closest("button[data-action]");
+          if (!btn) return;
+          const range = state.ranges.find(r => r.id === btn.dataset.id);
+          if (!range) return;
+          if (btn.dataset.action === "open") { state.selectedRangeId = range.id; renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
+          if (btn.dataset.action === "fetch") confirmFetch(range);
+          if (btn.dataset.action === "clear-cache") clearCache(range.id);
+          if (btn.dataset.action === "delete-range") deleteRange(range.id);
+        });
+        $("openNext").addEventListener("click", () => {
+          const id = nextRangeId();
+          if (!id) return toast("次回の範囲がありません。");
+          state.selectedRangeId = id;
+          renderWords();
+          $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        $("seedSample").addEventListener("click", seedSample);
+        $("closeWords").addEventListener("click", () => { state.selectedRangeId = null; $("wordPanel").classList.add("hidden"); });
+        $("wordFilter").addEventListener("change", renderWords);
+        $("wordSort").addEventListener("change", renderWords);
+        $("wordList").addEventListener("click", event => {
+          const btn = event.target.closest("button[data-word-action]");
+          if (!btn) return;
+          const word = findWord(btn.dataset.id);
+          if (!word) return;
+          if (btn.dataset.wordAction === "play") playOfficial(word.id);
+          if (btn.dataset.wordAction === "speak") speakWord(word.id);
+          if (btn.dataset.wordAction === "mw") window.open(word.mwUrl || dictionaryUrl(word.normalized), "_blank", "noopener");
+          if (btn.dataset.wordAction === "refetch") {
+            const range = findRangeByWord(word.id);
+            if (range) {
+              word.apiFetched = false;
+              confirmFetch(range, word.id);
+            }
+          }
+          if (btn.dataset.wordAction === "refetch-collegiate") {
+            const range = findRangeByWord(word.id);
+            if (range) {
+              word.apiFetched = false;
+              confirmFetch(range, word.id, "collegiate");
+            }
+          }
+        });
+        $("wordList").addEventListener("change", event => {
+          const input = event.target.closest("input[data-word-action]");
+          if (!input) return;
+          const word = findWord(input.dataset.id);
+          if (!word) return;
+          if (input.dataset.wordAction === "checked") {
+            word.checked = input.checked;
+            word.lastCheckedAt = input.checked ? new Date().toISOString() : "";
+          }
+          if (input.dataset.wordAction === "hard") word.hard = input.checked;
+          save();
+        });
+        $("exportJson").addEventListener("click", exportJson);
+        $("exportCsv").addEventListener("click", exportCsv);
+        $("appendJson").addEventListener("click", () => importJson(false));
+        $("replaceJson").addEventListener("click", () => importJson(true));
+        $("wipeAll").addEventListener("click", wipeAll);
+      }
+
+      load();
+      bindEvents();
+      importPreview();
+      render();
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {
+            // PWA登録に失敗しても通常のWebアプリとして使えます。
+          });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
