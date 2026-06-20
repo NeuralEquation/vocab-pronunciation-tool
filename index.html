@@ -518,6 +518,7 @@
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
+      const CACHE_SCHEMA_VERSION = 2;
       const TEST_WORD_LIMIT = 3;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -596,6 +597,7 @@
           partOfSpeech: "",
           definitions: [],
           hasDefinition: false,
+          cacheVersion: 0,
           apiFetched: false,
           hasAudio: false,
           checked: false,
@@ -638,6 +640,7 @@
           if (raw) {
             const parsed = JSON.parse(raw);
             state.ranges = Array.isArray(parsed.ranges) ? parsed.ranges : [];
+            normalizeLoadedData();
             state.settings.demoMode = parsed.settings?.demoMode !== false;
             state.settings.saveKey = parsed.settings?.saveKey === true;
             state.settings.dictionaryType = parsed.settings?.dictionaryType || "learners";
@@ -676,6 +679,20 @@
           toast("保存に失敗しました。容量が近い可能性があります。JSONエクスポート後、APIキャッシュ削除を検討してください。", true);
           return false;
         }
+      }
+
+      function normalizeLoadedData() {
+        state.ranges.forEach(range => {
+          range.words = Array.isArray(range.words) ? range.words : [];
+          range.words.forEach(word => {
+            word.dictionarySource = word.dictionarySource || "";
+            word.partOfSpeech = word.partOfSpeech || "";
+            word.definitions = Array.isArray(word.definitions) ? word.definitions : [];
+            word.hasDefinition = Boolean(word.hasDefinition || word.definitions.length);
+            word.cacheVersion = Number(word.cacheVersion) || 0;
+            word.mwUrl = word.mwUrl || dictionaryUrl(word.normalized || word.word || "");
+          });
+        });
       }
 
       function usageRecord() {
@@ -747,7 +764,7 @@
       function statsForRange(range) {
         const words = range.words || [];
         const total = words.length;
-        const fetched = words.filter(w => w.apiFetched).length;
+        const fetched = words.filter(w => isCacheCurrent(w, w.dictionarySource || state.settings.dictionaryType || "learners")).length;
         const audio = words.filter(w => w.hasAudio).length;
         const noAudio = words.filter(w => w.apiFetched && !w.hasAudio).length;
         const checked = words.filter(w => w.checked).length;
@@ -858,7 +875,7 @@
                 <div class="word-title">${escapeHtml(word.word)}</div>
                 <div class="meta">発音: ${escapeHtml(word.pronunciation || "未取得")} / ${escapeHtml(word.partOfSpeech || "品詞未取得")} / 再生 ${word.playCount || 0}回</div>
               </div>
-              <span class="badge ${word.apiFetched ? "ok" : "warn"}">${word.apiFetched ? escapeHtml(dictionaryLabel(word.dictionarySource || "learners")) : "API未取得"}</span>
+              <span class="badge ${word.apiFetched && word.cacheVersion === CACHE_SCHEMA_VERSION ? "ok" : "warn"}">${escapeHtml(wordStatusLabel(word))}</span>
             </div>
             ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(truncateText(d, 120))}</div>`).join("")}</div>` : ""}
             ${word.error ? `<div class="danger-note">${escapeHtml(word.error)}</div>` : ""}
@@ -882,6 +899,14 @@
       function truncateText(value, max) {
         const text = String(value || "").replace(/\s+/g, " ").trim();
         return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+      }
+
+      function wordStatusLabel(word) {
+        if (!word.apiFetched) return "API未取得";
+        if (word.cacheVersion !== CACHE_SCHEMA_VERSION) return "要再取得";
+        const source = dictionaryLabel(word.dictionarySource || "");
+        const details = [word.hasAudio ? "音声あり" : "音声なし", word.hasDefinition ? "定義あり" : "定義なし"].join(" / ");
+        return source ? `${source} / ${details}` : details;
       }
 
       function toast(message, isDanger = false) {
@@ -978,8 +1003,18 @@
         switchTab("ranges");
       }
 
+      function isCacheCurrent(word, reference = state.settings.dictionaryType || "learners") {
+        return Boolean(
+          word.apiFetched &&
+          word.cacheVersion === CACHE_SCHEMA_VERSION &&
+          word.dictionarySource === reference &&
+          Array.isArray(word.definitions)
+        );
+      }
+
       function pendingWords(range) {
-        return range.words.filter(w => !w.apiFetched);
+        const reference = state.settings.dictionaryType || "learners";
+        return range.words.filter(w => !isCacheCurrent(w, reference));
       }
 
       function confirmFetch(range, forceWordId = "", referenceOverride = "") {
@@ -1040,6 +1075,7 @@
             const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
             Object.assign(word, result, {
               apiFetched: true,
+              cacheVersion: CACHE_SCHEMA_VERSION,
               lastApiFetchedAt: new Date().toISOString(),
               error: result.error || ""
             });
@@ -1112,15 +1148,13 @@
             error: "単語が見つかりません"
           };
         }
-        const prs = entry.hwi?.prs || [];
+        const prs = collectPronunciations(entry);
         const pronunciation = reference === "learners"
           ? (prs.find(p => p.ipa)?.ipa || prs.find(p => p.mw)?.mw || "")
           : (prs.find(p => p.mw)?.mw || prs.find(p => p.ipa)?.ipa || "");
         const audioId = prs.find(p => p.sound?.audio)?.sound.audio || "";
         const audioUrl = audioUrlFromId(audioId);
-        const definitions = Array.isArray(entry.shortdef)
-          ? entry.shortdef.slice(0, state.settings.definitionLimit).map(cleanDefinition).filter(Boolean)
-          : [];
+        const definitions = extractDefinitions(entry).slice(0, state.settings.definitionLimit);
         return {
           pronunciation,
           audioId,
@@ -1135,8 +1169,38 @@
         };
       }
 
+      function collectPronunciations(entry) {
+        const lists = [];
+        if (Array.isArray(entry.hwi?.prs)) lists.push(entry.hwi.prs);
+        if (Array.isArray(entry.ahws)) {
+          entry.ahws.forEach(ahw => {
+            if (Array.isArray(ahw.prs)) lists.push(ahw.prs);
+          });
+        }
+        if (Array.isArray(entry.vrs)) {
+          entry.vrs.forEach(vr => {
+            if (Array.isArray(vr.prs)) lists.push(vr.prs);
+          });
+        }
+        return lists.flat().filter(Boolean);
+      }
+
+      function extractDefinitions(entry) {
+        const defs = [];
+        if (Array.isArray(entry.shortdef)) defs.push(...entry.shortdef);
+        const appShortdef = entry.meta?.["app-shortdef"]?.def;
+        if (Array.isArray(appShortdef)) defs.push(...appShortdef);
+        return [...new Set(defs.map(cleanDefinition).filter(Boolean))];
+      }
+
       function cleanDefinition(text) {
         return String(text || "")
+          .replace(/\{bc\}/g, "")
+          .replace(/\{\/?it\}/g, "")
+          .replace(/\{\/?wi\}/g, "")
+          .replace(/\{phrase\}([^{}]+)\{\/phrase\}/g, "$1")
+          .replace(/\{sx\|([^|{}]+)\|[^{}]*\|[^{}]*\}/g, "$1")
+          .replace(/\{a_link\|([^{}]+)\}/g, "$1")
           .replace(/\{[^}]+\}/g, "")
           .replace(/\s+/g, " ")
           .trim();
@@ -1163,6 +1227,7 @@
             w.partOfSpeech = "";
             w.definitions = [];
             w.hasDefinition = false;
+            w.cacheVersion = 0;
             w.apiFetched = false;
             w.hasAudio = false;
             w.error = "";
