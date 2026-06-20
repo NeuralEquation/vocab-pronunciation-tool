@@ -56,6 +56,21 @@
     button.soft { border: 1px solid var(--line); background: #151a22; }
     button.warn { background: #4a3515; color: #ffe2a0; }
     button.danger { background: #4c2025; color: #ffd4d8; }
+    button.compact {
+      min-height: 34px;
+      padding: 6px 9px;
+      font-size: .78rem;
+    }
+    button.refetch {
+      border: 1px solid #7a5120;
+      background: #2a1d0d;
+      color: #ffd99a;
+    }
+    button.collegiate {
+      border: 1px solid #704048;
+      background: #2b1218;
+      color: #ffc9d0;
+    }
     button:disabled { opacity: .45; cursor: not-allowed; }
     input, textarea, select {
       width: 100%;
@@ -92,7 +107,7 @@
     }
     h1 {
       margin: 0;
-      font-size: 1.18rem;
+      font-size: 1.1rem;
       letter-spacing: 0;
     }
     h2 {
@@ -183,6 +198,38 @@
       background: #141922;
       padding: 12px;
       margin-bottom: 10px;
+    }
+    .word-card { scroll-margin-top: 130px; }
+    .word-card.current-word {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(89, 194, 255, .28);
+    }
+    .word-card .mini {
+      font-size: .92rem;
+      line-height: 1.5;
+    }
+    .study-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 12px 0 8px;
+    }
+    .secondary-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .danger-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .word-index {
+      color: var(--muted);
+      font-size: .78rem;
+      white-space: nowrap;
     }
     .range-card.next { border-color: #2f9ed8; }
     .range-card.today { border-color: #52d48d; }
@@ -305,15 +352,12 @@
       <div class="topline">
         <div>
           <h1>Merriam-Webster 発音確認</h1>
-          <div class="note">PCはデモ確認用、スマホで本番API確認する前提の単一HTMLです。</div>
         </div>
-        <span id="modeBadge" class="badge ok">デモモード</span>
       </div>
       <div class="stats">
         <div class="stat">今日のAPI使用量: <strong id="usageToday">0</strong></div>
         <div class="stat">保存使用量: <strong id="storageSize">0KB</strong></div>
         <div class="stat">範囲: <strong id="rangeCount">0</strong></div>
-        <div class="stat">未確認: <strong id="uncheckedCount">0</strong></div>
       </div>
       <div id="storageWarning"></div>
     </header>
@@ -327,9 +371,6 @@
     <main class="grid layout">
       <section class="panel">
         <h2>APIキー設定</h2>
-        <div class="warning">
-          初期状態はデモモードです。ページ読み込み、単語登録、範囲を開く操作ではAPI通信しません。
-        </div>
         <label for="apiKey">Learner's Dictionary APIキー</label>
         <input id="apiKey" type="password" autocomplete="off" placeholder="Learner's用キーをスマホ本番確認時に入力">
         <label for="collegiateApiKey">Collegiate Dictionary APIキー（任意・フォールバック用）</label>
@@ -350,7 +391,6 @@
           <button class="soft" id="saveApiSettings">設定を保存</button>
           <button class="danger" id="clearApiKey">APIキー削除</button>
         </div>
-        <p class="note">初期辞書はLearner'sです。Collegiateは切り替え取得や単語ごとの手動フォールバック用です。APIキーはJSON/CSVエクスポートに含めません。</p>
       </section>
 
       <section class="panel tab-page" id="page-ranges">
@@ -373,15 +413,12 @@
             <label for="rangeSort">並び替え</label>
             <select id="rangeSort">
               <option value="date">テスト日順</option>
-              <option value="material">教材名順</option>
               <option value="status">状態順</option>
-              <option value="unchecked">未確認数が多い順</option>
             </select>
           </div>
         </div>
         <div class="actions">
           <button class="primary" id="openNext">次回の範囲を開く</button>
-          <button class="soft" id="seedSample">デモサンプル作成</button>
         </div>
         <div id="rangeList" style="margin-top:12px"></div>
       </section>
@@ -389,10 +426,6 @@
       <section class="panel tab-page hidden" id="page-import">
         <h2>範囲登録</h2>
         <div class="row">
-          <div>
-            <label for="material">教材名</label>
-            <input id="material" value="速読英単語">
-          </div>
           <div>
             <label for="rangeName">範囲名</label>
             <input id="rangeName" placeholder="Section 59-60">
@@ -417,31 +450,13 @@
             <input id="deleteAt" type="datetime-local">
           </div>
           <div class="wide">
-            <label for="memo">メモ</label>
-            <input id="memo" placeholder="小テストの注意など">
-          </div>
-          <div class="wide">
             <label for="wordInput">単語リスト</label>
-            <textarea id="wordInput" placeholder="改行、カンマ、スペース、タブ区切りに対応。空でも範囲枠だけ作れます。"></textarea>
+            <textarea id="wordInput"></textarea>
           </div>
         </div>
-        <div id="importPreview" class="note">登録前に追加数、重複数、無効数を表示します。</div>
         <div class="actions">
           <button class="primary" id="importRange">範囲を登録</button>
           <button class="soft" id="clearImport">入力クリア</button>
-        </div>
-
-        <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
-        <h2>実API確認用 小さなテスト範囲</h2>
-        <p class="note">完成後にスマホ本番環境で実APIを確認するための、1〜3語だけの範囲を作れます。作成だけではAPI通信しません。</p>
-        <div class="row single">
-          <div>
-            <label for="smallTestWords">テスト単語 1〜3語</label>
-            <input id="smallTestWords" placeholder="example audio pronunciation">
-          </div>
-        </div>
-        <div class="actions">
-          <button class="warn" id="createSmallTest">小テスト範囲を作成</button>
         </div>
       </section>
 
@@ -460,11 +475,8 @@
         </div>
         <h3 style="margin-top:16px">使い方</h3>
         <ul class="help-list">
-          <li>PCではデモモードのまま登録、保存、表示を確認します。</li>
-          <li>スマホではLearner's APIキーを入力し、実APIモードに切り替えてから「APIで取得」を押します。</li>
-          <li>実API取得前には必ず確認画面が出て、今回問い合わせる単語数を表示します。</li>
-          <li>キャッシュ済み単語は問い合わせ対象から外れます。</li>
-          <li>Learner'sで足りない単語は、単語カードの「Collegiate再取得」で確認後に取得できます。</li>
+          <li>スマホで範囲を開き、公式音声を聞いたら「次へ」で進みます。</li>
+          <li>API取得や再取得は、確認画面で単語数を見てから実行します。</li>
         </ul>
       </section>
 
@@ -475,32 +487,6 @@
             <div class="meta" id="openRangeMeta"></div>
           </div>
           <button class="soft" id="closeWords">閉じる</button>
-        </div>
-        <div class="row">
-          <div>
-            <label for="wordFilter">単語フィルター</label>
-            <select id="wordFilter">
-              <option value="all">すべて</option>
-              <option value="unchecked">未確認のみ</option>
-              <option value="checked">確認済みのみ</option>
-              <option value="hard">苦手のみ</option>
-              <option value="audio">音声ありのみ</option>
-              <option value="noaudio">音声なしのみ</option>
-              <option value="api-missing">API未取得のみ</option>
-              <option value="api-done">API取得済みのみ</option>
-            </select>
-          </div>
-          <div>
-            <label for="wordSort">並び替え</label>
-            <select id="wordSort">
-              <option value="order">登録順</option>
-              <option value="alpha">アルファベット順</option>
-              <option value="unchecked">未確認優先</option>
-              <option value="hard">苦手優先</option>
-              <option value="noaudio">音声なし優先</option>
-              <option value="plays">再生回数が少ない順</option>
-            </select>
-          </div>
         </div>
         <div id="wordList"></div>
       </section>
@@ -533,7 +519,7 @@
 
       const state = {
         ranges: [],
-        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2 },
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, lastViewedWordByRange: {} },
         selectedRangeId: null,
         lastImportWords: []
       };
@@ -600,10 +586,6 @@
           cacheVersion: 0,
           apiFetched: false,
           hasAudio: false,
-          checked: false,
-          hard: false,
-          playCount: 0,
-          lastCheckedAt: "",
           lastApiFetchedAt: "",
           error: ""
         };
@@ -645,6 +627,7 @@
             state.settings.saveKey = parsed.settings?.saveKey === true;
             state.settings.dictionaryType = parsed.settings?.dictionaryType || "learners";
             state.settings.definitionLimit = Number(parsed.settings?.definitionLimit) || 2;
+            state.settings.lastViewedWordByRange = parsed.settings?.lastViewedWordByRange || {};
           }
           if (state.settings.saveKey) {
             $("apiKey").value = localStorage.getItem(API_KEY_KEY) || "";
@@ -667,7 +650,8 @@
             demoMode: state.settings.demoMode,
             saveKey: state.settings.saveKey,
             dictionaryType: state.settings.dictionaryType,
-            definitionLimit: state.settings.definitionLimit
+            definitionLimit: state.settings.definitionLimit,
+            lastViewedWordByRange: state.settings.lastViewedWordByRange || {}
           },
           ranges: state.ranges
         };
@@ -684,6 +668,8 @@
       function normalizeLoadedData() {
         state.ranges.forEach(range => {
           range.words = Array.isArray(range.words) ? range.words : [];
+          delete range.material;
+          delete range.memo;
           range.words.forEach(word => {
             word.dictionarySource = word.dictionarySource || "";
             word.partOfSpeech = word.partOfSpeech || "";
@@ -691,6 +677,7 @@
             word.hasDefinition = Boolean(word.hasDefinition || word.definitions.length);
             word.cacheVersion = Number(word.cacheVersion) || 0;
             word.mwUrl = word.mwUrl || dictionaryUrl(word.normalized || word.word || "");
+            ["checked", "hard", "play" + "Count", "last" + "CheckedAt"].forEach(key => delete word[key]);
           });
         });
       }
@@ -767,9 +754,8 @@
         const fetched = words.filter(w => isCacheCurrent(w, w.dictionarySource || state.settings.dictionaryType || "learners")).length;
         const audio = words.filter(w => w.hasAudio).length;
         const noAudio = words.filter(w => w.apiFetched && !w.hasAudio).length;
-        const checked = words.filter(w => w.checked).length;
-        const hard = words.filter(w => w.hard).length;
-        return { total, fetched, audio, noAudio, checked, unchecked: total - checked, hard, pct: total ? Math.round(checked / total * 100) : 0 };
+        const definitions = words.filter(w => w.hasDefinition).length;
+        return { total, fetched, audio, noAudio, definitions, pct: total ? Math.round(fetched / total * 100) : 0 };
       }
 
       function render() {
@@ -778,9 +764,6 @@
         $("usageToday").textContent = usage.count;
         $("storageSize").textContent = formatBytes(bytes);
         $("rangeCount").textContent = state.ranges.length;
-        $("uncheckedCount").textContent = state.ranges.reduce((sum, r) => sum + statsForRange(r).unchecked, 0);
-        $("modeBadge").textContent = state.settings.demoMode ? "デモモード" : "実APIモード";
-        $("modeBadge").className = state.settings.demoMode ? "badge ok" : "badge danger";
         renderStorageWarning(bytes);
         renderRanges();
         if (state.selectedRangeId) renderWords();
@@ -802,9 +785,7 @@
         let ranges = state.ranges.map(r => ({ ...r, status: statusForRange(r, nextId) }));
         if (filter !== "all") ranges = ranges.filter(r => r.status === filter);
         ranges.sort((a, b) => {
-          if (sort === "material") return (a.material || "").localeCompare(b.material || "ja");
           if (sort === "status") return a.status.localeCompare(b.status, "ja");
-          if (sort === "unchecked") return statsForRange(b).unchecked - statsForRange(a).unchecked;
           return (a.testDate || "9999").localeCompare(b.testDate || "9999");
         });
         if (!ranges.length) {
@@ -820,7 +801,7 @@
               <div class="range-head">
                 <div>
                   <div class="range-title">${escapeHtml(range.rangeName || "無題の範囲")}</div>
-                  <div class="meta">${escapeHtml(range.material || "")} / ${escapeHtml(range.testDate || "日付未設定")} ${escapeHtml(range.weekday || "")}</div>
+                  <div class="meta">${escapeHtml(range.testDate || "日付未設定")} ${escapeHtml(range.weekday || "")}</div>
                 </div>
                 <span class="badge ${badgeClass}">${range.status}</span>
               </div>
@@ -828,8 +809,8 @@
               <div class="mini-grid">
                 <div class="mini"><strong>${s.total}</strong>単語</div>
                 <div class="mini"><strong>${s.fetched}</strong>API取得済み</div>
-                <div class="mini"><strong>${s.unchecked}</strong>未確認</div>
-                <div class="mini"><strong>${s.hard}</strong>苦手</div>
+                <div class="mini"><strong>${s.audio}</strong>音声あり</div>
+                <div class="mini"><strong>${s.definitions}</strong>定義あり</div>
               </div>
               <div class="meta">ページ: ${escapeHtml(range.pages || "-")} / 削除予定: ${escapeHtml(range.deleteAt || "-")}</div>
               <div class="actions" style="margin-top:10px">
@@ -848,48 +829,43 @@
         $("wordPanel").classList.remove("hidden");
         $("openRangeTitle").textContent = `${range.rangeName || "無題の範囲"} の単語`;
         const s = statsForRange(range);
-        $("openRangeMeta").textContent = `${range.material || ""} / ${range.testDate || "日付未設定"} / ${s.checked}/${s.total} 確認済み`;
-        let words = [...range.words];
-        const filter = $("wordFilter").value;
-        if (filter === "unchecked") words = words.filter(w => !w.checked);
-        if (filter === "checked") words = words.filter(w => w.checked);
-        if (filter === "hard") words = words.filter(w => w.hard);
-        if (filter === "audio") words = words.filter(w => w.hasAudio);
-        if (filter === "noaudio") words = words.filter(w => w.apiFetched && !w.hasAudio);
-        if (filter === "api-missing") words = words.filter(w => !w.apiFetched);
-        if (filter === "api-done") words = words.filter(w => w.apiFetched);
-        const sort = $("wordSort").value;
-        if (sort === "alpha") words.sort((a, b) => a.normalized.localeCompare(b.normalized));
-        if (sort === "unchecked") words.sort((a, b) => Number(a.checked) - Number(b.checked));
-        if (sort === "hard") words.sort((a, b) => Number(b.hard) - Number(a.hard));
-        if (sort === "noaudio") words.sort((a, b) => Number(a.hasAudio) - Number(b.hasAudio));
-        if (sort === "plays") words.sort((a, b) => a.playCount - b.playCount);
+        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み`;
+        const words = [...range.words];
+        const rememberedWordId = state.settings.lastViewedWordByRange?.[range.id] || words[0]?.id || "";
         if (!words.length) {
           $("wordList").innerHTML = `<div class="empty">表示できる単語がありません。</div>`;
           return;
         }
-        $("wordList").innerHTML = words.map(word => `
-          <article class="word-card">
+        $("wordList").innerHTML = words.map((word, index) => `
+          <article class="word-card ${word.id === rememberedWordId ? "current-word" : ""}" data-word-id="${word.id}">
             <div class="word-head">
               <div>
                 <div class="word-title">${escapeHtml(word.word)}</div>
-                <div class="meta">発音: ${escapeHtml(word.pronunciation || "未取得")} / ${escapeHtml(word.partOfSpeech || "品詞未取得")} / 再生 ${word.playCount || 0}回</div>
+                <div class="meta">発音: ${escapeHtml(word.pronunciation || "未取得")} / ${escapeHtml(word.partOfSpeech || "品詞未取得")}</div>
               </div>
+              <span class="word-index">${index + 1}/${words.length}</span>
               <span class="badge ${word.apiFetched && word.cacheVersion === CACHE_SCHEMA_VERSION ? "ok" : "warn"}">${escapeHtml(wordStatusLabel(word))}</span>
             </div>
             ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(truncateText(d, 120))}</div>`).join("")}</div>` : ""}
             ${word.error ? `<div class="danger-note">${escapeHtml(word.error)}</div>` : ""}
-            <div class="audio-row">
+            <div class="study-actions">
               <button class="primary" data-word-action="play" data-id="${word.id}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
+              <button class="primary" data-word-action="next" data-id="${word.id}">次へ</button>
+            </div>
+            <div class="secondary-actions">
               <button class="soft" data-word-action="speak" data-id="${word.id}">読み上げ</button>
               <button class="soft" data-word-action="mw" data-id="${word.id}">MWで開く</button>
-              <button class="soft" data-word-action="refetch" data-id="${word.id}">再取得</button>
-              <button class="soft" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate再取得</button>
             </div>
-            <label class="switch"><input type="checkbox" data-word-action="checked" data-id="${word.id}" ${word.checked ? "checked" : ""}> 発音確認済み</label>
-            <label class="switch"><input type="checkbox" data-word-action="hard" data-id="${word.id}" ${word.hard ? "checked" : ""}> 苦手マーク</label>
-            <div class="meta">最終確認: ${escapeHtml(word.lastCheckedAt || "-")} / 最終API取得: ${escapeHtml(word.lastApiFetchedAt || "-")}</div>
+            <div class="danger-actions">
+              <button class="compact refetch" data-word-action="refetch" data-id="${word.id}">再取得</button>
+              <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate</button>
+            </div>
           </article>`).join("");
+        if (state.pendingWordScroll) {
+          const target = $("wordList").querySelector(`[data-word-id="${CSS.escape(rememberedWordId)}"]`);
+          target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          state.pendingWordScroll = false;
+        }
       }
 
       function escapeHtml(value) {
@@ -943,7 +919,6 @@
       function importPreview() {
         const result = parseWords($("wordInput").value);
         state.lastImportWords = result.words;
-        $("importPreview").textContent = `追加予定: ${result.words.length}語 / 重複: ${result.duplicates}語 / 無効: ${result.invalid}件`;
       }
 
       function buildRangeFromForm(words) {
@@ -951,12 +926,10 @@
         const weekday = $("weekday").value || (testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "");
         return {
           id: uid("range"),
-          material: $("material").value.trim() || "その他",
           rangeName: $("rangeName").value.trim() || "無題の範囲",
           testDate,
           weekday,
           pages: $("pages").value.trim(),
-          memo: $("memo").value.trim(),
           deleteAt: $("deleteAt").value || deleteAtFor(testDate, weekday),
           cacheClearedAt: "",
           createdAt: new Date().toISOString(),
@@ -974,32 +947,6 @@
         state.ranges.push(range);
         save();
         toast(parsed.words.length ? `${parsed.words.length}語を登録しました。API通信はしていません。` : "範囲枠を作成しました。API通信はしていません。");
-        switchTab("ranges");
-      }
-
-      function createSmallTestRange() {
-        const parsed = parseWords($("smallTestWords").value);
-        if (parsed.words.length < 1 || parsed.words.length > TEST_WORD_LIMIT) {
-          toast("実API確認用の小さなテスト範囲は1〜3語で作成してください。", true);
-          return;
-        }
-        const now = new Date();
-        const range = {
-          id: uid("range"),
-          material: "実API確認",
-          rangeName: `実API確認 ${parsed.words.length}語テスト`,
-          testDate: localDateString(now),
-          weekday: weekdays[now.getDay()],
-          pages: "1-3語",
-          memo: "スマホ本番環境で実API疎通確認するための小さな範囲。作成時はAPI通信なし。",
-          deleteAt: localDateTimeString(new Date(now.getTime() + 24 * 60 * 60 * 1000)),
-          cacheClearedAt: "",
-          createdAt: new Date().toISOString(),
-          words: parsed.words.map(w => createWord(w.raw, w.normalized))
-        };
-        state.ranges.push(range);
-        save();
-        toast(`実API確認用に${parsed.words.length}語の範囲を作成しました。取得時にも確認画面を出します。`);
         switchTab("ranges");
       }
 
@@ -1045,7 +992,6 @@
           ${caution}
           ${highUsage}
           <ul>
-            <li>教材名: ${escapeHtml(range.material)}</li>
             <li>範囲名: ${escapeHtml(range.rangeName)}</li>
             <li>テスト日: ${escapeHtml(range.testDate || "-")}</li>
             <li>使用辞書: ${dictionaryLabel(reference)}</li>
@@ -1212,7 +1158,7 @@
         showModal(`
           <h2>APIキャッシュ削除</h2>
           <div class="warning">削除対象: 発音表記、音声ID、音声URL、品詞、定義、使用辞書、API取得状態、エラー、最終API取得日。</div>
-          <p>残るデータ: 単語、教材名、範囲名、確認済み、苦手マーク、再生回数、メモ。</p>
+          <p>残るデータ: 単語、範囲名、テスト日、ページ範囲。</p>
           <p>対象範囲: <strong>${escapeHtml(range.rangeName)}</strong> / ${range.words.length}語</p>
           <div class="actions">
             <button class="warn" data-modal-confirm>キャッシュのみ削除</button>
@@ -1262,11 +1208,9 @@
       function playOfficial(wordId) {
         const word = findWord(wordId);
         if (!word || !word.audioUrl) return;
+        rememberWord(wordId);
         const audio = new Audio(word.audioUrl);
-        audio.play().then(() => {
-          word.playCount = (word.playCount || 0) + 1;
-          save();
-        }).catch(() => toast("公式音声を再生できませんでした。MWリンクや読み上げを使ってください。", true));
+        audio.play().catch(() => toast("公式音声を再生できませんでした。MWリンクや読み上げを使ってください。", true));
       }
 
       function speakWord(wordId) {
@@ -1275,10 +1219,35 @@
           toast("このブラウザでは読み上げに対応していません。", true);
           return;
         }
+        rememberWord(wordId);
         const u = new SpeechSynthesisUtterance(word.word);
         u.lang = "en-US";
         speechSynthesis.cancel();
         speechSynthesis.speak(u);
+      }
+
+      function rememberWord(wordId) {
+        const range = findRangeByWord(wordId);
+        if (!range) return;
+        state.settings.lastViewedWordByRange = state.settings.lastViewedWordByRange || {};
+        state.settings.lastViewedWordByRange[range.id] = wordId;
+        save();
+        updateCurrentWord(wordId);
+      }
+
+      function updateCurrentWord(wordId) {
+        document.querySelectorAll(".word-card.current-word").forEach(card => card.classList.remove("current-word"));
+        document.querySelector(`[data-word-id="${CSS.escape(wordId)}"]`)?.classList.add("current-word");
+      }
+
+      function goToNextWord(wordId) {
+        const range = findRangeByWord(wordId);
+        if (!range) return;
+        const index = range.words.findIndex(w => w.id === wordId);
+        const next = range.words[index + 1] || range.words[0];
+        if (!next) return;
+        rememberWord(next.id);
+        document.querySelector(`[data-word-id="${CSS.escape(next.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function findWord(wordId) {
@@ -1305,9 +1274,8 @@
       }
 
       function exportCsv() {
-        const rows = [["教材名", "範囲名", "テスト日", "単語", "使用辞書", "発音表記", "品詞", "定義1", "定義2", "定義3", "音声あり", "定義あり", "確認済み", "苦手", "再生回数"]];
+        const rows = [["範囲名", "テスト日", "単語", "使用辞書", "発音表記", "品詞", "定義1", "定義2", "定義3", "音声あり", "定義あり"]];
         state.ranges.forEach(r => r.words.forEach(w => rows.push([
-          r.material,
           r.rangeName,
           r.testDate,
           w.word,
@@ -1318,10 +1286,7 @@
           w.definitions?.[1] || "",
           w.definitions?.[2] || "",
           w.hasAudio ? "1" : "0",
-          w.hasDefinition ? "1" : "0",
-          w.checked ? "1" : "0",
-          w.hard ? "1" : "0",
-          String(w.playCount || 0)
+          w.hasDefinition ? "1" : "0"
         ])));
         const csv = rows.map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
         download(`mw-pronunciation-${todayKey()}.csv`, csv, "text/csv");
@@ -1376,26 +1341,6 @@
           $("wordPanel").classList.add("hidden");
           toast("全データを削除しました。");
         });
-      }
-
-      function seedSample() {
-        const testDate = localDateString(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
-        const weekday = weekdays[new Date(`${testDate}T12:00:00`).getDay()];
-        state.ranges.push({
-          id: uid("range"),
-          material: "速読英単語",
-          rangeName: "Section 59-60 デモ",
-          testDate,
-          weekday,
-          pages: "312-320",
-          memo: "デモ確認用。API通信なし。",
-          deleteAt: deleteAtFor(testDate, weekday),
-          cacheClearedAt: "",
-          createdAt: new Date().toISOString(),
-          words: ["example", "audio", "pronunciation", "science", "diligent"].map(w => createWord(w, w))
-        });
-        save();
-        toast("デモサンプルを作成しました。API通信はしていません。");
       }
 
       function switchTab(name) {
@@ -1458,11 +1403,10 @@
         $("weekday").addEventListener("change", () => { $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value); });
         $("importRange").addEventListener("click", registerRange);
         $("clearImport").addEventListener("click", () => {
-          ["rangeName", "testDate", "pages", "deleteAt", "memo", "wordInput"].forEach(id => $(id).value = "");
+          ["rangeName", "testDate", "pages", "deleteAt", "wordInput"].forEach(id => $(id).value = "");
           $("weekday").value = "";
           importPreview();
         });
-        $("createSmallTest").addEventListener("click", createSmallTestRange);
         $("rangeFilter").addEventListener("change", renderRanges);
         $("rangeSort").addEventListener("change", renderRanges);
         $("rangeList").addEventListener("click", (event) => {
@@ -1470,7 +1414,7 @@
           if (!btn) return;
           const range = state.ranges.find(r => r.id === btn.dataset.id);
           if (!range) return;
-          if (btn.dataset.action === "open") { state.selectedRangeId = range.id; renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
+          if (btn.dataset.action === "open") { state.selectedRangeId = range.id; state.pendingWordScroll = true; renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
           if (btn.dataset.action === "fetch") confirmFetch(range);
           if (btn.dataset.action === "clear-cache") clearCache(range.id);
           if (btn.dataset.action === "delete-range") deleteRange(range.id);
@@ -1479,47 +1423,32 @@
           const id = nextRangeId();
           if (!id) return toast("次回の範囲がありません。");
           state.selectedRangeId = id;
+          state.pendingWordScroll = true;
           renderWords();
           $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
         });
-        $("seedSample").addEventListener("click", seedSample);
         $("closeWords").addEventListener("click", () => { state.selectedRangeId = null; $("wordPanel").classList.add("hidden"); });
-        $("wordFilter").addEventListener("change", renderWords);
-        $("wordSort").addEventListener("change", renderWords);
         $("wordList").addEventListener("click", event => {
           const btn = event.target.closest("button[data-word-action]");
           if (!btn) return;
           const word = findWord(btn.dataset.id);
           if (!word) return;
           if (btn.dataset.wordAction === "play") playOfficial(word.id);
+          if (btn.dataset.wordAction === "next") goToNextWord(word.id);
           if (btn.dataset.wordAction === "speak") speakWord(word.id);
-          if (btn.dataset.wordAction === "mw") window.open(word.mwUrl || dictionaryUrl(word.normalized), "_blank", "noopener");
+          if (btn.dataset.wordAction === "mw") { rememberWord(word.id); window.open(word.mwUrl || dictionaryUrl(word.normalized), "_blank", "noopener"); }
           if (btn.dataset.wordAction === "refetch") {
             const range = findRangeByWord(word.id);
             if (range) {
-              word.apiFetched = false;
               confirmFetch(range, word.id);
             }
           }
           if (btn.dataset.wordAction === "refetch-collegiate") {
             const range = findRangeByWord(word.id);
             if (range) {
-              word.apiFetched = false;
               confirmFetch(range, word.id, "collegiate");
             }
           }
-        });
-        $("wordList").addEventListener("change", event => {
-          const input = event.target.closest("input[data-word-action]");
-          if (!input) return;
-          const word = findWord(input.dataset.id);
-          if (!word) return;
-          if (input.dataset.wordAction === "checked") {
-            word.checked = input.checked;
-            word.lastCheckedAt = input.checked ? new Date().toISOString() : "";
-          }
-          if (input.dataset.wordAction === "hard") word.hard = input.checked;
-          save();
         });
         $("exportJson").addEventListener("click", exportJson);
         $("exportCsv").addEventListener("click", exportCsv);
