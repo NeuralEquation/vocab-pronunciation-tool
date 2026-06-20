@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#101318">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="MW発音確認">
@@ -32,6 +32,7 @@
 
     * { box-sizing: border-box; }
     html { background: var(--bg); }
+    html, body { max-width: 100%; overflow-x: hidden; }
     body {
       margin: 0;
       background: radial-gradient(circle at top, #172333 0, var(--bg) 42rem);
@@ -86,8 +87,10 @@
     a { color: var(--accent); }
     .app {
       width: min(960px, 100%);
+      max-width: 100%;
       margin: 0 auto;
       padding: 16px;
+      overflow-x: hidden;
     }
     header {
       position: sticky;
@@ -198,6 +201,9 @@
       background: #141922;
       padding: 12px;
       margin-bottom: 10px;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .word-card { scroll-margin-top: 130px; }
     .word-card.current-word {
@@ -207,6 +213,9 @@
     .word-card .mini {
       font-size: .92rem;
       line-height: 1.5;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .study-actions {
       display: grid;
@@ -231,6 +240,8 @@
       font-size: .78rem;
       white-space: nowrap;
     }
+    .word-head { min-width: 0; }
+    .word-head > div { min-width: 0; }
     .range-card.next { border-color: #2f9ed8; }
     .range-card.today { border-color: #52d48d; }
     .range-head, .word-head {
@@ -844,7 +855,7 @@
               <span class="word-index">${index + 1}/${words.length}</span>
               <span class="badge ${word.apiFetched && word.cacheVersion === CACHE_SCHEMA_VERSION ? "ok" : "warn"}">${escapeHtml(wordStatusLabel(word))}</span>
             </div>
-            ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(truncateText(d, 120))}</div>`).join("")}</div>` : ""}
+            ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
             ${word.error ? `<div class="danger-note">${escapeHtml(word.error)}</div>` : ""}
             <div class="study-actions">
               <button class="primary" data-word-action="play" data-id="${word.id}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
