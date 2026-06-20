@@ -519,7 +519,7 @@
 
       const state = {
         ranges: [],
-        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, lastViewedWordByRange: {} },
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2 },
         selectedRangeId: null,
         lastImportWords: []
       };
@@ -627,7 +627,6 @@
             state.settings.saveKey = parsed.settings?.saveKey === true;
             state.settings.dictionaryType = parsed.settings?.dictionaryType || "learners";
             state.settings.definitionLimit = Number(parsed.settings?.definitionLimit) || 2;
-            state.settings.lastViewedWordByRange = parsed.settings?.lastViewedWordByRange || {};
           }
           if (state.settings.saveKey) {
             $("apiKey").value = localStorage.getItem(API_KEY_KEY) || "";
@@ -650,8 +649,7 @@
             demoMode: state.settings.demoMode,
             saveKey: state.settings.saveKey,
             dictionaryType: state.settings.dictionaryType,
-            definitionLimit: state.settings.definitionLimit,
-            lastViewedWordByRange: state.settings.lastViewedWordByRange || {}
+            definitionLimit: state.settings.definitionLimit
           },
           ranges: state.ranges
         };
@@ -831,7 +829,7 @@
         const s = statsForRange(range);
         $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み`;
         const words = [...range.words];
-        const rememberedWordId = state.settings.lastViewedWordByRange?.[range.id] || words[0]?.id || "";
+        const rememberedWordId = words[0]?.id || "";
         if (!words.length) {
           $("wordList").innerHTML = `<div class="empty">表示できる単語がありません。</div>`;
           return;
@@ -1224,9 +1222,7 @@
       function rememberWord(wordId) {
         const range = findRangeByWord(wordId);
         if (!range) return;
-        state.settings.lastViewedWordByRange = state.settings.lastViewedWordByRange || {};
-        state.settings.lastViewedWordByRange[range.id] = wordId;
-        save();
+        state.selectedRangeId = range.id;
         updateCurrentWord(wordId);
       }
 
