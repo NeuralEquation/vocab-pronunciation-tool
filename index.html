@@ -166,7 +166,7 @@
       font-size: .88rem;
       margin: 8px 0 0;
     }
-    .warning {
+    .caution {
       border-left: 4px solid var(--warn);
       background: #241d11;
       padding: 10px;
@@ -773,8 +773,8 @@
         const mb = bytes / 1024 / 1024;
         const root = $("storageWarning");
         if (mb >= 4) root.innerHTML = `<div class="danger-note">保存使用量が4MBを超えています。エクスポートとAPIキャッシュ削除をおすすめします。</div>`;
-        else if (mb >= 3) root.innerHTML = `<div class="warning">保存使用量が3MBを超えています。不要なAPIキャッシュを削除すると軽くなります。</div>`;
-        else if (mb >= 2) root.innerHTML = `<div class="warning">保存使用量が2MBを超えました。スマホでは容量に注意してください。</div>`;
+        else if (mb >= 3) root.innerHTML = `<div class="caution">保存使用量が3MBを超えています。不要なAPIキャッシュを削除すると軽くなります。</div>`;
+        else if (mb >= 2) root.innerHTML = `<div class="caution">保存使用量が2MBを超えました。スマホでは容量に注意してください。</div>`;
         else root.innerHTML = "";
       }
 
@@ -916,11 +916,6 @@
         $("modalRoot").innerHTML = "";
       }
 
-      function importPreview() {
-        const result = parseWords($("wordInput").value);
-        state.lastImportWords = result.words;
-      }
-
       function buildRangeFromForm(words) {
         const testDate = $("testDate").value;
         const weekday = $("weekday").value || (testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "");
@@ -984,7 +979,7 @@
         }
         const caution = !state.settings.demoMode
           ? `<div class="danger-note">実APIに問い合わせます。今回APIに問い合わせる単語数は <strong>${targets.length}語</strong> です。</div>`
-          : `<div class="warning">デモモードなので実API通信は行いません。今回のモック取得対象は <strong>${targets.length}語</strong> です。</div>`;
+          : `<div class="caution">デモモードなので実API通信は行いません。今回のモック取得対象は <strong>${targets.length}語</strong> です。</div>`;
         const highUsage = !state.settings.demoMode && usage.count + targets.length >= 900
           ? `<div class="danger-note">今日の使用量が900回以上になります。単語数を必ず確認してください。</div>` : "";
         showModal(`
@@ -1157,7 +1152,7 @@
         if (!range) return;
         showModal(`
           <h2>APIキャッシュ削除</h2>
-          <div class="warning">削除対象: 発音表記、音声ID、音声URL、品詞、定義、使用辞書、API取得状態、エラー、最終API取得日。</div>
+          <div class="caution">削除対象: 発音表記、音声ID、音声URL、品詞、定義、使用辞書、API取得状態、エラー、取得日時。</div>
           <p>残るデータ: 単語、範囲名、テスト日、ページ範囲。</p>
           <p>対象範囲: <strong>${escapeHtml(range.rangeName)}</strong> / ${range.words.length}語</p>
           <div class="actions">
@@ -1374,7 +1369,7 @@
           if (wantsSave && (apiKey || collegiateApiKey)) {
             showModal(`
               <h2>APIキー保存の確認</h2>
-              <div class="warning">このブラウザのlocalStorageにAPIキーを保存します。共有端末では保存しないでください。</div>
+              <div class="caution">このブラウザのlocalStorageにAPIキーを保存します。共有端末では保存しないでください。</div>
               <div class="actions"><button class="warn" data-modal-confirm>保存する</button><button class="soft" data-modal-cancel>キャンセル</button></div>
             `, apply);
           } else apply();
@@ -1393,7 +1388,6 @@
           save();
           toast("APIキーを削除しました。");
         }));
-        $("wordInput").addEventListener("input", importPreview);
         $("testDate").addEventListener("change", () => {
           const testDate = $("testDate").value;
           const weekday = testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "";
@@ -1405,7 +1399,6 @@
         $("clearImport").addEventListener("click", () => {
           ["rangeName", "testDate", "pages", "deleteAt", "wordInput"].forEach(id => $(id).value = "");
           $("weekday").value = "";
-          importPreview();
         });
         $("rangeFilter").addEventListener("change", renderRanges);
         $("rangeSort").addEventListener("change", renderRanges);
@@ -1459,7 +1452,6 @@
 
       load();
       bindEvents();
-      importPreview();
       render();
 
       if ("serviceWorker" in navigator) {
