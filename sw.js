@@ -1,4 +1,4 @@
-const CACHE_NAME = "mw-pronunciation-pwa-v9";
+const CACHE_NAME = "mw-pronunciation-pwa-v10";
 const APP_SHELL = [
   "./",
   "./index.html",
