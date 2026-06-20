@@ -237,6 +237,35 @@
       overflow-wrap: anywhere;
       word-break: break-word;
     }
+    .word-main-line {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .pron-line {
+      display: flex;
+      gap: 8px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: .9rem;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+    .pron-text, .pos-text, .word-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .failure-label {
+      color: #ffb5bd;
+      font-size: .68rem;
+      white-space: nowrap;
+      align-self: center;
+      opacity: .78;
+    }
     .study-actions {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -257,10 +286,33 @@
       gap: 8px;
       margin-top: 8px;
     }
+    .mw-small {
+      min-height: 38px;
+      padding: 8px 10px;
+      font-size: .86rem;
+    }
+    .jump-bar {
+      position: sticky;
+      top: 74px;
+      z-index: 15;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 8px;
+      padding: 8px 0;
+      margin-bottom: 8px;
+      background: rgba(23, 28, 36, .96);
+      backdrop-filter: blur(10px);
+    }
+    .jump-bar button {
+      min-height: 38px;
+      font-size: .86rem;
+    }
     .word-index {
       color: var(--muted);
       font-size: .78rem;
       white-space: nowrap;
+      flex: 0 0 auto;
+      opacity: .72;
     }
     .word-head { min-width: 0; }
     .word-head > div { min-width: 0; }
@@ -276,7 +328,6 @@
     .range-title, .word-title {
       font-weight: 800;
       font-size: 1.04rem;
-      overflow-wrap: anywhere;
     }
     .meta {
       color: var(--muted);
@@ -438,18 +489,8 @@
               <option value="all">すべて</option>
               <option value="今日の範囲">今日の範囲</option>
               <option value="次回の範囲">次回の範囲</option>
-              <option value="待機中">待機中</option>
-              <option value="単語未登録">単語未登録</option>
               <option value="終了">終了</option>
               <option value="削除予定">削除予定</option>
-              <option value="キャッシュ削除済み">キャッシュ削除済み</option>
-            </select>
-          </div>
-          <div>
-            <label for="rangeSort">並び替え</label>
-            <select id="rangeSort">
-              <option value="date">テスト日順</option>
-              <option value="status">状態順</option>
             </select>
           </div>
         </div>
@@ -523,6 +564,10 @@
             <div class="meta" id="openRangeMeta"></div>
           </div>
           <button class="soft" id="closeWords">閉じる</button>
+        </div>
+        <div class="jump-bar">
+          <button class="soft" id="jumpTop">一番上へ</button>
+          <button class="soft" id="jumpBottom">一番下へ</button>
         </div>
         <div id="wordList"></div>
       </section>
@@ -814,14 +859,10 @@
 
       function renderRanges() {
         const filter = $("rangeFilter").value;
-        const sort = $("rangeSort").value;
         const nextId = nextRangeId();
         let ranges = state.ranges.map(r => ({ ...r, status: statusForRange(r, nextId) }));
         if (filter !== "all") ranges = ranges.filter(r => r.status === filter);
-        ranges.sort((a, b) => {
-          if (sort === "status") return a.status.localeCompare(b.status, "ja");
-          return (a.testDate || "9999").localeCompare(b.testDate || "9999");
-        });
+        ranges.sort((a, b) => (a.testDate || "9999").localeCompare(b.testDate || "9999"));
         if (!ranges.length) {
           $("rangeList").innerHTML = `<div class="empty">範囲がありません。登録タブから範囲枠または単語リストを追加できます。</div>`;
           return;
@@ -846,12 +887,13 @@
                 <div class="mini"><strong>${s.audio}</strong>音声あり</div>
                 <div class="mini"><strong>${s.definitions}</strong>定義あり</div>
               </div>
-              <div class="meta">ページ: ${escapeHtml(range.pages || "-")} / 削除予定: ${escapeHtml(range.deleteAt || "-")}</div>
               <div class="actions" style="margin-top:10px">
                 <button class="primary" data-action="open" data-id="${range.id}">開く</button>
                 <button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>
-                <button class="warn" data-action="clear-cache" data-id="${range.id}">キャッシュ削除</button>
-                <button class="danger" data-action="delete-range" data-id="${range.id}">範囲削除</button>
+              </div>
+              <div class="danger-actions">
+                <button class="compact refetch" data-action="clear-cache" data-id="${range.id}">キャッシュ削除</button>
+                <button class="compact collegiate" data-action="delete-range" data-id="${range.id}">範囲削除</button>
               </div>
             </article>`;
         }).join("");
@@ -873,22 +915,26 @@
         $("wordList").innerHTML = words.map((word, index) => `
           <article class="word-card ${word.id === rememberedWordId ? "current-word" : ""}" data-word-id="${word.id}">
             <div class="word-head">
-              <div>
-                <div class="word-title">${escapeHtml(word.word)}</div>
-                <div class="meta">発音: ${escapeHtml(word.pronunciation || "未取得")} / ${escapeHtml(word.partOfSpeech || "品詞未取得")}</div>
+              <div style="min-width:0;flex:1 1 auto">
+                <div class="word-main-line">
+                  <span class="word-index">${index + 1}/${words.length}</span>
+                  <div class="word-title">${escapeHtml(word.word)}</div>
+                </div>
+                <div class="pron-line">
+                  <span class="pron-text">${escapeHtml(word.pronunciation || "未取得")}</span>
+                  <span class="pos-text">${escapeHtml(word.partOfSpeech || "品詞未取得")}</span>
+                </div>
               </div>
-              <span class="word-index">${index + 1}/${words.length}</span>
-              <span class="badge ${word.apiFetched && word.cacheVersion === CACHE_SCHEMA_VERSION ? "ok" : "warn"}">${escapeHtml(wordStatusLabel(word))}</span>
+              ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
             </div>
             ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
-            ${word.error ? `<div class="danger-note">${escapeHtml(word.error)}</div>` : ""}
             <div class="study-actions">
               <button class="primary" data-word-action="play" data-id="${word.id}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
               <button class="primary" data-word-action="next" data-id="${word.id}">次へ</button>
             </div>
             <div class="secondary-actions">
               <button class="soft" data-word-action="speak" data-id="${word.id}">読み上げ</button>
-              <button class="soft" data-word-action="mw" data-id="${word.id}">MWで開く</button>
+              <button class="soft mw-small" data-word-action="mw" data-id="${word.id}">MW</button>
             </div>
             <div class="danger-actions">
               <button class="compact refetch" data-word-action="refetch" data-id="${word.id}">再取得</button>
@@ -911,12 +957,11 @@
         return text.length > max ? `${text.slice(0, max - 1)}…` : text;
       }
 
-      function wordStatusLabel(word) {
-        if (!word.apiFetched) return "API未取得";
-        if (word.cacheVersion !== CACHE_SCHEMA_VERSION) return "要再取得";
-        const source = dictionaryLabel(word.dictionarySource || "");
-        const details = [word.hasAudio ? "音声あり" : "音声なし", word.hasDefinition ? "定義あり" : "定義なし"].join(" / ");
-        return source ? `${source} / ${details}` : details;
+      function wordFailureLabel(word) {
+        if (word.error) return "取得失敗";
+        if (word.apiFetched && word.cacheVersion !== CACHE_SCHEMA_VERSION) return "取得失敗";
+        if (word.apiFetched && !word.hasAudio && !word.hasDefinition) return "取得失敗";
+        return "";
       }
 
       function toast(message, isDanger = false) {
@@ -1433,7 +1478,6 @@
           $("weekday").value = "";
         });
         $("rangeFilter").addEventListener("change", renderRanges);
-        $("rangeSort").addEventListener("change", renderRanges);
         $("rangeList").addEventListener("click", (event) => {
           const btn = event.target.closest("button[data-action]");
           if (!btn) return;
@@ -1453,6 +1497,14 @@
           $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
         });
         $("closeWords").addEventListener("click", () => { state.selectedRangeId = null; $("wordPanel").classList.add("hidden"); });
+        $("jumpTop").addEventListener("click", () => {
+          $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        $("jumpBottom").addEventListener("click", () => {
+          const cards = $("wordList").querySelectorAll(".word-card");
+          const last = cards[cards.length - 1];
+          last?.scrollIntoView({ behavior: "smooth", block: "end" });
+        });
         $("wordList").addEventListener("click", event => {
           const btn = event.target.closest("button[data-word-action]");
           if (!btn) return;
