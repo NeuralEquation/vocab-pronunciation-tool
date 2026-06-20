@@ -275,7 +275,7 @@
     }
     .secondary-actions {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: 8px;
       margin: 8px 0;
       min-width: 0;
@@ -287,25 +287,27 @@
       margin-top: 8px;
     }
     .mw-small {
-      min-height: 38px;
-      padding: 8px 10px;
-      font-size: .86rem;
+      min-height: 34px;
+      padding: 6px 10px;
+      font-size: .78rem;
     }
-    .jump-bar {
-      position: sticky;
-      top: 74px;
+    .jump-fab {
+      position: fixed;
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
       z-index: 15;
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 8px;
-      padding: 8px 0;
-      margin-bottom: 8px;
-      background: rgba(23, 28, 36, .96);
-      backdrop-filter: blur(10px);
+      gap: 6px;
     }
-    .jump-bar button {
+    .jump-fab button {
+      width: 38px;
+      height: 38px;
       min-height: 38px;
-      font-size: .86rem;
+      padding: 0;
+      border-radius: 999px;
+      font-size: 1rem;
+      line-height: 1;
+      box-shadow: var(--shadow);
     }
     .word-index {
       color: var(--muted);
@@ -327,7 +329,7 @@
     }
     .range-title, .word-title {
       font-weight: 800;
-      font-size: 1.04rem;
+      font-size: 1.18rem;
     }
     .meta {
       color: var(--muted);
@@ -565,13 +567,13 @@
           </div>
           <button class="soft" id="closeWords">閉じる</button>
         </div>
-        <div class="jump-bar">
-          <button class="soft" id="jumpTop">一番上へ</button>
-          <button class="soft" id="jumpBottom">一番下へ</button>
-        </div>
         <div id="wordList"></div>
       </section>
     </main>
+    <div class="jump-fab" id="jumpFab">
+      <button class="soft" id="jumpTop" aria-label="ページ上部へ">↑</button>
+      <button class="soft" id="jumpBottom" aria-label="ページ下部へ">↓</button>
+    </div>
   </div>
 
   <div id="modalRoot" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
@@ -845,7 +847,7 @@
         $("rangeCount").textContent = state.ranges.length;
         renderStorageWarning(bytes);
         renderRanges();
-        if (state.selectedRangeId) renderWords();
+        if (state.selectedRangeId && currentTab() === "ranges") renderWords();
       }
 
       function renderStorageWarning(bytes) {
@@ -921,8 +923,8 @@
                   <div class="word-title">${escapeHtml(word.word)}</div>
                 </div>
                 <div class="pron-line">
-                  <span class="pron-text">${escapeHtml(word.pronunciation || "未取得")}</span>
-                  <span class="pos-text">${escapeHtml(word.partOfSpeech || "品詞未取得")}</span>
+                  <span class="pron-text">発音記号 : ${escapeHtml(word.pronunciation || "未取得")}</span>
+                  <span class="pos-text">品詞 : ${escapeHtml(word.partOfSpeech || "品詞未取得")}</span>
                 </div>
               </div>
               ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
@@ -934,9 +936,9 @@
             </div>
             <div class="secondary-actions">
               <button class="soft" data-word-action="speak" data-id="${word.id}">読み上げ</button>
-              <button class="soft mw-small" data-word-action="mw" data-id="${word.id}">MW</button>
             </div>
             <div class="danger-actions">
+              <button class="soft mw-small" data-word-action="mw" data-id="${word.id}">MWで開く</button>
               <button class="compact refetch" data-word-action="refetch" data-id="${word.id}">再取得</button>
               <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate</button>
             </div>
@@ -1419,6 +1421,15 @@
         document.querySelectorAll("[data-tab]").forEach(btn => btn.setAttribute("aria-selected", String(btn.dataset.tab === name)));
         document.querySelectorAll(".tab-page").forEach(page => page.classList.add("hidden"));
         $(`page-${name}`).classList.remove("hidden");
+        if (name === "ranges" && state.selectedRangeId) {
+          renderWords();
+        } else {
+          $("wordPanel").classList.add("hidden");
+        }
+      }
+
+      function currentTab() {
+        return document.querySelector("[data-tab][aria-selected='true']")?.dataset.tab || "ranges";
       }
 
       function bindEvents() {
