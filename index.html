@@ -587,7 +587,7 @@
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
-      const CACHE_SCHEMA_VERSION = 4;
+      const CACHE_SCHEMA_VERSION = 5;
       const TEST_WORD_LIMIT = 3;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -1106,11 +1106,13 @@
         const range = state.ranges.find(r => r.id === rangeId);
         if (!range) return;
         const targets = range.words.filter(w => wordIds.includes(w.id));
-        let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0;
+        let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0, apiCalls = 0;
         for (const word of targets) {
           try {
             const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
-            Object.assign(word, result, {
+            const { apiCalls: resultApiCalls = 1, ...storedResult } = result;
+            apiCalls += state.settings.demoMode ? 0 : resultApiCalls;
+            Object.assign(word, storedResult, {
               apiFetched: true,
               cacheVersion: CACHE_SCHEMA_VERSION,
               lastApiFetchedAt: new Date().toISOString(),
@@ -1121,14 +1123,15 @@
             if (word.hasDefinition) defYes++; else defNo++;
             if (word.dictionarySource === "collegiate") collegiateCount++; else learnersCount++;
           } catch (err) {
+            if (!state.settings.demoMode) apiCalls++;
             word.apiFetched = false;
             word.error = err.message || "取得に失敗しました";
             failed++;
           }
         }
-        if (!state.settings.demoMode) incrementUsage(success + failed);
+        if (!state.settings.demoMode) incrementUsage(apiCalls);
         save();
-        toast(`取得完了: 成功${success} / 失敗${failed} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
+        toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
       }
 
       async function fetchDemo(word, reference = "learners") {
@@ -1166,7 +1169,33 @@
       async function fetchReal(word, apiKey, reference = "learners") {
         const cleanedKey = cleanApiKey(apiKey);
         if (!cleanedKey) throw new Error("APIキー未入力です");
-        const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(cleanedKey)}`;
+        const data = await requestDictionaryApi(word, cleanedKey, reference);
+        let apiCalls = 1;
+        if (data.length && data.every(item => typeof item === "string")) {
+          const fallback = await fetchSuggestionEntry(data, word, cleanedKey, reference);
+          if (!fallback) {
+            return {
+              pronunciation: "",
+              audioId: "",
+              audioUrl: "",
+              mwUrl: dictionaryUrl(word),
+              dictionarySource: reference,
+              partOfSpeech: "",
+              definitions: [],
+              hasDefinition: false,
+              hasAudio: false,
+              apiCalls,
+              error: "単語候補のみ返りました"
+            };
+          }
+          apiCalls += fallback.apiCalls;
+          return buildResultFromData(fallback.data, word, reference, apiCalls);
+        }
+        return buildResultFromData(data, word, reference, apiCalls);
+      }
+
+      async function requestDictionaryApi(word, apiKey, reference) {
+        const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(apiKey)}`;
         const response = await fetch(endpoint);
         if (!response.ok) throw new Error(`APIエラー: HTTP ${response.status}`);
         const text = await response.text();
@@ -1179,20 +1208,27 @@
         if (!Array.isArray(data)) {
           throw new Error(data.message || data.error || "APIキーまたはレスポンス形式を確認してください");
         }
-        if (data.length && data.every(item => typeof item === "string")) {
-          return {
-            pronunciation: "",
-            audioId: "",
-            audioUrl: "",
-            mwUrl: dictionaryUrl(word),
-            dictionarySource: reference,
-            partOfSpeech: "",
-            definitions: [],
-            hasDefinition: false,
-            hasAudio: false,
-            error: "単語候補のみ返りました"
-          };
+        return data;
+      }
+
+      async function fetchSuggestionEntry(suggestions, word, apiKey, reference) {
+        const target = normalizeLookupText(word);
+        const candidates = suggestions
+          .map(suggestion => String(suggestion || "").trim())
+          .filter(Boolean)
+          .filter(suggestion => normalizeLookupText(suggestion) !== target)
+          .slice(0, 3);
+        let apiCalls = 0;
+        for (const candidate of candidates) {
+          apiCalls++;
+          const data = await requestDictionaryApi(candidate, apiKey, reference);
+          const match = findBestEntryMatch(data, word);
+          if (match) return { data, apiCalls };
         }
+        return null;
+      }
+
+      function buildResultFromData(data, word, reference, apiCalls) {
         const match = findBestEntryMatch(data, word);
         if (!match) {
           return {
@@ -1205,13 +1241,14 @@
             definitions: [],
             hasDefinition: false,
             hasAudio: false,
+            apiCalls,
             error: "一致する検索語が見つかりません"
           };
         }
-        const source = match.kind === "headword"
-          ? match.entry
-          : findDerivedFormData(match.entry, word);
-        if (!source) {
+        const derivedSource = match.kind === "headword" ? null : findDerivedFormData(match.entry, word);
+        const source = match.kind === "headword" ? match.entry : derivedSource || match.entry;
+        const allowEntryPronunciation = match.kind === "headword";
+        if (match.kind !== "headword" && !derivedSource && !extractDefinitions(match.entry).length) {
           return {
             pronunciation: "",
             audioId: "",
@@ -1222,10 +1259,11 @@
             definitions: [],
             hasDefinition: false,
             hasAudio: false,
+            apiCalls,
             error: "派生語の個別データがありません"
           };
         }
-        const prs = match.kind === "headword" ? collectPronunciations(source) : collectObjectPronunciations(source);
+        const prs = allowEntryPronunciation ? collectPronunciations(source) : collectObjectPronunciations(source);
         const pronunciation = reference === "learners"
           ? (prs.find(p => p.ipa)?.ipa || prs.find(p => p.mw)?.mw || "")
           : (prs.find(p => p.mw)?.mw || prs.find(p => p.ipa)?.ipa || "");
@@ -1242,6 +1280,7 @@
           definitions,
           hasDefinition: definitions.length > 0,
           hasAudio: Boolean(audioUrl),
+          apiCalls,
           error: audioUrl || definitions.length ? "" : "音声情報と定義がありません"
         };
       }
