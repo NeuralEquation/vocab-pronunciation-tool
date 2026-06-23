@@ -587,7 +587,7 @@
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
-      const CACHE_SCHEMA_VERSION = 2;
+      const CACHE_SCHEMA_VERSION = 5;
       const TEST_WORD_LIMIT = 3;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -689,9 +689,24 @@
 
       function getApiKey(reference = "learners") {
         if (reference === "collegiate") {
-          return state.settings.saveKey ? localStorage.getItem(COLLEGIATE_API_KEY_KEY) || "" : state.settings.collegiateApiKeySession || "";
+          return cleanApiKey(state.settings.saveKey ? localStorage.getItem(COLLEGIATE_API_KEY_KEY) || "" : state.settings.collegiateApiKeySession || "");
         }
-        return state.settings.saveKey ? localStorage.getItem(API_KEY_KEY) || "" : state.settings.apiKeySession || "";
+        return cleanApiKey(state.settings.saveKey ? localStorage.getItem(API_KEY_KEY) || "" : state.settings.apiKeySession || "");
+      }
+
+      function cleanApiKey(value) {
+        const text = String(value || "").trim();
+        if (!text) return "";
+        try {
+          const url = new URL(text);
+          const key = url.searchParams.get("key");
+          if (key) return key.trim();
+        } catch {
+          // Not a URL; continue with plain text cleanup.
+        }
+        const keyMatch = text.match(/[?&]key=([^&\s]+)/i) || text.match(/^key=([^&\s]+)/i);
+        if (keyMatch) return decodeURIComponent(keyMatch[1]).trim();
+        return text;
       }
 
       function dictionaryLabel(reference) {
@@ -1091,11 +1106,13 @@
         const range = state.ranges.find(r => r.id === rangeId);
         if (!range) return;
         const targets = range.words.filter(w => wordIds.includes(w.id));
-        let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0;
+        let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0, apiCalls = 0;
         for (const word of targets) {
           try {
             const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
-            Object.assign(word, result, {
+            const { apiCalls: resultApiCalls = 1, ...storedResult } = result;
+            apiCalls += state.settings.demoMode ? 0 : resultApiCalls;
+            Object.assign(word, storedResult, {
               apiFetched: true,
               cacheVersion: CACHE_SCHEMA_VERSION,
               lastApiFetchedAt: new Date().toISOString(),
@@ -1106,14 +1123,15 @@
             if (word.hasDefinition) defYes++; else defNo++;
             if (word.dictionarySource === "collegiate") collegiateCount++; else learnersCount++;
           } catch (err) {
+            if (!state.settings.demoMode) apiCalls++;
             word.apiFetched = false;
             word.error = err.message || "取得に失敗しました";
             failed++;
           }
         }
-        if (!state.settings.demoMode) incrementUsage(success + failed);
+        if (!state.settings.demoMode) incrementUsage(apiCalls);
         save();
-        toast(`取得完了: 成功${success} / 失敗${failed} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
+        toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
       }
 
       async function fetchDemo(word, reference = "learners") {
@@ -1149,14 +1167,70 @@
       }
 
       async function fetchReal(word, apiKey, reference = "learners") {
-        if (!apiKey) throw new Error("APIキー未入力です");
+        const cleanedKey = cleanApiKey(apiKey);
+        if (!cleanedKey) throw new Error("APIキー未入力です");
+        const data = await requestDictionaryApi(word, cleanedKey, reference);
+        let apiCalls = 1;
+        if (data.length && data.every(item => typeof item === "string")) {
+          const fallback = await fetchSuggestionEntry(data, word, cleanedKey, reference);
+          if (!fallback) {
+            return {
+              pronunciation: "",
+              audioId: "",
+              audioUrl: "",
+              mwUrl: dictionaryUrl(word),
+              dictionarySource: reference,
+              partOfSpeech: "",
+              definitions: [],
+              hasDefinition: false,
+              hasAudio: false,
+              apiCalls,
+              error: "単語候補のみ返りました"
+            };
+          }
+          apiCalls += fallback.apiCalls;
+          return buildResultFromData(fallback.data, word, reference, apiCalls);
+        }
+        return buildResultFromData(data, word, reference, apiCalls);
+      }
+
+      async function requestDictionaryApi(word, apiKey, reference) {
         const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(apiKey)}`;
         const response = await fetch(endpoint);
         if (!response.ok) throw new Error(`APIエラー: HTTP ${response.status}`);
-        const data = await response.json();
-        if (!Array.isArray(data)) throw new Error("レスポンス形式が想定外です");
-        const entry = data.find(item => item && typeof item === "object" && item.hwi);
-        if (!entry) {
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(text.slice(0, 80) || "APIレスポンスをJSONとして読めません");
+        }
+        if (!Array.isArray(data)) {
+          throw new Error(data.message || data.error || "APIキーまたはレスポンス形式を確認してください");
+        }
+        return data;
+      }
+
+      async function fetchSuggestionEntry(suggestions, word, apiKey, reference) {
+        const target = normalizeLookupText(word);
+        const candidates = suggestions
+          .map(suggestion => String(suggestion || "").trim())
+          .filter(Boolean)
+          .filter(suggestion => normalizeLookupText(suggestion) !== target)
+          .slice(0, 3);
+        let apiCalls = 0;
+        for (const candidate of candidates) {
+          apiCalls++;
+          const data = await requestDictionaryApi(candidate, apiKey, reference);
+          const match = findBestEntryMatch(data, word);
+          if (match) return { data, apiCalls };
+        }
+        return null;
+      }
+
+      function buildResultFromData(data, word, reference, apiCalls) {
+        const match = findBestEntryMatch(data, word);
+        if (!match) {
           return {
             pronunciation: "",
             audioId: "",
@@ -1167,28 +1241,99 @@
             definitions: [],
             hasDefinition: false,
             hasAudio: false,
-            error: "単語が見つかりません"
+            apiCalls,
+            error: "一致する検索語が見つかりません"
           };
         }
-        const prs = collectPronunciations(entry);
+        const derivedSource = match.kind === "headword" ? null : findDerivedFormData(match.entry, word);
+        const source = match.kind === "headword" ? match.entry : derivedSource || match.entry;
+        const allowEntryPronunciation = match.kind === "headword";
+        if (match.kind !== "headword" && !derivedSource && !extractDefinitions(match.entry).length) {
+          return {
+            pronunciation: "",
+            audioId: "",
+            audioUrl: "",
+            mwUrl: dictionaryUrl(word),
+            dictionarySource: reference,
+            partOfSpeech: "",
+            definitions: [],
+            hasDefinition: false,
+            hasAudio: false,
+            apiCalls,
+            error: "派生語の個別データがありません"
+          };
+        }
+        const prs = allowEntryPronunciation ? collectPronunciations(source) : collectObjectPronunciations(source);
         const pronunciation = reference === "learners"
           ? (prs.find(p => p.ipa)?.ipa || prs.find(p => p.mw)?.mw || "")
           : (prs.find(p => p.mw)?.mw || prs.find(p => p.ipa)?.ipa || "");
         const audioId = prs.find(p => p.sound?.audio)?.sound.audio || "";
         const audioUrl = audioUrlFromId(audioId);
-        const definitions = extractDefinitions(entry).slice(0, state.settings.definitionLimit);
+        const definitions = extractDefinitions(source).slice(0, state.settings.definitionLimit);
         return {
           pronunciation,
           audioId,
           audioUrl,
           mwUrl: dictionaryUrl(word),
           dictionarySource: reference,
-          partOfSpeech: entry.fl || "",
+          partOfSpeech: source.fl || "",
           definitions,
           hasDefinition: definitions.length > 0,
           hasAudio: Boolean(audioUrl),
+          apiCalls,
           error: audioUrl || definitions.length ? "" : "音声情報と定義がありません"
         };
+      }
+
+      function findBestEntryMatch(data, word) {
+        const target = normalizeLookupText(word);
+        const entries = data.filter(item => item && typeof item === "object" && item.hwi);
+        const headword = entries.find(item => entryLookupTerms(item).some(term => normalizeLookupText(term) === target));
+        if (headword) return { entry: headword, kind: "headword" };
+        const stem = entries.find(item => {
+          const stems = Array.isArray(item.meta?.stems) ? item.meta.stems : [];
+          return stems.some(term => normalizeLookupText(term) === target);
+        });
+        return stem ? { entry: stem, kind: "stem" } : null;
+      }
+
+      function findDerivedFormData(entry, word) {
+        const target = normalizeLookupText(word);
+        const formKeys = ["if", "hw", "va", "ure", "drp"];
+        const queue = [entry];
+        const seen = new Set();
+        const candidates = [];
+        while (queue.length) {
+          const item = queue.shift();
+          if (!item || typeof item !== "object") continue;
+          if (seen.has(item)) continue;
+          seen.add(item);
+          if (item !== entry && formKeys.some(key => normalizeLookupText(item[key]) === target)) candidates.push(item);
+          Object.values(item).forEach(value => {
+            if (Array.isArray(value)) value.forEach(child => queue.push(child));
+            else if (value && typeof value === "object") queue.push(value);
+          });
+        }
+        return candidates.find(item => collectObjectPronunciations(item).some(pr => pr.sound?.audio))
+          || candidates.find(item => collectObjectPronunciations(item).length)
+          || candidates.find(item => extractDefinitions(item).length)
+          || candidates[0]
+          || null;
+      }
+
+      function entryLookupTerms(entry) {
+        const terms = [];
+        if (entry.meta?.id) terms.push(String(entry.meta.id).split(":")[0]);
+        if (entry.hwi?.hw) terms.push(entry.hwi.hw);
+        return terms;
+      }
+
+      function normalizeLookupText(value) {
+        return String(value || "")
+          .toLowerCase()
+          .split(":")[0]
+          .replace(/\*|\s+/g, "")
+          .replace(/[^a-z0-9]/g, "");
       }
 
       function collectPronunciations(entry) {
@@ -1207,12 +1352,35 @@
         return lists.flat().filter(Boolean);
       }
 
+      function collectObjectPronunciations(item) {
+        return Array.isArray(item?.prs) ? item.prs.filter(Boolean) : [];
+      }
+
       function extractDefinitions(entry) {
         const defs = [];
         if (Array.isArray(entry.shortdef)) defs.push(...entry.shortdef);
         const appShortdef = entry.meta?.["app-shortdef"]?.def;
         if (Array.isArray(appShortdef)) defs.push(...appShortdef);
+        defs.push(...definitionTexts(entry.def));
         return [...new Set(defs.map(cleanDefinition).filter(Boolean))];
+      }
+
+      function definitionTexts(value) {
+        const defs = [];
+        const walk = (item) => {
+          if (!item) return;
+          if (Array.isArray(item)) {
+            if (item[0] === "text" && typeof item[1] === "string") {
+              defs.push(item[1]);
+              return;
+            }
+            item.forEach(walk);
+            return;
+          }
+          if (typeof item === "object") Object.values(item).forEach(walk);
+        };
+        walk(value);
+        return defs;
       }
 
       function cleanDefinition(text) {
@@ -1436,8 +1604,8 @@
         document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
         $("saveApiSettings").addEventListener("click", () => {
           const wantsSave = $("saveKey").checked;
-          const apiKey = $("apiKey").value.trim();
-          const collegiateApiKey = $("collegiateApiKey").value.trim();
+          const apiKey = cleanApiKey($("apiKey").value);
+          const collegiateApiKey = cleanApiKey($("collegiateApiKey").value);
           const apply = () => {
             state.settings.demoMode = $("demoMode").checked;
             state.settings.saveKey = wantsSave;
@@ -1445,6 +1613,8 @@
             state.settings.definitionLimit = Number($("definitionLimit").value) || 2;
             state.settings.apiKeySession = wantsSave ? "" : apiKey;
             state.settings.collegiateApiKeySession = wantsSave ? "" : collegiateApiKey;
+            $("apiKey").value = apiKey;
+            $("collegiateApiKey").value = collegiateApiKey;
             if (wantsSave && apiKey) localStorage.setItem(API_KEY_KEY, apiKey);
             if (wantsSave && collegiateApiKey) localStorage.setItem(COLLEGIATE_API_KEY_KEY, collegiateApiKey);
             if (!wantsSave) {
