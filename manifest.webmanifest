@@ -5,15 +5,15 @@
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#101318",
-  "theme_color": "#101318",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
   "orientation": "portrait",
   "lang": "ja",
   "icons": [
     {
-      "src": "icons/icon.svg",
+      "src": "icon.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

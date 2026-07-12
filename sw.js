@@ -1,9 +1,13 @@
-const CACHE_NAME = "mw-pronunciation-pwa-v10";
+const CACHE_NAME = "mw-pronunciation-pwa-v25";
+const CACHE_PREFIX = "mw-pronunciation-pwa-";
 const APP_SHELL = [
   "./",
   "./index.html",
+  "./styles.css?v=23",
+  "./js/app.js?v=23",
+  "./js/test.js?v=23",
   "./manifest.webmanifest",
-  "./icons/icon.svg"
+  "./icon.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -16,7 +20,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)))
     )
   );
   self.clients.claim();
