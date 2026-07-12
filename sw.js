@@ -1,4 +1,4 @@
-const CACHE_NAME = "mw-pronunciation-pwa-v25";
+const CACHE_NAME = "mw-pronunciation-pwa-v26";
 const CACHE_PREFIX = "mw-pronunciation-pwa-";
 const APP_SHELL = [
   "./",
@@ -52,3 +52,4 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
