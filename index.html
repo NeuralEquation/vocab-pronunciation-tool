@@ -587,7 +587,7 @@
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
-      const CACHE_SCHEMA_VERSION = 5;
+      const CACHE_SCHEMA_VERSION = 6;
       const TEST_WORD_LIMIT = 3;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -976,7 +976,7 @@
 
       function wordFailureLabel(word) {
         if (word.error) return "取得失敗";
-        if (word.apiFetched && word.cacheVersion !== CACHE_SCHEMA_VERSION) return "取得失敗";
+        if (word.apiFetched && word.cacheVersion !== CACHE_SCHEMA_VERSION) return "再取得が必要";
         if (word.apiFetched && !word.hasAudio && !word.hasDefinition) return "取得失敗";
         return "";
       }
@@ -1263,7 +1263,12 @@
             error: "派生語の個別データがありません"
           };
         }
-        const prs = allowEntryPronunciation ? collectPronunciations(source) : collectObjectPronunciations(source);
+        // Do not use another spelling's pronunciation just because it appears
+        // in the same API entry. This is especially important for derived
+        // forms such as "previously", which can otherwise inherit "previous".
+        const prs = allowEntryPronunciation
+          ? collectPronunciationsForExactWord(source, word)
+          : collectObjectPronunciations(source);
         const pronunciation = reference === "learners"
           ? (prs.find(p => p.ipa)?.ipa || prs.find(p => p.mw)?.mw || "")
           : (prs.find(p => p.mw)?.mw || prs.find(p => p.ipa)?.ipa || "");
@@ -1347,6 +1352,31 @@
         if (Array.isArray(entry.vrs)) {
           entry.vrs.forEach(vr => {
             if (Array.isArray(vr.prs)) lists.push(vr.prs);
+          });
+        }
+        return lists.flat().filter(Boolean);
+      }
+
+      function collectPronunciationsForExactWord(entry, word) {
+        const target = normalizeLookupText(word);
+        const lists = [];
+        const matches = value => normalizeLookupText(value) === target;
+
+        // meta.id alone is not enough: some API entries group derived forms
+        // with a different headword.
+        if (matches(entry.hwi?.hw) && Array.isArray(entry.hwi?.prs)) {
+          lists.push(entry.hwi.prs);
+        }
+        if (Array.isArray(entry.ahws)) {
+          entry.ahws.forEach(ahw => {
+            if (matches(ahw?.hw) && Array.isArray(ahw.prs)) lists.push(ahw.prs);
+          });
+        }
+        if (Array.isArray(entry.vrs)) {
+          entry.vrs.forEach(variant => {
+            if ((matches(variant?.va) || matches(variant?.vl) || matches(variant?.hw)) && Array.isArray(variant.prs)) {
+              lists.push(variant.prs);
+            }
           });
         }
         return lists.flat().filter(Boolean);
