@@ -1,0 +1,14 @@
+# Local-only secrets and scratch files
+.env
+.env.*
+*.local
+local-*.json
+api-key*.txt
+*apikey*.txt
+*api-key*.json
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
