@@ -1,3 +1,7 @@
+Exit code: 0
+Wall time: 1 seconds
+Total output lines: 1668
+Output:
 var { createTestSession, renderTestQuestion, answerTestQuestion, finishTest, abortTest, runTestFeatureSelfCheck } = window.MWTest;
 window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 
@@ -315,4 +319,523 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
             word.cacheVersion = Number(word.cacheVersion) || 0;
             word.mwUrl = word.mwUrl || dictionaryUrl(word.normalized || word.word || "");
             syncLegacyPronunciationFields(word, word.dictionarySource || state.settings.dictionaryType);
-            ["checked", "hard", "play" + "Count", "last" + "CheckedAt"].forEach(key => de×½yæÚ$z{-®éÜj×Š™â"Â.Zé®{ê“"Â.Zé®{ê“""Â.Zé®{ê“2"Â.™û>Z;8.8(¢"Â.Zé®{ê8.8(¢"Â.ˆ»(i.izRY¹îzÙB"Â.ˆ»(i.izRjÚ>Šz2"Â.ˆ»(i.izRKˆŞjÚ>Šz2"Â.iz^(i.ˆ»Y¹îzÙB"Â.iz^(i.ˆ»jÚ>Šz2"Â.iz^(i.ˆ»KˆŞjÚ>Šz2%ÕÓ°¢7FFRç&ævW2æf÷$V6‚‡"Óâ"çv÷&G2æf÷$V6‚‡rÓâ&÷w2çW6‚…°¢"ç&ævTæÖRÀ¢"çFW7DFFRÀ¢rçv÷&BÀ¢‡ræÖVæ–æw4¦ÇÂµÒ’æ¦ö–â‚.ûÈò"’À¢7GVG•7FGW4Æ&VÂ‡rç7GVG•7FGW2’À¢&öçVæ6–F–öåf&–çG57VÖÖ'’‡r’À¢‡rç&öçVæ6–F–öåf&–çG2ÇÂµÒ’æf–ÇFW"‡f&–çBÓâf&–çBæVF–õW&Â’æÆVæwF‚À¢F–7F–öæ'”Æ&VÂ‡ræF–7F–öæ'•6÷W&6RÇÂ""’À¢rç&öçVæ6–F–öâÀ¢rç'Döe7VV6‚ÇÂ""À¢ræFVf–æ—F–öç3òå³ÒÇÂ""À¢ræFVf–æ—F–öç3òå³ÒÇÂ""À¢ræFVf–æ—F–öç3òå³%ÒÇÂ""À¢ræ†4VF–òò#"¢#"À¢ræ†4FVf–æ—F–öâò#"¢#"À¢rçFW7E7FG3òæVåFô¦òæGFV×G2ÇÂÀ¢rçFW7E7FG3òæVåFô¦òæ6÷'&V7BÇÂÀ¢rçFW7E7FG3òæVåFô¦òæ–æ6÷'&V7BÇÂÀ¢rçFW7E7FG3òæ¦FôVãòæGFV×G2ÇÂÀ¢rçFW7E7FG3òæ¦FôVãòæ6÷'&V7BÇÂÀ¢rçFW7E7FG3òæ¦FôVãòæ–æ6÷'&V7BÇÂ ¢Ò’’“°¢6öç7B77bÒ&÷w2æÖ‡&÷rÓâ&÷ræÖ†6VÆÂÓâ"Gµ7G&–ær†6VÆÂóò""’ç&WÆ6R‚ò"örÂr""r—Ò&’æ¦ö–â‚"Â"’’æ¦ö–â‚%Æâ"“°¢F÷væÆöB†×r×&öçVæ6–F–öâÒG·FöF”¶W’‚—Òæ77fÂ77bÂ'FW‡Bö77b"“°¢Ğ ¢gVæ7F–öâ7GVG•7FGW4Æ&VÂ‡7FGW2’°¢–b‡7FGW2ÓÓÒ&†&B"’&WGW&â.ˆºnh˜²#°¢–b‡7FGW2ÓÓÒ&¶æ÷vâ"’&WGW&â.Ši®88ò#°¢&WGW&â.iÊ®XŠNZé¢#°¢Ğ ¢gVæ7F–öâ&öçVæ6–F–öåf&–çG57VÖÖ'’‡v÷&B’°¢&WGW&â‡v÷&Bç&öçVæ6–F–öåf&–çG2ÇÂµÒ’æÖ‡f&–çBÓâ°¢6öç7BÆ&VÂÒf&–çBç'Döe7VV6‚ÇÂf&–çBæÆ&VÂÇÂ.y›®™û2#°¢&WGW&âG¶Æ&VÇÓ¢G·f&–çBç&öçVæ6–F–öâÇÂ.ŠŠ‰8®8r'Ö°¢Ò’æ¦ö–â‚"Â"“°¢Ğ ¢gVæ7F–öâF÷væÆöB†f–ÆVæÖRÂFW‡BÂG—R’°¢6öç7B&Æö"ÒæWr&Æö"…·FW‡EÒÂ²G—RÒ“°¢6öç7BW&ÂÒU$Âæ7&VFTö&¦V7EU$Â†&Æö"“°¢6öç7BÒFö7VÖVçBæ7&VFTVÆVÖVçB‚&"“°¢æ‡&VbÒW&Ã°¢æF÷væÆöBÒf–ÆVæÖS°¢æ6Æ–6²‚“°¢U$Âç&Wfö¶Tö&¦V7EU$Â‡W&Â“°¢Ğ ¢gVæ7F–öâ–×÷'D§6öâ‡&WÆ6R’°¢G'’°¢6öç7B'6VBÒ¥4ôâç'6R‚B‚&–×÷'D§6öâ"’çfÇVR“°¢6öç7B–æ6öÖ–ærÒ'&’æ—4'&’‡'6VBç&ævW2’ò'6VBç&ævW2¢µÓ°¢–b‚–æ6öÖ–æræÆVæwF‚’°¢Fö7B‚.8*N8;>89Ş8;Î888~8Ş8(¾zøNY».8ÎŠh¾8N8¾8(®8î8¾8)>8""ÂG'VR“°¢&WGW&ã°¢Ğ¢6öç7B'VâÒ‚’Óâ°¢7FFRç&ævW2Ò&WÆ6Rò–æ6öÖ–ær¢7FFRç&ævW2æ6öæ6B†–æ6öÖ–ær“°¢æ÷&ÖÆ—¦TÆöFVDFF‚“°¢6fR‚“°¢Fö7B†G¶–æ6öÖ–æræÆVæwF‡ŞK»n8îzøNY».8)"G·&WÆ6Rò.{Úî8Şhù¾8‚"¢.‹ûŞXª'Ş8*N8;>89Ş8;Î888~8î8~8ş8$8*Ş8;Î8şŠªŞ8ş‹ëÎ8ş8î8¾8)>8&“°¢Ó°¢–b‡&WÆ6R’°¢6†÷tÖöFÂ† ¢Æƒ#î{Úî8Şhù¾88*N8;>89Ş8;Î88ƒÂöƒ#à¢ÆF—b6Æ73Ò&FævW"Öæ÷FR#îxûîYÊ8î88~8;Î8+ş8).888n{Úî8Şhù¾88î88#ÂöF—cà¢ÆF—b6Æ73Ò&7F–öç2#ãÆ'WGFöâ6Æ73Ò'v&â"FFÖÖöFÂÖ6öæf—&Óî{Úî8Şhù¾88(³Âö'WGFöããÆ'WGFöâ6Æ73Ò'6ögB"FFÖÖöFÂÖ6æ6VÃî8*Ş8:>8;>8+¾8:³Âö'WGFöããÂöF—cà¢Â'Vâ“°¢ÒVÇ6R°¢'Vâ‚“°¢Ğ¢Ò6F6‚°¢Fö7B‚$¥4ôî8îŠªŞ8ş‹ëÎ8ş8¾ZKiY~8~8î8~8ş8""ÂG'VR“°¢Ğ¢Ğ ¢gVæ7F–öâv—TÆÂ‚’°¢6†÷tÖöFÂ† ¢Æƒ#îXZ88~8;Î8+şX˜®™šCÂöƒ#à¢ÆF—b6Æ73Ò&FævW"Öæ÷FR#îzøNY».8XÙŠ©î8˜.hÙ~88*Ş8:>88>8+~8:^8).888nX˜®™šN8~8î88$8*Ş8;Î8şXŠ^89Î8+ş8;>8~X˜®™šN8~8Ş8î88#ÂöF—cà¢ÆF—b6Æ73Ò&7F–öç2#ãÆ'WGFöâ6Æ73Ò&FævW""FFÖÖöFÂÖ6öæf—&ÓîXZ88~8;Î8+şX˜®™šCÂö'WGFöããÆ'WGFöâ6Æ73Ò'6ögB"FFÖÖöFÂÖ6æ6VÃî8*Ş8:>8;>8+¾8:³Âö'WGFöããÂöF—cà¢Â‚’Óâ°¢7F÷6öçF–çV÷W5Æ–&6²‚“°¢7FFRç&ævW2ÒµÓ°¢7FFRç6VÆV7FVE&ævT–BÒçVÆÃ°¢6fR‚“°¢B‚'v÷&EæVÂ"’æ6Æ74Æ—7BæFB‚&†–FFVâ"“°¢Fö7B‚.XZ88~8;Î8+ş8).X˜®™šN8~8î8~8ş8""“°¢Ò“°¢Ğ ¢gVæ7F–öâ7v—F6…F"†æÖR’°¢7F÷6öçF–çV÷W5Æ–&6²‚“°¢Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚%¶FF×F%Ò"’æf÷$V6‚†'FâÓâ'Fâç6WDGG&–'WFR‚&&–×6VÆV7FVB"Â7G&–ær†'FâæFF6WBçF"ÓÓÒæÖR’’“°¢Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚"çF"×vR"’æf÷$V6‚‡vRÓâvRæ6Æ74Æ—7BæFB‚&†–FFVâ"’“°¢B†vRÒG¶æÖWÖ’æ6Æ74Æ—7Bç&VÖ÷fR‚&†–FFVâ"“°¢–b†æÖRÓÓÒ'&ævW2"bb7FFRç6VÆV7FVE&ævT–B’°¢&VæFW%v÷&G2‚“°¢ÒVÇ6R°¢B‚'v÷&EæVÂ"’æ6Æ74Æ—7BæFB‚&†–FFVâ"“°¢Ğ¢Ğ ¢gVæ7F–öâ7W'&VçEF"‚’°¢&WGW&âFö7VÖVçBçVW'•6VÆV7F÷"‚%¶FF×F%Õ¶&–×6VÆV7FVCÒwG'VRuÒ"“òæFF6WBçF"ÇÂ'&ævW2#°¢Ğ ¢gVæ7F–öâ&–æDWfVçG2‚’°¢Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚%¶FF×F%Ò"’æf÷$V6‚†'FâÓâ'FâæFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ7v—F6…F"†'FâæFF6WBçF"’’“°¢B‚'6fT•6WGF–æw2"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢6öç7BvçG56fRÒB‚'6fT¶W’"’æ6†V6¶VC°¢6öç7B”¶W’Ò6ÆVä”¶W’‚B‚&”¶W’"’çfÇVR“°¢6öç7B6öÆÆVv–FT”¶W’Ò6ÆVä”¶W’‚B‚&6öÆÆVv–FT”¶W’"’çfÇVR“°¢6öç7BÇ’Ò‚’Óâ°¢7FFRç6WGF–æw2æFVÖôÖöFRÒB‚&FVÖôÖöFR"’æ6†V6¶VC°¢7FFRç6WGF–æw2ç6fT¶W’ÒvçG56fS°¢7FFRç6WGF–æw2æF–7F–öæ'•G—RÒB‚&F–7F–öæ'•G—R"’çfÇVS°¢7FFRç6WGF–æw2æFVf–æ—F–öäÆ–Ö—BÒçVÖ&W"‚B‚&FVf–æ—F–öäÆ–Ö—B"’çfÇVR’ÇÂ#°¢7FFRç6WGF–æw2æ”¶W•6W76–öâÒvçG56fRò""¢”¶W“°¢7FFRç6WGF–æw2æ6öÆÆVv–FT”¶W•6W76–öâÒvçG56fRò""¢6öÆÆVv–FT”¶W“°¢B‚&”¶W’"’çfÇVRÒ”¶W“°¢B‚&6öÆÆVv–FT”¶W’"’çfÇVRÒ6öÆÆVv–FT”¶W“°¢–b‡vçG56fRbb”¶W’’Æö6Å7F÷&vRç6WD—FVÒ„•ô´U•ô´U’Â”¶W’“°¢–b‡vçG56fRbb6öÆÆVv–FT”¶W’’Æö6Å7F÷&vRç6WD—FVÒ„4ôÄÄTt”DUô•ô´U•ô´U’Â6öÆÆVv–FT”¶W’“°¢–b‚vçG56fR’°¢Æö6Å7F÷&vRç&VÖ÷fT—FVÒ„•ô´U•ô´U’“°¢Æö6Å7F÷&vRç&VÖ÷fT—FVÒ„4ôÄÄTt”DUô•ô´U•ô´U’“°¢Ğ¢6fR‚“°¢Fö7B‚$ŠŠŞZé®8).KùŞZÙ8~8î8~8ş8.KùŞZÙ888~8ô˜	®Kú8~8î8¾8)>8""“°¢Ó°¢–b‡vçG56fRbb†”¶W’ÇÂ6öÆÆVv–FT”¶W’’’°¢6†÷tÖöFÂ† ¢Æƒ#ä8*Ş8;ÎKùŞZÙ8îz+®Š¨ÓÂöƒ#à¢ÆF—b6Æ73Ò&6WF–öâ#î8>8î89n8:8*n8+n8æÆö6Å7F÷&v^8´8*Ş8;Î8).KùŞZÙ8~8î88.X[iÈzºşiÊ¾8~8şKùŞZÙ8~8®8N8~8ş88^8N8#ÂöF—cà¢ÆF—b6Æ73Ò&7F–öç2#ãÆ'WGFöâ6Æ73Ò'v&â"FFÖÖöFÂÖ6öæf—&ÓîKùŞZÙ88(³Âö'WGFöããÆ'WGFöâ6Æ73Ò'6ögB"FFÖÖöFÂÖ6æ6VÃî8*Ş8:>8;>8+¾8:³Âö'WGFöããÂöF—cà¢ÂÇ’“°¢ÒVÇ6RÇ’‚“°¢Ò“°¢B‚&6ÆV$”¶W’"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ6†÷tÖöFÂ† ¢Æƒ#ä8*Ş8;ÎX˜®™šCÂöƒ#à¢ÇîKùŞZÙkˆ8ô8*Ş8;Î8Kˆi˜.XZ^X©¾8).X˜®™šN8~8î88#Â÷à¢ÆF—b6Æ73Ò&7F–öç2#ãÆ'WGFöâ6Æ73Ò&FævW""FFÖÖöFÂÖ6öæf—&ÓîX˜®™šN88(³Âö'WGFöããÆ'WGFöâ6Æ73Ò'6ögB"FFÖÖöFÂÖ6æ6VÃî8*Ş8:>8;>8+¾8:³Âö'WGFöããÂöF—cà¢Â‚’Óâ°¢B‚&”¶W’"’çfÇVRÒ"#°¢B‚&6öÆÆVv–FT”¶W’"’çfÇVRÒ"#°¢7FFRç6WGF–æw2æ”¶W•6W76–öâÒ"#°¢7FFRç6WGF–æw2æ6öÆÆVv–FT”¶W•6W76–öâÒ"#°¢Æö6Å7F÷&vRç&VÖ÷fT—FVÒ„•ô´U•ô´U’“°¢Æö6Å7F÷&vRç&VÖ÷fT—FVÒ„4ôÄÄTt”DUô•ô´U•ô´U’“°¢6fR‚“°¢Fö7B‚$8*Ş8;Î8).X˜®™šN8~8î8~8ş8""“°¢Ò’“°¢B‚'FW7DFFR"’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢6öç7BFW7DFFRÒB‚'FW7DFFR"’çfÇVS°¢6öç7BvVV¶F’ÒFW7DFFRòvVV¶F—5¶æWrFFR†G·FW7DFFWÕC#££’ævWDF’‚•Ò¢"#°¢–b‚B‚'vVV¶F’"’çfÇVR’B‚'vVV¶F’"’çfÇVRÒvVV¶F“°¢B‚&FVÆWFTB"’çfÇVRÒFVÆWFTDf÷"‡FW7DFFRÂB‚'vVV¶F’"’çfÇVRÇÂvVV¶F’“°¢Ò“°¢B‚'vVV¶F’"’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ²B‚&FVÆWFTB"’çfÇVRÒFVÆWFTDf÷"‚B‚'FW7DFFR"’çfÇVRÂB‚'vVV¶F’"’çfÇVR“²Ò“°¢B‚&–×÷'E&ævR"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â&Vv—7FW%&ævR“°¢B‚&6ÆV$–×÷'B"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢²'&ævTæÖR"Â'FW7DFFR"Â'vW2"Â&FVÆWFTB"Â'v÷&D–çWB%Òæf÷$V6‚†–BÓâB†–B’çfÇVRÒ""“°¢B‚'vVV¶F’"’çfÇVRÒ"#°¢Ò“°¢B‚'&ævTf–ÇFW""’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â&VæFW%&ævW2“°¢B‚'&ævTÆ—7B"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â†WfVçB’Óâ°¢6öç7B'FâÒWfVçBçF&vWBæ6Æ÷6W7B‚&'WGFöå¶FFÖ7F–öåÒ"“°¢–b‚'Fâ’&WGW&ã°¢6öç7B&ævRÒ7FFRç&ævW2æf–æB‡"Óâ"æ–BÓÓÒ'FâæFF6WBæ–B“°¢–b‚&ævR’&WGW&ã°¢–b†'FâæFF6WBæ7F–öâÓÓÒ&÷Vâ"’²7F÷6öçF–çV÷W5Æ–&6²‚“²7FFRç6VÆV7FVE&ævT–BÒ&ævRæ–C²7FFRçVæF–æuv÷&E67&öÆÂÒG'VS²&VæFW%v÷&G2‚“²B‚'v÷&EæVÂ"’ç67&öÆÄ–çFõf–Wr‡²&V†f–÷#¢'6Öö÷F‚"Â&Æö6³¢'7F'B"Ò“²Ğ¢–b†'FâæFF6WBæ7F–öâÓÓÒ&fWF6‚"’6öæf—&ÔfWF6‚‡&ævR“°¢–b†'FâæFF6WBæ7F–öâÓÓÒ&6ÆV"Ö66†R"’6ÆV$66†R‡&ævRæ–B“°¢–b†'FâæFF6WBæ7F–öâÓÓÒ&FVÆWFR×&ævR"’FVÆWFU&ævR‡&ævRæ–B“°¢Ò“°¢B‚&÷VäæW‡B"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢7F÷6öçF–çV÷W5Æ–&6²‚“°¢6öç7B–BÒæW‡E&ævT–B‚“°¢–b‚–B’&WGW&âFö7B‚.jÊY¹î8îzøNY».8Î8.8(®8î8¾8)>8""“°¢7FFRç6VÆV7FVE&ævT–BÒ–C°¢7FFRçVæF–æuv÷&E67&öÆÂÒG'VS°¢&VæFW%v÷&G2‚“°¢B‚'v÷&EæVÂ"’ç67&öÆÄ–çFõf–Wr‡²&V†f–÷#¢'6Öö÷F‚"Â&Æö6³¢'7F'B"Ò“°¢Ò“°¢B‚&6Æ÷6Uv÷&G2"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ²7F÷6öçF–çV÷W5Æ–&6²‚“²7FFRç6VÆV7FVE&ævT–BÒçVÆÃ²B‚'v÷&EæVÂ"’æ6Æ74Æ—7BæFB‚&†–FFVâ"“²Ò“°¢B‚'v÷&Df–ÇFW""’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢7F÷6öçF–çV÷W5Æ–&6²‚“°¢7FFRçFV×÷&'•v÷&D–G2ÒçVÆÃ°¢7FFRç6fVDf–ÇFW$&Vf÷&UFV×÷&'’ÒçVÆÃ°¢7FFRç6WGF–æw2ç7GVG”f–ÇFW"ÒB‚'v÷&Df–ÇFW""’çfÇVS°¢6fR‚“°¢Ò“°¢B‚'Æ–&6´–çFW'fÂ"’æFDWfVçDÆ—7FVæW"‚&6†ævR"Â‚’Óâ°¢7FFRç6WGF–æw2çÆ–&6´–çFW'fÂÒçVÖ&W"‚B‚'Æ–&6´–çFW'fÂ"’çfÇVR’ÇÂ#°¢6fR†fÇ6R“°¢Ò“°¢B‚&6öçF–çV÷W57F'B"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â7F'D6öçF–çV÷W5Æ–&6²“°¢B‚&6öçF–çV÷W57F÷"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â7F÷6öçF–çV÷W5Æ–&6²“°¢B‚&§V×F÷"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢B‚'v÷&EæVÂ"’ç67&öÆÄ–çFõf–Wr‡²&V†f–÷#¢'6Öö÷F‚"Â&Æö6³¢'7F'B"Ò“°¢Ò“°¢B‚&§V×&÷GFöÒ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ°¢6öç7B6&G2ÒB‚'v÷&DÆ—7B"’çVW'•6VÆV7F÷$ÆÂ‚"çv÷&BÖ6&B"“°¢6öç7BÆ7BÒ6&G5¶6&G2æÆVæwF‚ÒÓ°¢Æ7Còç67&öÆÄ–çFõf–Wr‡²&V†f–÷#¢'6Öö÷F‚"Â&Æö6³¢&VæB"Ò“°¢Ò“°¢B‚'7F'DVåFô¦"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ7F'EFW7B‚&VåFô¦"’“°¢B‚'7F'D¦FôVâ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ7F'EFW7B‚&¦FôVâ"’“°¢B‚'FW7D6öçFVçB"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"ÂWfVçBÓâ°¢6öç7B6W76–öâÒ7FFRæ7F—fUFW7C°¢–b‚6W76–öâ’&WGW&ã°¢6öç7B&ævRÒ7FFRç&ævW2æf–æB†—FVÒÓâ—FVÒæ–BÓÓÒ6W76–öâç&ævT–B“°¢6öç7B6†ö–6RÒWfVçBçF&vWBæ6Æ÷6W7B‚%¶FF×FW7BÖ6†ö–6UÒ"“°¢–b†6†ö–6R’°¢6öç7Bç7vW"Òç7vW%FW7EVW7F–öâ‡6W76–öâÂ&ævRÂçVÖ&W"†6†ö–6RæFF6WBçFW7D6†ö–6R’“°¢–b†ç7vW"’²WFFUFW7E7FG2‡&ævRÂç7vW"“²6†÷tç7vW&VEFW7B†ç7vW"“²Ğ¢&WGW&ã°¢Ğ¢6öç7BVF–òÒWfVçBçF&vWBæ6Æ÷6W7B‚%¶FF×FW7BÖVF–õÒ"“°¢–b†VF–ò’&WGW&âÆ•FW7DVF–ò‡FW7Ev÷&B‡&ævRÂVF–òæFF6WBçFW7DVF–ò’“°¢6öç7B†&BÒWfVçBçF&vWBæ6Æ÷6W7B‚%¶FF×FW7BÖ†&EÒ"“°¢–b††&B’²6öç7Bv÷&BÒFW7Ev÷&B‡&ævRÂ†&BæFF6WBçFW7D†&B“²v÷&Bç7GVG•7FGW2Ò&†&B#²6fR†fÇ6R“²†&Bç6WDGG&–'WFR‚&&–×&W76VB"Â'G'VR"“²&WGW&ã²Ğ¢6öç7B7F–öâÒWfVçBçF&vWBæ6Æ÷6W7B‚%¶FF×FW7BÖ7F–öåÒ"“òæFF6WBçFW7D7F–öã°¢–b†7F–öâÓÓÒ'&WÆ’"’Æ•FW7DVF–ò‡FW7Ev÷&B‡&ævRÂ6W76–öâçVW7F–öç5´ÖF‚æÖ–â‡6W76–öâæ–æFW‚Â6W76–öâçVW7F–öç2æÆVæwF‚Ò•Òçv÷&D–B’“°¢–b†7F–öâÓÓÒ&æW‡B"’æW‡EFW7EVW7F–öâ‚“°¢–b†7F–öâÓÓÒ&&÷'B"’6†÷tÖöFÂ†Æƒ#î88n8+888).KŠŞjÚ.8~8î88¾ûÉóÂöƒ#ãÇîY¹îzÙNkˆ8ş8îh‰{‹î8şjè¾8(®8î88Î888n8+88[^jÛN8¾8ş‹ûŞXª8^8(Î8î8¾8)>8#Â÷ãÆF—b6Æ73Ò&7F–öç2#ãÆ'WGFöâ6Æ73Ò&FævW""FFÖÖöFÂÖ6öæf—&ÓîKŠŞjÚ.88(³Âö'WGFöããÆ'WGFöâ6Æ73Ò'6ögB"FFÖÖöFÂÖ6æ6VÃî{i®88(³Âö'WGFöããÂöF—cæÂ‚’Óâ²&÷'EFW7B‡6W76–öâ“²ÆVfUFW7B‚“²Ò“°¢–b†7F–öâÓÓÒ'&WGW&â"’ÆVfUFW7B‚“°¢–b†7F–öâÓÓÒ&÷Vâ×w&öær"’ÆVfUFW7B‡G'VR“°¢–b†7F–öâÓÓÒ&†&BÖÆÂ"’²6W76–öâæç7vW'2æf–ÇFW"†ç7vW"Óâç7vW"æ6÷'&V7B’æf÷$V6‚†ç7vW"Óâ²FW7Ev÷&B‡&ævRÂç7vW"çv÷&D–B’ç7GVG•7FGW2Ò&†&B#²Ò“²6fR†fÇ6R“²Fö7B‚.™i>˜^88şXÙŠ©î8).ˆºnh˜¾8¾8~8î8~8ş8""“²Ğ¢–b†7F–öâÓÓÒ'&WVB"’7F'EFW7B‡6W76–öâæF—&V7F–öâ“°¢Ò“°¢B‚'v÷&DÆ—7B"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"ÂWfVçBÓâ°¢6öç7B'FâÒWfVçBçF&vWBæ6Æ÷6W7B‚&'WGFöå¶FF×v÷&BÖ7F–öåÒ"“°¢–b‚'Fâ’°¢6öç7B6&BÒWfVçBçF&vWBæ6Æ÷6W7B‚"çv÷&BÖ6&E¶FF×v÷&BÖ–EÒ"“°¢–b†6&B’&VÖVÖ&W%v÷&B†6&BæFF6WBçv÷&D–B“°¢&WGW&ã°¢Ğ¢6öç7Bv÷&BÒf–æEv÷&B†'FâæFF6WBæ–B“°¢–b‚v÷&B’&WGW&ã°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ'Æ’"’Æ”öff–6–Â‡v÷&Bæ–B“°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ'f&–çB×Æ’"’Æ•&öçVæ6–F–öåf&–çB‡v÷&Bæ–BÂ'FâæFF6WBçf&–çD–B“°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ&æW‡B"’võFôæW‡Ev÷&B‡v÷&Bæ–B“°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ'7V²"’7Vµv÷&B‡v÷&Bæ–B“°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ&†&B"’FövvÆU7GVG•7FGW2‡v÷&Bæ–BÂ&†&B"“°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ&¶æ÷vâ"’FövvÆU7GVG•7FGW2‡v÷&Bæ–BÂ&¶æ÷vâ"“°¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ&×r"’²&VÖVÖ&W%v÷&B‡v÷&Bæ–B“²v–æF÷ræ÷Vâ‡v÷&Bæ×uW&ÂÇÂF–7F–öæ'•W&Â‡v÷&Bææ÷&ÖÆ—¦VB’Â%ö&Ææ²"Â&æö÷VæW""“²Ğ¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ'&VfWF6‚"’°¢6öç7B&ævRÒf–æE&ævT'•v÷&B‡v÷&Bæ–B“°¢–b‡&ævR’°¢6öæf—&ÔfWF6‚‡&ævRÂv÷&Bæ–B“°¢Ğ¢Ğ¢–b†'FâæFF6WBçv÷&D7F–öâÓÓÒ'&VfWF6‚Ö6öÆÆVv–FR"’°¢6öç7B&ævRÒf–æE&ævT'•v÷&B‡v÷&Bæ–B“°¢–b‡&ævR’°¢6öæf—&ÔfWF6‚‡&ævRÂv÷&Bæ–BÂ&6öÆÆVv–FR"“°¢Ğ¢Ğ¢Ò“°¢B‚&W‡÷'D§6öâ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"ÂW‡÷'D§6öâ“°¢B‚&W‡÷'D77b"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"ÂW‡÷'D77b“°¢B‚&VæD§6öâ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ–×÷'D§6öâ†fÇ6R’“°¢B‚'&WÆ6T§6öâ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Â‚’Óâ–×÷'D§6öâ‡G'VR’“°¢B‚'v—TÆÂ"’æFDWfVçDÆ—7FVæW"‚&6Æ–6²"Âv—TÆÂ“°¢Fö7VÖVçBæFDWfVçDÆ—7FVæW"‚'f—6–&–Æ—G–6†ævR"Â‚’Óâ°¢–b†Fö7VÖVçBæ†–FFVâ’7F÷6öçF–çV÷W5Æ–&6²‚“°¢Ò“°¢Ğ ¢ÆöB‚“°¢&–æDWfVçG2‚“°¢&VæFW"‚“°¢–b‚'6W'f–6Uv÷&¶W""–âæf–vF÷"’°¢v–æF÷ræFDWfVçDÆ—7FVæW"‚&ÆöB"Â‚’Óâ°¢æf–vF÷"ç6W'f–6Uv÷&¶W"ç&Vv—7FW"‚"â÷7ræ§2"Â²66÷S¢"âò"Ò’æ6F6‚‚‚’Óâ°¢òòty›¾˜Ë.8¾ZKiY~8~8n8(.˜	®[‹8åvV.8*.89~8:®88~8nKÛş88î88 ¢Ò“°¢Ò“°¢Ğ¢Ò’‚“°¢ 
+            ["checked", "hard", "play" + "Count", "last" + "CheckedAt"].forEach(key => delete word[key]);
+          });
+          const savedWordExists = range.words.some(word => word.id === range.currentWordId);
+          range.currentWordId = savedWordExists ? range.currentWordId : range.words[0]?.id || "";
+        });
+      }
+
+      function usageRecord() {
+        try {
+          const usage = JSON.parse(localStorage.getItem(API_USAGE_KEY) || "{}");
+          if (usage.date !== todayKey()) return { date: todayKey(), count: 0 };
+          return { date: usage.date, count: Number(usage.count) || 0 };
+        } catch {
+          return { date: todayKey(), count: 0 };
+        }
+      }
+
+      function setUsage(count) {
+        localStorage.setItem(API_USAGE_KEY, JSON.stringify({ date: todayKey(), count }));
+      }
+
+      function incrementUsage(by) {
+        const usage = usageRecord();
+        setUsage(usage.count + by);
+      }
+
+      function storageBytes() {
+        let total = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          const value = localStorage.getItem(key) || "";
+          total += new Blob([key + value]).size;
+        }
+        return total;
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`;
+        return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+      }
+
+      function deleteAtFor(testDate, weekdayValue) {
+        const base = testDate ? new Date(`${testDate}T12:00:00`) : new Date();
+        const day = weekdayValue || weekdays[base.getDay()];
+        const add = day === "æœˆ" || day === "æ°´" ? 1 : 1;
+        const d = new Date(base);
+        d.setDate(d.getDate() + add);
+        d.setHours(21, 0, 0, 0);
+        return localDateTimeString(d);
+      }
+
+      function statusForRange(range, nextId) {
+        if (!range.words.length) return "å˜èªæœªç™»éŒ²";
+        const now = new Date();
+        const today = localDateString(now);
+        const deleteAt = range.deleteAt ? new Date(range.deleteAt) : null;
+        if (range.cacheClearedAt) return "ã‚­ãƒ£ãƒƒã‚·ãƒ¥å‰Šé™¤æ¸ˆã¿";
+        if (deleteAt && now >= deleteAt) return "å‰Šé™¤äºˆå®š";
+        if (range.testDate === today) return "ä»Šæ—¥ã®ç¯„å›²";
+        if (range.id === nextId) return "æ¬¡å›ã®ç¯„å›²";
+        if (range.testDate && range.testDate > today) return "å¾…æ©Ÿä¸­";
+        if (range.testDate && range.testDate < today) return "çµ‚äº†";
+        return "å¾…æ©Ÿä¸­";
+      }
+
+      function nextRangeId() {
+        const today = localDateString(new Date());
+        const candidates = state.ranges
+          .filter(r => r.words.length && r.testDate >= today)
+          .sort((a, b) => a.testDate.localeCompare(b.testDate));
+        return candidates[0]?.id || "";
+      }
+
+      function statsForRange(range) {
+        const words = range.words || [];
+        const total = words.length;
+        const fetched = words.filter(w => isCacheCurrent(w, w.dictionarySource || state.settings.dictionaryType || "learners")).length;
+        const audio = words.filter(w => w.hasAudio).length;
+        const noAudio = words.filter(w => w.apiFetched && !w.hasAudio).length;
+        const definitions = words.filter(w => w.hasDefinition).length;
+        const hard = words.filter(w => w.studyStatus === "hard").length;
+        const known = words.filter(w => w.studyStatus === "known").length;
+        return { total, fetched, audio, noAudio, definitions, hard, known, pct: total ? Math.round(fetched / total * 100) : 0 };
+      }
+
+      function render() {
+        const usage = usageRecord();
+        const bytes = storageBytes();
+        $("usageToday").textContent = usage.count;
+        $("storageSize").textContent = formatBytes(bytes);
+        $("rangeCount").textContent = state.ranges.length;
+        renderStorageWarning(bytes);
+        renderRanges();
+        if (state.selectedRangeId && currentTab() === "ranges") renderWords();
+      }
+
+      function renderStorageWarning(bytes) {
+        const mb = bytes / 1024 / 1024;
+        const root = $("storageWarning");
+        if (mb >= 4) root.innerHTML = `<div class="danger-note">ä¿å­˜ä½¿ç”¨é‡ãŒ4MBã‚’è¶…ãˆã¦ã„ã¾ã™ã€‚ã‚¨ã‚¯ã‚¹ãƒãƒ¼ãƒˆã¨APIã‚­ãƒ£ãƒƒã‚·ãƒ¥å‰Šé™¤ã‚’ãŠã™ã™ã‚ã—ã¾ã™ã€‚</div>`;
+        else if (mb >= 3) root.innerHTML = `<div class="caution">ä¿å­˜ä½¿ç”¨é‡ãŒ3MBã‚’è¶…ãˆã¦ã„ã¾ã™ã€‚ä¸è¦ãªAPIã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚’å‰Šé™¤ã™ã‚‹ã¨è»½ããªã‚Šã¾ã™ã€‚</div>`;
+        else if (mb >= 2) root.innerHTML = `<div class="caution">ä¿å­˜ä½¿ç”¨é‡ãŒ2MBã‚’è¶…ãˆã¾ã—ãŸã€‚ã‚¹ãƒãƒ›ã§ã¯å®¹é‡ã«æ³¨æ„ã—ã¦ãã ã•ã„ã€‚</div>`;
+        else root.innerHTML = "";
+      }
+
+      function renderRanges() {
+        const filter = $("rangeFilter").value;
+        const nextId = nextRangeId();
+        let ranges = state.ranges.map(r => ({ ...r, status: statusForRange(r, nextId) }));
+        if (filter !== "all") ranges = ranges.filter(r => r.status === filter);
+        ranges.sort((a, b) => (a.testDate || "9999").localeCompare(b.testDate || "9999"));
+        iâ€¦10366 tokens truncatedâ€¦StudyStatus(wordId, status) {
+        stopContinuousPlayback();
+        const word = findWord(wordId);
+        if (!word || !["hard", "known"].includes(status)) return;
+        rememberWord(wordId);
+        word.studyStatus = word.studyStatus === status ? "unrated" : status;
+        save();
+      }
+
+      function updatePlaybackControls() {
+        const start = $("continuousStart");
+        const stop = $("continuousStop");
+        if (!start || !stop) return;
+        start.setAttribute("aria-pressed", String(playbackState.active));
+        start.textContent = playbackState.active ? "é€£ç¶šå†ç”Ÿä¸­" : "é€£ç¶šå†ç”Ÿé–‹å§‹";
+        stop.disabled = !playbackState.active;
+      }
+
+      function stopContinuousPlayback() {
+        if (playbackState.timerId) clearTimeout(playbackState.timerId);
+        playbackState.timerId = null;
+        if (playbackState.currentAudio) {
+          playbackState.currentAudio.onended = null;
+          playbackState.currentAudio.onerror = null;
+          playbackState.currentAudio.pause();
+          playbackState.currentAudio.removeAttribute("src");
+        }
+        playbackState.active = false;
+        playbackState.currentAudio = null;
+        playbackState.rangeId = "";
+        playbackState.wordIds = [];
+        playbackState.currentIndex = 0;
+        updatePlaybackControls();
+      }
+
+      function startContinuousPlayback() {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        if (!range) return;
+        const words = filteredWords(range);
+        if (!words.length) return toast("é€£ç¶šå†ç”Ÿã§ãã‚‹å˜èªãŒã‚ã‚Šã¾ã›ã‚“ã€‚", true);
+        const currentIndex = Math.max(0, words.findIndex(word => word.id === range.currentWordId));
+        playbackState.active = true;
+        playbackState.currentAudio = new Audio();
+        playbackState.rangeId = range.id;
+        playbackState.wordIds = words.map(word => word.id);
+        playbackState.currentIndex = currentIndex;
+        updatePlaybackControls();
+        playContinuousWord(true);
+      }
+
+      function playContinuousWord(isFirst = false) {
+        if (!playbackState.active) return;
+        while (playbackState.currentIndex < playbackState.wordIds.length) {
+          const word = findWord(playbackState.wordIds[playbackState.currentIndex]);
+          if (word?.audioUrl) {
+            rememberWord(word.id);
+            document.querySelector(`[data-word-id="${CSS.escape(word.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+            const audio = playbackState.currentAudio;
+            audio.onended = scheduleNextContinuousWord;
+            audio.onerror = scheduleNextContinuousWord;
+            audio.src = word.audioUrl;
+            audio.currentTime = 0;
+            audio.play().catch(() => {
+              if (isFirst) {
+                stopContinuousPlayback();
+                toast("é€£ç¶šå†ç”Ÿã‚’é–‹å§‹ã§ãã¾ã›ã‚“ã§ã—ãŸã€‚ã‚‚ã†ä¸€åº¦é–‹å§‹ã‚’æŠ¼ã—ã¦ãã ã•ã„ã€‚", true);
+                return;
+              }
+              scheduleNextContinuousWord();
+            });
+            return;
+          }
+          playbackState.currentIndex++;
+        }
+        stopContinuousPlayback();
+        toast("é€£ç¶šå†ç”ŸãŒå®Œäº†ã—ã¾ã—ãŸã€‚");
+      }
+
+      function scheduleNextContinuousWord() {
+        if (!playbackState.active) return;
+        if (playbackState.timerId) return;
+        if (playbackState.currentAudio) {
+          playbackState.currentAudio.onended = null;
+          playbackState.currentAudio.onerror = null;
+        }
+        playbackState.currentIndex++;
+        if (playbackState.currentIndex >= playbackState.wordIds.length) {
+          stopContinuousPlayback();
+          toast("é€£ç¶šå†ç”ŸãŒå®Œäº†ã—ã¾ã—ãŸã€‚");
+          return;
+        }
+        playbackState.timerId = setTimeout(() => {
+          playbackState.timerId = null;
+          playContinuousWord();
+        }, state.settings.playbackInterval * 1000);
+      }
+
+      function findWord(wordId) {
+        for (const range of state.ranges) {
+          const word = range.words.find(w => w.id === wordId);
+          if (word) return word;
+        }
+        return null;
+      }
+
+      function findRangeByWord(wordId) {
+        return state.ranges.find(r => r.words.some(w => w.id === wordId));
+      }
+
+      function exportJson() {
+        const payload = {
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          ranges: state.ranges
+        };
+        const text = JSON.stringify(payload, null, 2);
+        download(`mw-pronunciation-${todayKey()}.json`, text, "application/json");
+        toast(`JSONã‚’æ›¸ãå‡ºã—ã¾ã—ãŸã€‚APIã‚­ãƒ¼ã¯å«ã¾ã‚Œã¦ã„ã¾ã›ã‚“ã€‚ã‚µã‚¤ã‚º: ${formatBytes(new Blob([text]).size)}`);
+      }
+
+      function exportCsv() {
+        const rows = [["ç¯„å›²å", "ãƒ†ã‚¹ãƒˆæ—¥", "å˜èª", "æ—¥æœ¬èªè¨³", "å­¦ç¿’çŠ¶æ…‹", "å“è©ãƒ»ç™ºéŸ³ä¸€è¦§", "éŸ³å£°æ•°", "ä½¿ç”¨è¾æ›¸", "ç™ºéŸ³è¡¨è¨˜", "å“è©", "å®šç¾©1", "å®šç¾©2", "å®šç¾©3", "éŸ³å£°ã‚ã‚Š", "å®šç¾©ã‚ã‚Š", "è‹±â†’æ—¥ å›ç­”", "è‹±â†’æ—¥ æ­£è§£", "è‹±â†’æ—¥ ä¸æ­£è§£", "æ—¥â†’è‹± å›ç­”", "æ—¥â†’è‹± æ­£è§£", "æ—¥â†’è‹± ä¸æ­£è§£"]];
+        state.ranges.forEach(r => r.words.forEach(w => rows.push([
+          r.rangeName,
+          r.testDate,
+          w.word,
+          (w.meaningsJa || []).join("ï¼"),
+          studyStatusLabel(w.studyStatus),
+          pronunciationVariantsSummary(w),
+          (w.pronunciationVariants || []).filter(variant => variant.audioUrl).length,
+          dictionaryLabel(w.dictionarySource || ""),
+          w.pronunciation,
+          w.partOfSpeech || "",
+          w.definitions?.[0] || "",
+          w.definitions?.[1] || "",
+          w.definitions?.[2] || "",
+          w.hasAudio ? "1" : "0",
+          w.hasDefinition ? "1" : "0",
+          w.testStats?.enToJa?.attempts || 0,
+          w.testStats?.enToJa?.correct || 0,
+          w.testStats?.enToJa?.incorrect || 0,
+          w.testStats?.jaToEn?.attempts || 0,
+          w.testStats?.jaToEn?.correct || 0,
+          w.testStats?.jaToEn?.incorrect || 0
+        ])));
+        const csv = rows.map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+        download(`mw-pronunciation-${todayKey()}.csv`, csv, "text/csv");
+      }
+
+      function studyStatusLabel(status) {
+        if (status === "hard") return "è‹¦æ‰‹";
+        if (status === "known") return "è¦šãˆãŸ";
+        return "æœªåˆ¤å®š";
+      }
+
+      function pronunciationVariantsSummary(word) {
+        return (word.pronunciationVariants || []).map(variant => {
+          const label = variant.partOfSpeech || variant.label || "ç™ºéŸ³";
+          return `${label}: ${variant.pronunciation || "è¡¨è¨˜ãªã—"}`;
+        }).join(" | ");
+      }
+
+      function download(filename, text, type) {
+        const blob = new Blob([text], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function importJson(replace) {
+        try {
+          const parsed = JSON.parse($("importJson").value);
+          const incoming = Array.isArray(parsed.ranges) ? parsed.ranges : [];
+          if (!incoming.length) {
+            toast("ã‚¤ãƒ³ãƒãƒ¼ãƒˆã§ãã‚‹ç¯„å›²ãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚", true);
+            return;
+          }
+          const run = () => {
+            state.ranges = replace ? incoming : state.ranges.concat(incoming);
+            normalizeLoadedData();
+            save();
+            toast(`${incoming.length}ä»¶ã®ç¯„å›²ã‚’${replace ? "ç½®ãæ›ãˆ" : "è¿½åŠ "}ã‚¤ãƒ³ãƒãƒ¼ãƒˆã—ã¾ã—ãŸã€‚APIã‚­ãƒ¼ã¯èª­ã¿è¾¼ã¿ã¾ã›ã‚“ã€‚`);
+          };
+          if (replace) {
+            showModal(`
+              <h2>ç½®ãæ›ãˆã‚¤ãƒ³ãƒãƒ¼ãƒˆ</h2>
+              <div class="danger-note">ç¾åœ¨ã®ãƒ‡ãƒ¼ã‚¿ã‚’ã™ã¹ã¦ç½®ãæ›ãˆã¾ã™ã€‚</div>
+              <div class="actions"><button class="warn" data-modal-confirm>ç½®ãæ›ãˆã‚‹</button><button class="soft" data-modal-cancel>ã‚­ãƒ£ãƒ³ã‚»ãƒ«</button></div>
+            `, run);
+          } else {
+            run();
+          }
+        } catch {
+          toast("JSONã®èª­ã¿è¾¼ã¿ã«å¤±æ•—ã—ã¾ã—ãŸã€‚", true);
+        }
+      }
+
+      function wipeAll() {
+        showModal(`
+          <h2>å…¨ãƒ‡ãƒ¼ã‚¿å‰Šé™¤</h2>
+          <div class="danger-note">ç¯„å›²ã€å˜èªã€é€²æ—ã€APIã‚­ãƒ£ãƒƒã‚·ãƒ¥ã‚’ã™ã¹ã¦å‰Šé™¤ã—ã¾ã™ã€‚APIã‚­ãƒ¼ã¯åˆ¥ãƒœã‚¿ãƒ³ã§å‰Šé™¤ã§ãã¾ã™ã€‚</div>
+          <div class="actions"><button class="danger" data-modal-confirm>å…¨ãƒ‡ãƒ¼ã‚¿å‰Šé™¤</button><button class="soft" data-modal-cancel>ã‚­ãƒ£ãƒ³ã‚»ãƒ«</button></div>
+        `, () => {
+          stopContinuousPlayback();
+          state.ranges = [];
+          state.selectedRangeId = null;
+          save();
+          $("wordPanel").classList.add("hidden");
+          toast("å…¨ãƒ‡ãƒ¼ã‚¿ã‚’å‰Šé™¤ã—ã¾ã—ãŸã€‚");
+        });
+      }
+
+      function switchTab(name) {
+        stopContinuousPlayback();
+        document.querySelectorAll("[data-tab]").forEach(btn => btn.setAttribute("aria-selected", String(btn.dataset.tab === name)));
+        document.querySelectorAll(".tab-page").forEach(page => page.classList.add("hidden"));
+        $(`page-${name}`).classList.remove("hidden");
+        if (name === "ranges" && state.selectedRangeId) {
+          renderWords();
+        } else {
+          $("wordPanel").classList.add("hidden");
+        }
+      }
+
+      function currentTab() {
+        return document.querySelector("[data-tab][aria-selected='true']")?.dataset.tab || "ranges";
+      }
+
+      function bindEvents() {
+        document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+        $("saveApiSettings").addEventListener("click", () => {
+          const wantsSave = $("saveKey").checked;
+          const apiKey = cleanApiKey($("apiKey").value);
+          const collegiateApiKey = cleanApiKey($("collegiateApiKey").value);
+          const apply = () => {
+            state.settings.demoMode = $("demoMode").checked;
+            state.settings.saveKey = wantsSave;
+            state.settings.dictionaryType = $("dictionaryType").value;
+            state.settings.definitionLimit = Number($("definitionLimit").value) || 2;
+            state.settings.apiKeySession = wantsSave ? "" : apiKey;
+            state.settings.collegiateApiKeySession = wantsSave ? "" : collegiateApiKey;
+            $("apiKey").value = apiKey;
+            $("collegiateApiKey").value = collegiateApiKey;
+            if (wantsSave && apiKey) localStorage.setItem(API_KEY_KEY, apiKey);
+            if (wantsSave && collegiateApiKey) localStorage.setItem(COLLEGIATE_API_KEY_KEY, collegiateApiKey);
+            if (!wantsSave) {
+              localStorage.removeItem(API_KEY_KEY);
+              localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+            }
+            save();
+            toast("APIè¨­å®šã‚’ä¿å­˜ã—ã¾ã—ãŸã€‚ä¿å­˜ã ã‘ã§ã¯APIé€šä¿¡ã—ã¾ã›ã‚“ã€‚");
+          };
+          if (wantsSave && (apiKey || collegiateApiKey)) {
+            showModal(`
+              <h2>APIã‚­ãƒ¼ä¿å­˜ã®ç¢ºèª</h2>
+              <div class="caution">ã“ã®ãƒ–ãƒ©ã‚¦ã‚¶ã®localStorageã«APIã‚­ãƒ¼ã‚’ä¿å­˜ã—ã¾ã™ã€‚å…±æœ‰ç«¯æœ«ã§ã¯ä¿å­˜ã—ãªã„ã§ãã ã•ã„ã€‚</div>
+              <div class="actions"><button class="warn" data-modal-confirm>ä¿å­˜ã™ã‚‹</button><button class="soft" data-modal-cancel>ã‚­ãƒ£ãƒ³ã‚»ãƒ«</button></div>
+            `, apply);
+          } else apply();
+        });
+        $("clearApiKey").addEventListener("click", () => showModal(`
+          <h2>APIã‚­ãƒ¼å‰Šé™¤</h2>
+          <p>ä¿å­˜æ¸ˆã¿APIã‚­ãƒ¼ã¨ä¸€æ™‚å…¥åŠ›ã‚’å‰Šé™¤ã—ã¾ã™ã€‚</p>
+          <div class="actions"><button class="danger" data-modal-confirm>å‰Šé™¤ã™ã‚‹</button><button class="soft" data-modal-cancel>ã‚­ãƒ£ãƒ³ã‚»ãƒ«</button></div>
+        `, () => {
+          $("apiKey").value = "";
+          $("collegiateApiKey").value = "";
+          state.settings.apiKeySession = "";
+          state.settings.collegiateApiKeySession = "";
+          localStorage.removeItem(API_KEY_KEY);
+          localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+          save();
+          toast("APIã‚­ãƒ¼ã‚’å‰Šé™¤ã—ã¾ã—ãŸã€‚");
+        }));
+        $("testDate").addEventListener("change", () => {
+          const testDate = $("testDate").value;
+          const weekday = testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "";
+          if (!$("weekday").value) $("weekday").value = weekday;
+          $("deleteAt").value = deleteAtFor(testDate, $("weekday").value || weekday);
+        });
+        $("weekday").addEventListener("change", () => { $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value); });
+        $("importRange").addEventListener("click", registerRange);
+        $("clearImport").addEventListener("click", () => {
+          ["rangeName", "testDate", "pages", "deleteAt", "wordInput"].forEach(id => $(id).value = "");
+          $("weekday").value = "";
+        });
+        $("rangeFilter").addEventListener("change", renderRanges);
+        $("rangeList").addEventListener("click", (event) => {
+          const btn = event.target.closest("button[data-action]");
+          if (!btn) return;
+          const range = state.ranges.find(r => r.id === btn.dataset.id);
+          if (!range) return;
+          if (btn.dataset.action === "open") { stopContinuousPlayback(); state.selectedRangeId = range.id; state.pendingWordScroll = true; renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
+          if (btn.dataset.action === "fetch") confirmFetch(range);
+          if (btn.dataset.action === "clear-cache") clearCache(range.id);
+          if (btn.dataset.action === "delete-range") deleteRange(range.id);
+        });
+        $("openNext").addEventListener("click", () => {
+          stopContinuousPlayback();
+          const id = nextRangeId();
+          if (!id) return toast("æ¬¡å›ã®ç¯„å›²ãŒã‚ã‚Šã¾ã›ã‚“ã€‚");
+          state.selectedRangeId = id;
+          state.pendingWordScroll = true;
+          renderWords();
+          $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        $("closeWords").addEventListener("click", () => { stopContinuousPlayback(); state.selectedRangeId = null; $("wordPanel").classList.add("hidden"); });
+        $("wordFilter").addEventListener("change", () => {
+          stopContinuousPlayback();
+          state.temporaryWordIds = null;
+          state.savedFilterBeforeTemporary = null;
+          state.settings.studyFilter = $("wordFilter").value;
+          save();
+        });
+        $("playbackInterval").addEventListener("change", () => {
+          state.settings.playbackInterval = Number($("playbackInterval").value) || 2;
+          save(false);
+        });
+        $("continuousStart").addEventListener("click", startContinuousPlayback);
+        $("continuousStop").addEventListener("click", stopContinuousPlayback);
+        $("jumpTop").addEventListener("click", () => {
+          $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        $("jumpBottom").addEventListener("click", () => {
+          const cards = $("wordList").querySelectorAll(".word-card");
+          const last = cards[cards.length - 1];
+          last?.scrollIntoView({ behavior: "smooth", block: "end" });
+        });
+        $("startEnToJa").addEventListener("click", () => startTest("enToJa"));
+        $("startJaToEn").addEventListener("click", () => startTest("jaToEn"));
+        $("testContent").addEventListener("click", event => {
+          const session = state.activeTest;
+          if (!session) return;
+          const range = state.ranges.find(item => item.id === session.rangeId);
+          const choice = event.target.closest("[data-test-choice]");
+          if (choice) {
+            const answer = answerTestQuestion(session, range, Number(choice.dataset.testChoice));
+            if (answer) { updateTestStats(range, answer); showAnsweredTest(answer); }
+            return;
+          }
+          const audio = event.target.closest("[data-test-audio]");
+          if (audio) return playTestAudio(testWord(range, audio.dataset.testAudio));
+          const hard = event.target.closest("[data-test-hard]");
+          if (hard) { const word = testWord(range, hard.dataset.testHard); word.studyStatus = "hard"; save(false); hard.setAttribute("aria-pressed", "true"); return; }
+          const action = event.target.closest("[data-test-action]")?.dataset.testAction;
+          if (action === "replay") playTestAudio(testWord(range, session.questions[Math.min(session.index, session.questions.length - 1)].wordId));
+          if (action === "next") nextTestQuestion();
+          if (action === "abort") showModal(`<h2>ãƒ†ã‚¹ãƒˆã‚’ä¸­æ­¢ã—ã¾ã™ã‹ï¼Ÿ</h2><p>å›ç­”æ¸ˆã¿ã®æˆç¸¾ã¯æ®‹ã‚Šã¾ã™ãŒã€ãƒ†ã‚¹ãƒˆå±¥æ­´ã«ã¯è¿½åŠ ã•ã‚Œã¾ã›ã‚“ã€‚</p><div class="actions"><button class="danger" data-modal-confirm>ä¸­æ­¢ã™ã‚‹</button><button class="soft" data-modal-cancel>ç¶šã‘ã‚‹</button></div>`, () => { abortTest(session); leaveTest(); });
+          if (action === "return") leaveTest();
+          if (action === "open-wrong") leaveTest(true);
+          if (action === "hard-all") { session.answers.filter(answer => !answer.correct).forEach(answer => { testWord(range, answer.wordId).studyStatus = "hard"; }); save(false); toast("é–“é•ãˆãŸå˜èªã‚’è‹¦æ‰‹ã«ã—ã¾ã—ãŸã€‚"); }
+          if (action === "repeat") startTest(session.direction);
+        });
+        $("wordList").addEventListener("click", event => {
+          const btn = event.target.closest("button[data-word-action]");
+          if (!btn) {
+            const card = event.target.closest(".word-card[data-word-id]");
+            if (card) rememberWord(card.dataset.wordId);
+            return;
+          }
+          const word = findWord(btn.dataset.id);
+          if (!word) return;
+          if (btn.dataset.wordAction === "play") playOfficial(word.id);
+          if (btn.dataset.wordAction === "variant-play") playPronunciationVariant(word.id, btn.dataset.variantId);
+          if (btn.dataset.wordAction === "next") goToNextWord(word.id);
+          if (btn.dataset.wordAction === "speak") speakWord(word.id);
+          if (btn.dataset.wordAction === "hard") toggleStudyStatus(word.id, "hard");
+          if (btn.dataset.wordAction === "known") toggleStudyStatus(word.id, "known");
+          if (btn.dataset.wordAction === "mw") { rememberWord(word.id); window.open(word.mwUrl || dictionaryUrl(word.normalized), "_blank", "noopener"); }
+          if (btn.dataset.wordAction === "refetch") {
+            const range = findRangeByWord(word.id);
+            if (range) {
+              confirmFetch(range, word.id);
+            }
+          }
+          if (btn.dataset.wordAction === "refetch-collegiate") {
+            const range = findRangeByWord(word.id);
+            if (range) {
+              confirmFetch(range, word.id, "collegiate");
+            }
+          }
+        });
+        $("exportJson").addEventListener("click", exportJson);
+        $("exportCsv").addEventListener("click", exportCsv);
+        $("appendJson").addEventListener("click", () => importJson(false));
+        $("replaceJson").addEventListener("click", () => importJson(true));
+        $("wipeAll").addEventListener("click", wipeAll);
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) stopContinuousPlayback();
+        });
+      }
+
+      load();
+      bindEvents();
+      render();
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {
+            // PWAç™»éŒ²ã«å¤±æ•—ã—ã¦ã‚‚é€šå¸¸ã®Webã‚¢ãƒ—ãƒªã¨ã—ã¦ä½¿ãˆã¾ã™ã€‚
+          });
+        });
+      }
+    })();
+  
+
