@@ -426,7 +426,838 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         let ranges = state.ranges.map(r => ({ ...r, status: statusForRange(r, nextId) }));
         if (filter !== "all") ranges = ranges.filter(r => r.status === filter);
         ranges.sort((a, b) => (a.testDate || "9999").localeCompare(b.testDate || "9999"));
-        i…10366 tokens truncated…StudyStatus(wordId, status) {
+        if (!ranges.length) {
+          $("rangeList").innerHTML = `<div class="empty">範囲がありません。登録タブから範囲枠または単語リストを追加できます。</div>`;
+          return;
+        }
+        $("rangeList").innerHTML = ranges.map(range => {
+          const s = statsForRange(range);
+          const statusClass = range.status === "今日の範囲" ? "today" : range.status === "次回の範囲" ? "next" : "";
+          const badgeClass = range.status === "削除予定" ? "danger" : range.status === "今日の範囲" || range.status === "次回の範囲" ? "ok" : "warn";
+          return `
+            <article class="range-card ${statusClass}">
+              <div class="range-head">
+                <div>
+                  <div class="range-title">${escapeHtml(range.rangeName || "無題の範囲")}</div>
+                  <div class="meta">${escapeHtml(range.testDate || "日付未設定")} ${escapeHtml(range.weekday || "")}</div>
+                </div>
+                <span class="badge ${badgeClass}">${range.status}</span>
+              </div>
+              <div class="progress" aria-label="進捗"><span style="width:${s.pct}%"></span></div>
+              <div class="mini-grid">
+                <div class="mini"><strong>${s.total}</strong>単語</div>
+                <div class="mini"><strong>${s.fetched}</strong>API取得済み</div>
+                <div class="mini"><strong>${s.hard}</strong>苦手</div>
+                <div class="mini"><strong>${s.known}</strong>覚えた</div>
+              </div>
+              <div class="actions" style="margin-top:10px">
+                <button class="primary" data-action="open" data-id="${range.id}">開く</button>
+                <button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>
+              </div>
+              <div class="danger-actions">
+                <button class="compact refetch" data-action="clear-cache" data-id="${range.id}">キャッシュ削除</button>
+                <button class="compact collegiate" data-action="delete-range" data-id="${range.id}">範囲削除</button>
+              </div>
+            </article>`;
+        }).join("");
+      }
+
+      function renderWords() {
+        const range = state.ranges.find(r => r.id === state.selectedRangeId);
+        if (!range) return;
+        $("wordPanel").classList.remove("hidden");
+        $("wordFilter").value = state.settings.studyFilter;
+        $("playbackInterval").value = String(state.settings.playbackInterval);
+        updatePlaybackControls();
+        $("openRangeTitle").textContent = `${range.rangeName || "無題の範囲"} の単語`;
+        const s = statsForRange(range);
+        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 苦手${s.hard} / 覚えた${s.known}`;
+        const words = filteredWords(range);
+        if (!words.length) {
+          $("wordList").innerHTML = `<div class="empty">この条件に一致する単語はありません。</div>`;
+          return;
+        }
+        const rememberedWordId = words.some(word => word.id === range.currentWordId) ? range.currentWordId : words[0].id;
+        if (range.currentWordId !== rememberedWordId) {
+          range.currentWordId = rememberedWordId;
+          save(false);
+        }
+        $("wordList").innerHTML = words.map((word, index) => `
+          <article class="word-card ${word.id === rememberedWordId ? "current-word" : ""}" data-word-id="${word.id}">
+            <div class="word-head">
+              <div style="min-width:0;flex:1 1 auto">
+                <div class="word-main-line">
+                  <span class="word-index">${index + 1}/${words.length}</span>
+                  <div class="word-title">${escapeHtml(word.word)}</div>
+                </div>
+                <div class="pron-line">
+                  <span class="pron-text">発音1 : ${escapeHtml(word.pronunciation || "未取得")}</span>
+                  <span class="pos-text">候補 : ${(word.pronunciationVariants || []).length}件</span>
+                </div>
+              </div>
+              ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
+            </div>
+            ${renderPronunciationVariants(word)}
+            ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
+            <div class="study-actions">
+              <button class="primary" data-word-action="play" data-id="${word.id}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
+              <button class="primary" data-word-action="next" data-id="${word.id}">次へ</button>
+            </div>
+            <div class="secondary-actions">
+              <button class="soft" data-word-action="speak" data-id="${word.id}">読み上げ</button>
+              <button class="soft study-toggle hard" data-word-action="hard" data-id="${word.id}" aria-pressed="${word.studyStatus === "hard"}">苦手</button>
+              <button class="soft study-toggle known" data-word-action="known" data-id="${word.id}" aria-pressed="${word.studyStatus === "known"}">覚えた</button>
+            </div>
+            <div class="danger-actions">
+              <button class="soft mw-small" data-word-action="mw" data-id="${word.id}">MWで開く</button>
+              <button class="compact refetch" data-word-action="refetch" data-id="${word.id}">再取得</button>
+              <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate</button>
+            </div>
+          </article>`).join("");
+        if (state.pendingWordScroll) {
+          const target = $("wordList").querySelector(`[data-word-id="${CSS.escape(rememberedWordId)}"]`);
+          target?.scrollIntoView({ behavior: "smooth", block: "start" });
+          state.pendingWordScroll = false;
+        }
+      }
+
+      function filteredWords(range) {
+        const words = Array.isArray(range?.words) ? range.words : [];
+        if (state.temporaryWordIds instanceof Set) return words.filter(word => state.temporaryWordIds.has(word.id));
+        const filter = state.settings.studyFilter;
+        return filter === "all" ? [...words] : words.filter(word => word.studyStatus === filter);
+      }
+
+      function testWord(range, wordId) {
+        return range.words.find(word => word.id === wordId);
+      }
+
+      function playTestAudio(word) {
+        if (!word) return;
+        const variant = (word.pronunciationVariants || []).find(item => item.audioUrl);
+        if (variant) playPronunciationVariant(word.id, variant.id);
+        else if (word.audioUrl) playOfficial(word.id);
+      }
+
+      function pronunciationFeedback(word) {
+        const variants = (word.pronunciationVariants || []).slice(0, 2);
+        return variants.length ? variants.map((variant, index) => `<span>発音${index + 1}: ${escapeHtml(variant.pronunciation || "表記なし")}</span>`).join("<br>") : `<span>発音: ${escapeHtml(word.pronunciation || "未取得")}</span>`;
+      }
+
+      function hideForTest(active) {
+        document.querySelector("header")?.classList.toggle("hidden", active);
+        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
+        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
+        $("wordPanel").classList.toggle("hidden", active);
+        $("jumpFab").classList.toggle("hidden", active);
+        $("testPanel").classList.toggle("hidden", !active);
+      }
+
+      function startTest(direction) {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        if (!range) return;
+        const session = createTestSession(range, direction);
+        if (session.error) return toast(session.error, true);
+        state.activeTest = session;
+        hideForTest(true);
+        renderActiveTest();
+      }
+
+      function renderActiveTest() {
+        const session = state.activeTest;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        $("testContent").innerHTML = renderTestQuestion(session, range);
+        session.questionStartedAt = Date.now();
+        if (session.direction === "enToJa") setTimeout(() => playTestAudio(testWord(range, session.questions[session.index].wordId)), 120);
+      }
+
+      function updateTestStats(range, answer) {
+        const session = state.activeTest;
+        const word = testWord(range, answer.wordId);
+        const stats = word.testStats[session.direction];
+        stats.attempts++;
+        stats.totalResponseMs += answer.responseMs;
+        stats.lastTestedAt = new Date().toISOString();
+        stats.lastResult = answer.correct ? "correct" : "incorrect";
+        if (answer.correct) { stats.correct++; stats.consecutiveCorrect++; }
+        else {
+          stats.incorrect++;
+          stats.consecutiveCorrect = 0;
+          if (answer.selectedWordId) stats.confusedWith[answer.selectedWordId] = (stats.confusedWith[answer.selectedWordId] || 0) + 1;
+        }
+        save(false);
+      }
+
+      function showAnsweredTest(answer) {
+        const session = state.activeTest, range = state.ranges.find(item => item.id === session.rangeId);
+        const question = session.questions[session.index], word = testWord(range, answer.wordId);
+        $("testContent").querySelectorAll("[data-test-choice]").forEach((button, index) => {
+          button.disabled = true;
+          if (index === question.correctPosition) button.classList.add("correct");
+          if (index === answer.selectedPosition && !answer.correct) button.classList.add("incorrect");
+        });
+        const feedback = document.createElement("div");
+        feedback.className = `test-feedback ${answer.correct ? "correct-note" : "danger-note"}`;
+        feedback.innerHTML = `<strong>${answer.correct ? "正解" : "不正解"}</strong><div class="test-answer-word">${escapeHtml(word.word)} — ${escapeHtml(word.meaningsJa.join("／"))}</div><div>${pronunciationFeedback(word)}</div><button class="soft" data-test-action="replay">公式音声</button>${answer.correct ? "" : `<button class="primary" data-test-action="next">次の問題</button>`}`;
+        $("testContent").appendChild(feedback);
+        if (session.direction === "jaToEn" || !answer.correct) playTestAudio(word);
+        if (answer.correct) setTimeout(nextTestQuestion, 700);
+      }
+
+      function nextTestQuestion() {
+        const session = state.activeTest;
+        if (!session) return;
+        session.index++;
+        if (session.index >= session.questions.length) showTestResult(finishTest(session, state.ranges.find(item => item.id === session.rangeId)));
+        else renderActiveTest();
+      }
+
+      function cumulativeTestSummary(range, direction) {
+        const stats = range.words.map(word => word.testStats?.[direction]).filter(Boolean);
+        const attempts = stats.reduce((sum, item) => sum + item.attempts, 0), correct = stats.reduce((sum, item) => sum + item.correct, 0);
+        return `${attempts}回答 / 正答率 ${attempts ? Math.round(correct / attempts * 100) : 0}%`;
+      }
+
+      function showTestResult(result) {
+        const session = state.activeTest, range = state.ranges.find(item => item.id === session.rangeId);
+        save(false);
+        const wrong = result.wrongWordIds.map(id => testWord(range, id)).filter(Boolean);
+        const histories = (range.testHistory || []).slice(-5).reverse();
+        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${result.categoryCorrect.urgent || 0}</strong>苦手・直前ミス</div><div><strong>${wrong.length}</strong>間違い</div></div><h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${item.finishedAt.slice(0, 10)} ${item.correct}/${item.total}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${word.id}">公式音声</button><button class="soft" data-test-hard="${word.id}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
+      }
+
+      function leaveTest(openWrong = false) {
+        const session = state.activeTest;
+        if (openWrong && session) {
+          state.savedFilterBeforeTemporary = state.settings.studyFilter;
+          state.temporaryWordIds = new Set(session.answers.filter(answer => !answer.correct).map(answer => answer.wordId));
+        }
+        state.activeTest = null;
+        hideForTest(false);
+        switchTab("ranges");
+        renderWords();
+        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function renderPronunciationVariants(word) {
+        const variants = Array.isArray(word.pronunciationVariants) ? word.pronunciationVariants : [];
+        if (!variants.length) return "";
+        const partTotals = variants.reduce((totals, variant) => {
+          const key = variant.partOfSpeech || "";
+          totals[key] = (totals[key] || 0) + 1;
+          return totals;
+        }, {});
+        const partIndexes = {};
+        const rows = variants.map(variant => {
+          const part = variant.partOfSpeech || "";
+          partIndexes[part] = (partIndexes[part] || 0) + 1;
+          const number = partTotals[part] > 1 ? ` 発音${partIndexes[part]}` : "";
+          const meta = [part, variant.label].filter(Boolean).join(" / ");
+          return `<div class="pronunciation-variant">
+            <div style="min-width:0">
+              ${meta || number ? `<div class="variant-meta">${escapeHtml(meta)}${number}</div>` : ""}
+              <div class="variant-pronunciation">${escapeHtml(variant.pronunciation || "発音表記なし")}</div>
+            </div>
+            <button class="soft variant-audio" data-word-action="variant-play" data-id="${word.id}" data-variant-id="${variant.id}" ${variant.audioUrl ? "" : "disabled"}>公式音声</button>
+          </div>`;
+        }).join("");
+        return `<div class="pronunciation-variants">${rows}</div>`;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch]));
+      }
+
+      function truncateText(value, max) {
+        const text = String(value || "").replace(/\s+/g, " ").trim();
+        return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+      }
+
+      function wordFailureLabel(word) {
+        if (word.error?.includes("公式音声がありません")) return "音声なし";
+        if (word.error?.includes("発音情報がありません")) return "発音なし";
+        if (word.error?.includes("発音表記がありません")) return "表記なし";
+        if (word.error) return "取得失敗";
+        if (word.apiFetched && word.cacheVersion !== CACHE_SCHEMA_VERSION) return "再取得が必要";
+        if (word.apiFetched && !word.hasAudio && !word.hasDefinition) return "取得失敗";
+        return "";
+      }
+
+      function toast(message, isDanger = false) {
+        const el = $("toast");
+        el.textContent = message;
+        el.style.borderColor = isDanger ? "#763943" : "#31506f";
+        el.classList.remove("hidden");
+        clearTimeout(toast.timer);
+        toast.timer = setTimeout(() => el.classList.add("hidden"), 3600);
+      }
+
+      function showModal(html, onConfirm) {
+        const root = $("modalRoot");
+        root.innerHTML = `<div class="modal">${html}</div>`;
+        root.classList.remove("hidden");
+        root.querySelector("[data-modal-cancel]")?.addEventListener("click", closeModal);
+        root.querySelector("[data-modal-confirm]")?.addEventListener("click", async () => {
+          const confirmButton = root.querySelector("[data-modal-confirm]");
+          confirmButton.disabled = true;
+          try {
+            await onConfirm?.();
+            closeModal();
+          } finally {
+            confirmButton.disabled = false;
+          }
+        });
+      }
+
+      function closeModal() {
+        $("modalRoot").classList.add("hidden");
+        $("modalRoot").innerHTML = "";
+      }
+
+      function buildRangeFromForm(words) {
+        const testDate = $("testDate").value;
+        const weekday = $("weekday").value || (testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "");
+        const rangeWords = words.map(w => createWord(w.raw, w.normalized, w.meaningsJa));
+        return {
+          id: uid("range"),
+          rangeName: $("rangeName").value.trim() || "無題の範囲",
+          testDate,
+          weekday,
+          pages: $("pages").value.trim(),
+          deleteAt: $("deleteAt").value || deleteAtFor(testDate, weekday),
+          cacheClearedAt: "",
+          createdAt: new Date().toISOString(),
+          currentWordId: rangeWords[0]?.id || "",
+          words: rangeWords,
+          testHistory: []
+        };
+      }
+
+      function registerRange() {
+        const parsed = parseWords($("wordInput").value);
+        if (!$("rangeName").value.trim() && !parsed.words.length) {
+          toast("範囲名か単語リストを入力してください。", true);
+          return;
+        }
+        const range = buildRangeFromForm(parsed.words);
+        state.ranges.push(range);
+        save();
+        toast(parsed.words.length ? `${parsed.words.length}語を登録しました。API通信はしていません。` : "範囲枠を作成しました。API通信はしていません。");
+        switchTab("ranges");
+      }
+
+      function isCacheCurrent(word, reference = state.settings.dictionaryType || "learners") {
+        return Boolean(
+          word.apiFetched &&
+          word.cacheVersion === CACHE_SCHEMA_VERSION &&
+          word.dictionarySource === reference &&
+          Array.isArray(word.definitions)
+        );
+      }
+
+      function pendingWords(range) {
+        const reference = state.settings.dictionaryType || "learners";
+        return range.words.filter(w => !isCacheCurrent(w, reference));
+      }
+
+      function confirmFetch(range, forceWordId = "", referenceOverride = "") {
+        let targets = forceWordId ? range.words.filter(w => w.id === forceWordId) : pendingWords(range);
+        const skipped = forceWordId ? 0 : range.words.length - targets.length;
+        const reference = referenceOverride || state.settings.dictionaryType || "learners";
+        if (!targets.length) {
+          toast("未取得の単語はありません。再取得したい場合は単語カードの再取得を使ってください。");
+          return;
+        }
+        const usage = usageRecord();
+        const modeLabel = state.settings.demoMode ? "デモモード" : "実APIモード";
+        if (!state.settings.demoMode && !getApiKey(reference)) {
+          toast(`実APIモードでは${dictionaryLabel(reference)}のAPIキー入力が必要です。API通信はしていません。`, true);
+          return;
+        }
+        if (!state.settings.demoMode && usage.count + targets.length > 1000) {
+          toast("今日のAPI使用量が1000回を超える見込みのため停止しました。", true);
+          return;
+        }
+        const caution = !state.settings.demoMode
+          ? `<div class="danger-note">実APIに問い合わせます。今回APIに問い合わせる単語数は <strong>${targets.length}語</strong> です。</div>`
+          : `<div class="caution">デモモードなので実API通信は行いません。今回のモック取得対象は <strong>${targets.length}語</strong> です。</div>`;
+        const highUsage = !state.settings.demoMode && usage.count + targets.length >= 900
+          ? `<div class="danger-note">今日の使用量が900回以上になります。単語数を必ず確認してください。</div>` : "";
+        showModal(`
+          <h2>API取得の確認</h2>
+          ${caution}
+          ${highUsage}
+          <ul>
+            <li>範囲名: ${escapeHtml(range.rangeName)}</li>
+            <li>テスト日: ${escapeHtml(range.testDate || "-")}</li>
+            <li>使用辞書: ${dictionaryLabel(reference)}</li>
+            <li>フォールバック辞書: Collegiate Dictionary（自動取得OFF・単語ごとに確認後）</li>
+            <li>定義取得: ON（最大${state.settings.definitionLimit}個）</li>
+            <li>例文取得: OFF</li>
+            <li>モード: ${modeLabel}</li>
+            <li>今回APIに問い合わせる単語数: ${targets.length}</li>
+            <li>キャッシュ済みでスキップ: ${skipped}</li>
+            <li>今日のAPI使用量: ${usage.count}</li>
+            <li>取得後の予想使用量: ${state.settings.demoMode ? usage.count : usage.count + targets.length}</li>
+          </ul>
+          <div class="actions">
+            <button class="primary" data-modal-confirm>この内容で取得</button>
+            <button class="soft" data-modal-cancel>キャンセル</button>
+          </div>
+        `, () => fetchWords(range.id, targets.map(w => w.id), reference));
+      }
+
+      async function fetchWords(rangeId, wordIds, reference) {
+        const range = state.ranges.find(r => r.id === rangeId);
+        if (!range) return;
+        const targets = range.words.filter(w => wordIds.includes(w.id));
+        let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0, apiCalls = 0;
+        for (const word of targets) {
+          try {
+            const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
+            const { apiCalls: resultApiCalls = 1, ...storedResult } = result;
+            apiCalls += state.settings.demoMode ? 0 : resultApiCalls;
+            Object.assign(word, storedResult, {
+              apiFetched: true,
+              cacheVersion: CACHE_SCHEMA_VERSION,
+              lastApiFetchedAt: new Date().toISOString(),
+              error: result.error || ""
+            });
+            success++;
+            if (word.hasAudio) audio++; else noAudio++;
+            if (word.hasDefinition) defYes++; else defNo++;
+            if (word.dictionarySource === "collegiate") collegiateCount++; else learnersCount++;
+          } catch (err) {
+            if (!state.settings.demoMode) apiCalls++;
+            word.apiFetched = false;
+            word.error = err.message || "取得に失敗しました";
+            failed++;
+          }
+        }
+        if (!state.settings.demoMode) incrementUsage(apiCalls);
+        save();
+        toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
+      }
+
+      async function fetchDemo(word, reference = "learners") {
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const found = demoData[word] || null;
+        if (!found) {
+          return {
+            pronunciationVariants: [],
+            pronunciation: "",
+            audioId: "",
+            audioUrl: "",
+            mwUrl: dictionaryUrl(word),
+            dictionarySource: reference,
+            partOfSpeech: "",
+            definitions: [],
+            hasDefinition: false,
+            hasAudio: false,
+            error: "デモデータに情報がありません"
+          };
+        }
+        const definitions = found.defs.slice(0, state.settings.definitionLimit);
+        const rawVariants = found.variants || [{ prs: found.prs, sound: found.sound, fl: found.fl, label: "" }];
+        const pronunciationVariants = dedupePronunciationVariants(rawVariants.map(item => normalizePronunciationVariant({
+          dictionarySource: reference,
+          headword: word,
+          partOfSpeech: item.fl || found.fl || "",
+          label: item.label || "",
+          pronunciation: item.prs || "",
+          audioId: item.sound || ""
+        })));
+        const result = {
+          pronunciationVariants,
+          pronunciation: "",
+          audioId: "",
+          audioUrl: "",
+          mwUrl: dictionaryUrl(word),
+          dictionarySource: reference,
+          partOfSpeech: "",
+          definitions,
+          hasDefinition: definitions.length > 0,
+          hasAudio: pronunciationVariants.some(variant => variant.audioUrl),
+          error: ""
+        };
+        syncLegacyPronunciationFields(result, reference);
+        return result;
+      }
+
+      async function fetchReal(word, apiKey, reference = "learners") {
+        const cleanedKey = cleanApiKey(apiKey);
+        if (!cleanedKey) throw new Error("APIキー未入力です");
+        const data = await requestDictionaryApi(word, cleanedKey, reference);
+        let apiCalls = 1;
+        if (data.length && data.every(item => typeof item === "string")) {
+          const fallback = await fetchSuggestionEntry(data, word, cleanedKey, reference);
+          if (!fallback) {
+            return {
+              pronunciationVariants: [],
+              pronunciation: "",
+              audioId: "",
+              audioUrl: "",
+              mwUrl: dictionaryUrl(word),
+              dictionarySource: reference,
+              partOfSpeech: "",
+              definitions: [],
+              hasDefinition: false,
+              hasAudio: false,
+              apiCalls,
+              error: "単語候補のみ返りました"
+            };
+          }
+          apiCalls += fallback.apiCalls;
+          return buildResultFromData(fallback.data, word, reference, apiCalls);
+        }
+        return buildResultFromData(data, word, reference, apiCalls);
+      }
+
+      async function requestDictionaryApi(word, apiKey, reference) {
+        const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(apiKey)}`;
+        const response = await fetch(endpoint);
+        if (!response.ok) throw new Error(`APIエラー: HTTP ${response.status}`);
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          throw new Error(text.slice(0, 80) || "APIレスポンスをJSONとして読めません");
+        }
+        if (!Array.isArray(data)) {
+          throw new Error(data.message || data.error || "APIキーまたはレスポンス形式を確認してください");
+        }
+        return data;
+      }
+
+      async function fetchSuggestionEntry(suggestions, word, apiKey, reference) {
+        const target = normalizeLookupText(word);
+        const candidates = suggestions
+          .map(suggestion => String(suggestion || "").trim())
+          .filter(Boolean)
+          .filter(suggestion => normalizeLookupText(suggestion) !== target)
+          .slice(0, 3);
+        let apiCalls = 0;
+        for (const candidate of candidates) {
+          apiCalls++;
+          const data = await requestDictionaryApi(candidate, apiKey, reference);
+          const match = findBestEntryMatch(data, word);
+          if (match) return { data, apiCalls };
+        }
+        return null;
+      }
+
+      function buildResultFromData(data, word, reference, apiCalls) {
+        const target = normalizeLookupText(word);
+        const entries = data.filter(item => item && typeof item === "object" && item.hwi);
+        const related = entries.map(entry => {
+          const exactHeadword = normalizeLookupText(entry.hwi?.hw) === target;
+          const exactId = normalizeLookupText(String(entry.meta?.id || "").split(":")[0]) === target;
+          const stemMatch = (entry.meta?.stems || []).some(stem => normalizeLookupText(stem) === target);
+          const derivedSource = !exactHeadword ? findDerivedFormData(entry, word) : null;
+          return { entry, exactHeadword, exactId, stemMatch, derivedSource };
+        }).filter(item => item.exactHeadword || item.exactId || item.stemMatch || item.derivedSource);
+
+        if (!related.length) {
+          return emptyPronunciationResult(word, reference, apiCalls, "単語自体が見つかりません");
+        }
+
+        const variants = [];
+        const definitions = [];
+        related.forEach(item => {
+          const source = item.exactHeadword ? item.entry : item.derivedSource;
+          if (item.exactHeadword) variants.push(...collectEntryPronunciationVariants(item.entry, word, reference));
+          else if (source) variants.push(...collectDerivedPronunciationVariants(item.entry, source, word, reference));
+          definitions.push(...extractDefinitions(source || item.entry));
+        });
+        const pronunciationVariants = dedupePronunciationVariants(variants);
+        const uniqueDefinitions = [...new Set(definitions)].slice(0, state.settings.definitionLimit);
+        const hasAudio = pronunciationVariants.some(variant => variant.audioUrl);
+        const hasPronunciation = pronunciationVariants.some(variant => variant.pronunciation);
+        let error = "";
+        if (!pronunciationVariants.length) error = "辞書項目はありますが発音情報がありません";
+        else if (!hasAudio) error = "発音表記はありますが公式音声がありません";
+        else if (!hasPronunciation) error = "音声はありますが発音表記がありません";
+
+        const result = {
+          pronunciationVariants,
+          pronunciation: "",
+          audioId: "",
+          audioUrl: "",
+          mwUrl: dictionaryUrl(word),
+          dictionarySource: reference,
+          partOfSpeech: "",
+          definitions: uniqueDefinitions,
+          hasDefinition: uniqueDefinitions.length > 0,
+          hasAudio,
+          apiCalls,
+          error
+        };
+        syncLegacyPronunciationFields(result, reference);
+        return result;
+      }
+
+      function emptyPronunciationResult(word, reference, apiCalls, error) {
+        return {
+          pronunciationVariants: [],
+          pronunciation: "",
+          audioId: "",
+          audioUrl: "",
+          mwUrl: dictionaryUrl(word),
+          dictionarySource: reference,
+          partOfSpeech: "",
+          definitions: [],
+          hasDefinition: false,
+          hasAudio: false,
+          apiCalls,
+          error
+        };
+      }
+
+      function collectEntryPronunciationVariants(entry, word, reference) {
+        const headword = cleanHeadword(entry.hwi?.hw || String(entry.meta?.id || "").split(":")[0] || word);
+        const partOfSpeech = entry.fl || "";
+        const variants = [];
+        const add = (pronunciations, label = "") => {
+          (pronunciations || []).forEach(pron => {
+            variants.push(normalizePronunciationVariant({
+              dictionarySource: reference,
+              headword,
+              partOfSpeech,
+              label,
+              pronunciation: pronunciationText(pron, reference),
+              audioId: pron.sound?.audio || ""
+            }));
+          });
+        };
+        add(entry.hwi?.prs, "");
+        (entry.ahws || []).forEach(ahw => add(ahw.prs, cleanHeadword(ahw.hw || ahw.va || "")));
+        (entry.vrs || []).forEach(variant => add(variant.prs, cleanHeadword(variant.va || variant.vl || variant.hw || "")));
+        return variants;
+      }
+
+      function collectDerivedPronunciationVariants(entry, source, word, reference) {
+        const label = cleanHeadword(source.if || source.va || source.ure || source.drp || source.hw || word);
+        return collectObjectPronunciations(source).map(pron => normalizePronunciationVariant({
+          dictionarySource: reference,
+          headword: cleanHeadword(entry.hwi?.hw || word),
+          partOfSpeech: source.fl || entry.fl || "",
+          label,
+          pronunciation: pronunciationText(pron, reference),
+          audioId: pron.sound?.audio || ""
+        }));
+      }
+
+      function findBestEntryMatch(data, word) {
+        const target = normalizeLookupText(word);
+        const entries = data.filter(item => item && typeof item === "object" && item.hwi);
+        const headword = entries.find(item => entryLookupTerms(item).some(term => normalizeLookupText(term) === target));
+        if (headword) return { entry: headword, kind: "headword" };
+        const stem = entries.find(item => {
+          const stems = Array.isArray(item.meta?.stems) ? item.meta.stems : [];
+          return stems.some(term => normalizeLookupText(term) === target);
+        });
+        return stem ? { entry: stem, kind: "stem" } : null;
+      }
+
+      function findDerivedFormData(entry, word) {
+        const target = normalizeLookupText(word);
+        const formKeys = ["if", "hw", "va", "ure", "drp"];
+        const queue = [entry];
+        const seen = new Set();
+        const candidates = [];
+        while (queue.length) {
+          const item = queue.shift();
+          if (!item || typeof item !== "object") continue;
+          if (seen.has(item)) continue;
+          seen.add(item);
+          if (item !== entry && formKeys.some(key => normalizeLookupText(item[key]) === target)) candidates.push(item);
+          Object.values(item).forEach(value => {
+            if (Array.isArray(value)) value.forEach(child => queue.push(child));
+            else if (value && typeof value === "object") queue.push(value);
+          });
+        }
+        return candidates.find(item => collectObjectPronunciations(item).some(pr => pr.sound?.audio))
+          || candidates.find(item => collectObjectPronunciations(item).length)
+          || candidates.find(item => extractDefinitions(item).length)
+          || candidates[0]
+          || null;
+      }
+
+      function entryLookupTerms(entry) {
+        const terms = [];
+        if (entry.meta?.id) terms.push(String(entry.meta.id).split(":")[0]);
+        if (entry.hwi?.hw) terms.push(entry.hwi.hw);
+        return terms;
+      }
+
+      function normalizeLookupText(value) {
+        return String(value || "")
+          .toLowerCase()
+          .split(":")[0]
+          .replace(/\*|\s+/g, "")
+          .replace(/[^a-z0-9]/g, "");
+      }
+
+      function collectObjectPronunciations(item) {
+        return Array.isArray(item?.prs) ? item.prs.filter(Boolean) : [];
+      }
+
+      function extractDefinitions(entry) {
+        const defs = [];
+        if (Array.isArray(entry.shortdef)) defs.push(...entry.shortdef);
+        const appShortdef = entry.meta?.["app-shortdef"]?.def;
+        if (Array.isArray(appShortdef)) defs.push(...appShortdef);
+        defs.push(...definitionTexts(entry.def));
+        return [...new Set(defs.map(cleanDefinition).filter(Boolean))];
+      }
+
+      function definitionTexts(value) {
+        const defs = [];
+        const walk = (item) => {
+          if (!item) return;
+          if (Array.isArray(item)) {
+            if (item[0] === "text" && typeof item[1] === "string") {
+              defs.push(item[1]);
+              return;
+            }
+            item.forEach(walk);
+            return;
+          }
+          if (typeof item === "object") Object.values(item).forEach(walk);
+        };
+        walk(value);
+        return defs;
+      }
+
+      function cleanDefinition(text) {
+        return String(text || "")
+          .replace(/\{bc\}/g, "")
+          .replace(/\{\/?it\}/g, "")
+          .replace(/\{\/?wi\}/g, "")
+          .replace(/\{phrase\}([^{}]+)\{\/phrase\}/g, "$1")
+          .replace(/\{sx\|([^|{}]+)\|[^{}]*\|[^{}]*\}/g, "$1")
+          .replace(/\{a_link\|([^{}]+)\}/g, "$1")
+          .replace(/\{[^}]+\}/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+
+      function clearCache(rangeId) {
+        const range = state.ranges.find(r => r.id === rangeId);
+        if (!range) return;
+        showModal(`
+          <h2>APIキャッシュ削除</h2>
+          <div class="caution">削除対象: 発音候補、発音表記、音声ID、音声URL、品詞、定義、使用辞書、API取得状態、エラー、取得日時。</div>
+          <p>残るデータ: 単語、範囲名、テスト日、ページ範囲、現在位置、苦手・覚えた状態。</p>
+          <p>対象範囲: <strong>${escapeHtml(range.rangeName)}</strong> / ${range.words.length}語</p>
+          <div class="actions">
+            <button class="warn" data-modal-confirm>キャッシュのみ削除</button>
+            <button class="soft" data-modal-cancel>キャンセル</button>
+          </div>
+        `, () => {
+          range.words.forEach(w => {
+            w.pronunciation = "";
+            w.audioId = "";
+            w.audioUrl = "";
+            w.pronunciationVariants = [];
+            w.dictionarySource = "";
+            w.partOfSpeech = "";
+            w.definitions = [];
+            w.hasDefinition = false;
+            w.cacheVersion = 0;
+            w.apiFetched = false;
+            w.hasAudio = false;
+            w.error = "";
+            w.lastApiFetchedAt = "";
+          });
+          range.cacheClearedAt = new Date().toISOString();
+          save();
+          toast("APIキャッシュのみ削除しました。");
+        });
+      }
+
+      function deleteRange(rangeId) {
+        const range = state.ranges.find(r => r.id === rangeId);
+        if (!range) return;
+        showModal(`
+          <h2>範囲削除</h2>
+          <div class="danger-note">単語リストごと削除します。この操作は元に戻せません。</div>
+          <p>対象: <strong>${escapeHtml(range.rangeName)}</strong> / ${range.words.length}語</p>
+          <div class="actions">
+            <button class="danger" data-modal-confirm>削除する</button>
+            <button class="soft" data-modal-cancel>キャンセル</button>
+          </div>
+        `, () => {
+          stopContinuousPlayback();
+          state.ranges = state.ranges.filter(r => r.id !== rangeId);
+          if (state.selectedRangeId === rangeId) state.selectedRangeId = null;
+          save();
+          $("wordPanel").classList.add("hidden");
+          toast("範囲を削除しました。");
+        });
+      }
+
+      function playOfficial(wordId) {
+        stopContinuousPlayback();
+        const word = findWord(wordId);
+        if (!word || !word.audioUrl) return;
+        rememberWord(wordId);
+        const audio = new Audio(word.audioUrl);
+        audio.play().catch(() => toast("公式音声を再生できませんでした。MWリンクや読み上げを使ってください。", true));
+      }
+
+      function playPronunciationVariant(wordId, variantId) {
+        stopContinuousPlayback();
+        const word = findWord(wordId);
+        const variant = word?.pronunciationVariants?.find(item => item.id === variantId);
+        if (!word || !variant?.audioUrl) return;
+        rememberWord(wordId);
+        const audio = new Audio(variant.audioUrl);
+        audio.play().catch(() => toast("この発音の公式音声を再生できませんでした。", true));
+      }
+
+      function speakWord(wordId) {
+        const word = findWord(wordId);
+        if (!word || !("speechSynthesis" in window)) {
+          toast("このブラウザでは読み上げに対応していません。", true);
+          return;
+        }
+        rememberWord(wordId);
+        const u = new SpeechSynthesisUtterance(word.word);
+        u.lang = "en-US";
+        speechSynthesis.cancel();
+        speechSynthesis.speak(u);
+      }
+
+      function rememberWord(wordId) {
+        const range = findRangeByWord(wordId);
+        if (!range) return;
+        state.selectedRangeId = range.id;
+        range.currentWordId = wordId;
+        save(false);
+        updateCurrentWord(wordId);
+      }
+
+      function updateCurrentWord(wordId) {
+        document.querySelectorAll(".word-card.current-word").forEach(card => card.classList.remove("current-word"));
+        document.querySelector(`[data-word-id="${CSS.escape(wordId)}"]`)?.classList.add("current-word");
+      }
+
+      function goToNextWord(wordId) {
+        const range = findRangeByWord(wordId);
+        if (!range) return;
+        const words = filteredWords(range);
+        const index = words.findIndex(w => w.id === wordId);
+        const next = words[index + 1] || words[0];
+        if (!next) return;
+        rememberWord(next.id);
+        document.querySelector(`[data-word-id="${CSS.escape(next.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function toggleStudyStatus(wordId, status) {
         stopContinuousPlayback();
         const word = findWord(wordId);
         if (!word || !["hard", "known"].includes(status)) return;
@@ -834,4 +1665,3 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       }
     })();
   
-
