@@ -1,7 +1,3 @@
-Exit code: 0
-Wall time: 1 seconds
-Total output lines: 1668
-Output:
 var { createTestSession, renderTestQuestion, answerTestQuestion, finishTest, abortTest, runTestFeatureSelfCheck } = window.MWTest;
 window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 
