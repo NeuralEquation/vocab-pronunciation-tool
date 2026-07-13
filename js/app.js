@@ -729,6 +729,9 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       }
 
       function wordFailureLabel(word) {
+        if (word.error?.includes("デモデータ")) return "デモにデータなし";
+        if (word.error?.includes("HTTP")) return word.error.replace(/^APIエラー:\s*/, "API ");
+        if (word.error?.includes("ネットワーク")) return "通信エラー";
         if (word.error?.includes("公式音声がありません")) return "音声なし";
         if (word.error?.includes("発音情報がありません")) return "発音なし";
         if (word.error?.includes("発音表記がありません")) return "表記なし";
@@ -738,6 +741,14 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         return "";
       }
 
+      function safeApiError(error) {
+        const message = String(error?.message || error || "取得に失敗しました");
+        if (/HTTP\s+\d{3}/.test(message)) return message.match(/HTTP\s+\d{3}/)[0];
+        if (/Failed to fetch|NetworkError|network/i.test(message)) return "ネットワークまたはAPIへの接続に失敗しました";
+        if (/APIキー/.test(message)) return "APIキーを確認してください";
+        return message.slice(0, 100);
+      }
+
       function toast(message, isDanger = false) {
         const el = $("toast");
         el.textContent = message;
@@ -745,6 +756,13 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         el.classList.remove("hidden");
         clearTimeout(toast.timer);
         toast.timer = setTimeout(() => el.classList.add("hidden"), 3600);
+      }
+
+      function dismissToast() {
+        clearTimeout(toast.timer);
+        const el = $("toast");
+        el.classList.add("toast-dismissed");
+        setTimeout(() => { el.classList.add("hidden"); el.classList.remove("toast-dismissed"); }, 160);
       }
 
       function showModal(html, onConfirm) {
@@ -869,9 +887,12 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         state.fetchingRangeId = rangeId;
         const targets = range.words.filter(w => wordIds.includes(w.id));
         let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0, apiCalls = 0;
+        const failureReasons = new Map();
         const renderProgress = (current = "") => {
           const done = success + failed, total = targets.length, pct = total ? Math.floor(done / total * 100) : 100;
-          $("modalRoot").innerHTML = `<div class="modal api-progress"><h2>APIデータを取得しています</h2><div>${escapeHtml(range.rangeName || "無題の範囲")}</div><strong>${done} / ${total}語（${pct}%）</strong><div class="api-progress-bar"><span style="width:${pct}%"></span></div><div>現在処理中: ${escapeHtml(current || "完了")}</div><div class="mini-grid"><div class="mini"><strong>${success}</strong>成功</div><div class="mini"><strong>${failed}</strong>失敗</div><div class="mini"><strong>${audio}</strong>音声あり</div><div class="mini"><strong>${noAudio}</strong>音声なし</div><div class="mini"><strong>${defYes}</strong>定義あり</div><div class="mini"><strong>${defNo}</strong>定義なし</div></div></div>`;
+          const reasons = done === total && failureReasons.size ? `<div class="danger-note">失敗理由: ${[...failureReasons.entries()].map(([reason, count]) => `${escapeHtml(reason)}（${count}語）`).join(" / ")}</div>` : "";
+          const mode = state.settings.demoMode ? `<div class="caution">デモモード中です。実APIを使う場合は設定でデモモードをOFFにしてください。</div>` : "";
+          $("modalRoot").innerHTML = `<div class="modal api-progress"><h2>APIデータを取得しています</h2><div>${escapeHtml(range.rangeName || "無題の範囲")}</div><strong>${done} / ${total}語（${pct}%）</strong><div class="api-progress-bar"><span style="width:${pct}%"></span></div><div>現在処理中: ${escapeHtml(current || "完了")}</div><div class="mini-grid"><div class="mini"><strong>${success}</strong>成功</div><div class="mini"><strong>${failed}</strong>失敗</div><div class="mini"><strong>${audio}</strong>音声あり</div><div class="mini"><strong>${noAudio}</strong>音声なし</div><div class="mini"><strong>${defYes}</strong>定義あり</div><div class="mini"><strong>${defNo}</strong>定義なし</div></div>${reasons}${mode}</div>`;
         };
         renderProgress(targets[0]?.word || "");
         for (const word of targets) {
@@ -892,7 +913,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           } catch (err) {
             if (!state.settings.demoMode) apiCalls++;
             word.apiFetched = false;
-            word.error = err.message || "取得に失敗しました";
+            word.error = safeApiError(err);
+            failureReasons.set(word.error, (failureReasons.get(word.error) || 0) + 1);
             failed++;
           }
           renderProgress(word.word);
@@ -903,7 +925,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         $("modalRoot").querySelector(".api-progress").insertAdjacentHTML("beforeend", `<div class="actions"><button class="primary" data-progress-close>範囲画面へ戻る</button></div>`);
         $("modalRoot").querySelector("[data-progress-close]").addEventListener("click", closeModal);
         state.fetchingRangeId = "";
-        toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
+        toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls}。通知は横スワイプで閉じられます。`, failed > 0);
       }
 
       async function fetchDemo(word, reference = "learners") {
@@ -982,7 +1004,17 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 
       async function requestDictionaryApi(word, apiKey, reference) {
         const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(apiKey)}`;
-        const response = await fetch(endpoint);
+        let response;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            response = await fetch(endpoint);
+            if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt) break;
+          } catch (error) {
+            if (attempt) throw error;
+          }
+          await new Promise(resolve => setTimeout(resolve, 650));
+        }
+        if (!response) throw new Error("ネットワークまたはAPIへの接続に失敗しました");
         if (!response.ok) throw new Error(`APIエラー: HTTP ${response.status}`);
         const text = await response.text();
         let data;
@@ -1718,6 +1750,13 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         $("appendJson").addEventListener("click", () => importJson(false));
         $("replaceJson").addEventListener("click", () => importJson(true));
         $("wipeAll").addEventListener("click", wipeAll);
+        let toastStartX = null;
+        $("toast").addEventListener("pointerdown", event => { toastStartX = event.clientX; });
+        $("toast").addEventListener("pointerup", event => {
+          if (toastStartX !== null && Math.abs(event.clientX - toastStartX) >= 48) dismissToast();
+          toastStartX = null;
+        });
+        $("toast").addEventListener("pointercancel", () => { toastStartX = null; });
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) stopContinuousPlayback();
           else render();

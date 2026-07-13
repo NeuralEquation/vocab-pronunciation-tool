@@ -463,7 +463,10 @@
       border-radius: var(--radius);
       padding: 12px;
       box-shadow: var(--shadow);
+      touch-action: pan-y;
+      transition: opacity .16s ease, transform .16s ease;
     }
+    .toast.toast-dismissed { opacity: 0; transform: translateX(110%); }
     .switch {
       display: flex;
       align-items: center;
