@@ -15,7 +15,7 @@ const meaningKey = word => meanings(word).map(v => v.toLocaleLowerCase("ja")).so
 const sharesMeaning = (a, b) => meanings(a).some(value => meanings(b).includes(value));
 const accuracy = stat => stat.attempts ? stat.correct / stat.attempts : -1;
 
-function selectTestWords(words, direction, limit = 15, random = Math.random) {
+function selectTestWords(words, direction, limit = 15, random = Math.random, mode = "normal") {
   const eligible = words.filter(word => word.word && meanings(word).length);
   const canBuild = eligible.filter(word => buildChoices(word, eligible, direction, 0, random));
   const tie = new Map(canBuild.map(word => [word.id, random()]));
@@ -28,6 +28,17 @@ function selectTestWords(words, direction, limit = 15, random = Math.random) {
       String(sa.lastTestedAt || "").localeCompare(String(sb.lastTestedAt || "")) ||
       (sa.attempts || 0) - (sb.attempts || 0) || tie.get(a.id) - tie.get(b.id);
   });
+  if (mode === "wrong") {
+    const recentWrong = new Set((words.flatMap(word => DIRECTIONS.some(dir => word.testStats?.[dir]?.lastResult === "incorrect") ? [word.id] : [])));
+    return sortReview(canBuild.filter(word => word.studyStatus === "hard" || recentWrong.has(word.id))).slice(0, limit).map(word => ({ word, category: "wrong" }));
+  }
+  if (mode === "cram") {
+    const score = word => {
+      const own = statFor(word, direction), other = statFor(word, direction === "enToJa" ? "jaToEn" : "enToJa");
+      return (own.lastResult === "incorrect" ? 100 : 0) + (word.studyStatus === "hard" ? 80 : 0) + ((own.consecutiveCorrect || 0) < 2 ? 40 : 0) + ((other.consecutiveCorrect || 0) < 2 ? 35 : 0) + (!(own.attempts || 0) && !(other.attempts || 0) ? 20 : 0);
+    };
+    return [...canBuild].sort((a, b) => score(b) - score(a) || String(statFor(a, direction).lastTestedAt || "").localeCompare(String(statFor(b, direction).lastTestedAt || "")) || tie.get(a.id) - tie.get(b.id)).slice(0, limit).map(word => ({ word, category: "cram" }));
+  }
   const chosen = [];
   const take = (list, count, category) => sortReview(list).slice(0, count).forEach(word => chosen.push({ word, category }));
   take(urgent, Math.min(6, limit), "urgent");
@@ -84,11 +95,9 @@ function buildAnswerPositions(count = 15, random = Math.random) {
 }
 
 function buildQuestionOrder(selected, random = Math.random) {
-  const groups = {
-    urgent: shuffle(selected.filter(x => x.category === "urgent"), random),
-    untested: shuffle(selected.filter(x => x.category === "untested"), random),
-    normal: shuffle(selected.filter(x => x.category === "normal"), random)
-  };
+  const groups = {};
+  selected.forEach(item => { (groups[item.category] ||= []).push(item); });
+  Object.keys(groups).forEach(key => { groups[key] = shuffle(groups[key], random); });
   const result = [];
   while (result.length < selected.length) {
     const lastTwo = result.slice(-2).map(item => item.category);
@@ -99,12 +108,16 @@ function buildQuestionOrder(selected, random = Math.random) {
   return result;
 }
 
-function createTestSession(range, direction, random = Math.random) {
+function createTestSession(range, direction, options = {}, legacyRandom = Math.random) {
   if (!DIRECTIONS.includes(direction)) throw new Error("Invalid direction");
-  const selected = selectTestWords(range.words || [], direction, 15, random);
-  if (selected.length < 15) return { error: "日本語訳と有効な選択肢がある単語が15語必要です。" };
+  // Old callers passed a random function as the third argument. Keep that API working.
+  const random = typeof options === "function" ? options : (typeof legacyRandom === "function" ? legacyRandom : Math.random);
+  const mode = typeof options === "object" && ["normal", "cram", "wrong"].includes(options.mode) ? options.mode : "normal";
+  const selected = selectTestWords(range.words || [], direction, 15, random, mode);
+  if (!selected.length) return { error: mode === "wrong" ? "現在、間違い集中モードの対象単語はありません。" : "出題できる単語がありません。" };
+  if (selected.length < 15 && mode !== "wrong") return { error: "日本語訳と有効な選択肢がある単語が15語必要です。" };
   const order = buildQuestionOrder(selected, random);
-  const positions = buildAnswerPositions(15, random);
+  const positions = buildAnswerPositions(selected.length, random);
   const questions = order.map((item, index) => ({
     wordId: item.word.id,
     category: item.category,
@@ -112,7 +125,7 @@ function createTestSession(range, direction, random = Math.random) {
     choices: buildChoices(item.word, range.words, direction, positions[index], random)
   }));
   if (questions.some(q => !q.choices)) return { error: "選択肢を作成できない単語があります。" };
-  return { id: `test_${Date.now().toString(36)}`, rangeId: range.id, direction, questions, index: 0, answers: [], startedAt: new Date().toISOString(), questionStartedAt: Date.now(), finished: false };
+  return { id: `test_${Date.now().toString(36)}`, rangeId: range.id, direction, mode, questions, index: 0, answers: [], startedAt: new Date().toISOString(), questionStartedAt: Date.now(), finished: false };
 }
 
 const escapeHtml = value => String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[ch]));
@@ -143,8 +156,8 @@ function finishTest(session, range) {
   session.finished = true;
   session.finishedAt = new Date().toISOString();
   const correct = session.answers.filter(a => a.correct).length;
-  const result = { id: session.id, direction: session.direction, startedAt: session.startedAt, finishedAt: session.finishedAt, total: session.questions.length, correct, accuracy: Math.round(correct / session.questions.length * 100), averageResponseMs: Math.round(session.answers.reduce((sum, a) => sum + a.responseMs, 0) / Math.max(1, session.answers.length)), categoryCorrect: {}, wrongWordIds: session.answers.filter(a => !a.correct).map(a => a.wordId) };
-  ["urgent", "untested", "normal"].forEach(category => { result.categoryCorrect[category] = session.answers.filter(a => a.category === category && a.correct).length; });
+  const result = { id: session.id, direction: session.direction, mode: session.mode || "normal", startedAt: session.startedAt, finishedAt: session.finishedAt, total: session.questions.length, correct, accuracy: Math.round(correct / session.questions.length * 100), averageResponseMs: Math.round(session.answers.reduce((sum, a) => sum + a.responseMs, 0) / Math.max(1, session.answers.length)), categoryCorrect: {}, wrongWordIds: session.answers.filter(a => !a.correct).map(a => a.wordId) };
+  ["urgent", "untested", "normal", "cram", "wrong"].forEach(category => { result.categoryCorrect[category] = session.answers.filter(a => a.category === category && a.correct).length; });
   range.testHistory = [...(range.testHistory || []), result].slice(-30);
   return result;
 }
@@ -155,8 +168,10 @@ function runTestFeatureSelfCheck() {
   const words = Array.from({ length: 20 }, (_, i) => ({ id: `w${i}`, word: `word${i}`, normalized: `word${i}`, meaningsJa: [`意味${i}`], studyStatus: i < 3 ? "hard" : "unrated", partOfSpeech: i % 2 ? "noun" : "verb", testStats: {} }));
   const session = createTestSession({ id: "r", words }, "enToJa", () => 0.37);
   const positionCounts = session.questions.reduce((counts, q) => (counts[q.correctPosition]++, counts), [0, 0, 0, 0]);
-  const passed = !session.error && session.questions.length === 15 && positionCounts.sort().join(",") === "3,4,4,4" && session.questions.every(q => q.choices.length === 4);
-  return { passed, questionCount: session.questions?.length || 0, positionCounts };
+  const cram = createTestSession({ id: "r", words }, "enToJa", { mode: "cram" }, () => 0.37);
+  const wrong = createTestSession({ id: "r", words }, "enToJa", { mode: "wrong" }, () => 0.37);
+  const passed = !session.error && session.questions.length === 15 && positionCounts.sort().join(",") === "3,4,4,4" && session.questions.every(q => q.choices.length === 4) && cram.questions?.length === 15 && wrong.questions?.every(q => ["w0", "w1", "w2"].includes(q.wordId));
+  return { passed, questionCount: session.questions?.length || 0, positionCounts, cramCount: cram.questions?.length || 0, wrongCount: wrong.questions?.length || 0 };
 }
 
 window.MWTest = Object.freeze({

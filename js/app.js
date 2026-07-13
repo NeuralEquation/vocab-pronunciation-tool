@@ -30,7 +30,9 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 
       const state = {
         ranges: [],
-        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2 },
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
+        studyLog: {},
+        fetchingRangeId: "",
         selectedRangeId: null,
         lastImportWords: [],
         activeTest: null,
@@ -237,6 +239,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
             state.settings.definitionLimit = Number(parsed.settings?.definitionLimit) || 2;
             state.settings.studyFilter = ["all", "unrated", "hard", "known"].includes(parsed.settings?.studyFilter) ? parsed.settings.studyFilter : "all";
             state.settings.playbackInterval = [1, 2, 3].includes(Number(parsed.settings?.playbackInterval)) ? Number(parsed.settings.playbackInterval) : 2;
+            ["mondayEndTime", "wednesdayEndTime", "fridayEndTime"].forEach(key => state.settings[key] = /^\d{2}:\d{2}$/.test(parsed.settings?.[key] || "") ? parsed.settings[key] : "");
+            state.studyLog = parsed.studyLog && typeof parsed.studyLog === "object" ? parsed.studyLog : {};
           }
           if (state.settings.saveKey) {
             $("apiKey").value = localStorage.getItem(API_KEY_KEY) || "";
@@ -248,6 +252,9 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           $("definitionLimit").value = String(state.settings.definitionLimit);
           $("wordFilter").value = state.settings.studyFilter;
           $("playbackInterval").value = String(state.settings.playbackInterval);
+          $("mondayEndTime").value = state.settings.mondayEndTime;
+          $("wednesdayEndTime").value = state.settings.wednesdayEndTime;
+          $("fridayEndTime").value = state.settings.fridayEndTime;
         } catch (err) {
           toast("保存データの読み込みに失敗しました。JSONの破損があるかもしれません。");
         }
@@ -263,9 +270,10 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
             dictionaryType: state.settings.dictionaryType,
             definitionLimit: state.settings.definitionLimit,
             studyFilter: state.settings.studyFilter,
-            playbackInterval: state.settings.playbackInterval
+            playbackInterval: state.settings.playbackInterval,
+            mondayEndTime: state.settings.mondayEndTime, wednesdayEndTime: state.settings.wednesdayEndTime, fridayEndTime: state.settings.fridayEndTime
           },
-          ranges: state.ranges
+          ranges: state.ranges, studyLog: state.studyLog
         };
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -283,6 +291,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           delete range.material;
           delete range.memo;
           range.testHistory = Array.isArray(range.testHistory) ? range.testHistory.slice(-30) : [];
+          if (range.manualTestEndedDate && range.manualTestEndedDate !== todayKey()) range.manualTestEndedDate = "";
           range.words.forEach(word => {
             word.id = word.id || uid("word");
             word.normalized = word.normalized || String(word.word || "").toLowerCase();
@@ -397,7 +406,37 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const definitions = words.filter(w => w.hasDefinition).length;
         const hard = words.filter(w => w.studyStatus === "hard").length;
         const known = words.filter(w => w.studyStatus === "known").length;
-        return { total, fetched, audio, noAudio, definitions, hard, known, pct: total ? Math.round(fetched / total * 100) : 0 };
+        const unseen = words.filter(w => !(w.testStats?.enToJa?.attempts || 0) && !(w.testStats?.jaToEn?.attempts || 0)).length;
+        const unsettled = words.filter(w => w.studyStatus !== "known" || (w.testStats?.enToJa?.consecutiveCorrect || 0) < 2 || (w.testStats?.jaToEn?.consecutiveCorrect || 0) < 2 || w.testStats?.enToJa?.lastResult === "incorrect" || w.testStats?.jaToEn?.lastResult === "incorrect").length;
+        return { total, fetched, audio, noAudio, definitions, hard, known, unseen, unsettled, pct: total ? Math.round(fetched / total * 100) : 0, learningPct: total ? Math.round(known / total * 100) : 0 };
+      }
+
+      function isRangeEnded(range, now = new Date()) {
+        if (range.manualTestEndedDate === localDateString(now)) return true;
+        if (range.testDate !== localDateString(now)) return false;
+        const key = now.getDay() === 1 ? "mondayEndTime" : now.getDay() === 3 ? "wednesdayEndTime" : "";
+        return Boolean(key && state.settings[key] && `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}` >= state.settings[key]);
+      }
+      function learningPlan(now = new Date()) {
+        const today = localDateString(now);
+        const future = state.ranges.filter(r => r.words?.length && r.testDate && (r.testDate > today || (r.testDate === today && !isRangeEnded(r, now)))).sort((a,b) => a.testDate.localeCompare(b.testDate));
+        const primary = future[0] || null, preview = future[1] || null;
+        const day = now.getDay(), todayTest = primary?.testDate === today;
+        const mode = (todayTest || day === 2 || day === 0 || (day === 1 || day === 3) && !isRangeEnded(primary || {}, now)) ? "cram" : "normal";
+        const reason = todayTest ? "テスト当日のため、苦手・未定着単語を優先します。" : day === 2 ? "明日が水曜テストのため、直前確認を行います。" : day === 0 ? "明日が月曜テストのため、仕上げを行います。" : "次回テストに向けて未出題・苦手単語を優先します。";
+        return { primary, preview, mode, reason, friday: day === 5 };
+      }
+      function rangePlanHtml(label, range, now) {
+        if (!range) return `<div class="plan-card"><strong>${label}</strong><span class="meta">対象範囲はありません</span></div>`;
+        const s = statsForRange(range), days = Math.max(0, Math.ceil((new Date(`${range.testDate}T00:00:00`) - new Date(`${localDateString(now)}T00:00:00`)) / 86400000));
+        const goal = days <= 0 ? s.unsettled : Math.ceil(s.unsettled / days), recommend = Math.ceil(goal * 1.25);
+        return `<div class="plan-card"><strong>${label}: ${escapeHtml(range.rangeName || "無題の範囲")}</strong><div class="meta">${range.testDate}まで${days}日 / ${s.total}語</div><div>未出題 ${s.unseen}・苦手 ${s.hard}・覚えた ${s.known}・未定着 ${s.unsettled}</div><div>今日の目標: 最低${goal}問 / 推奨${recommend}問</div></div>`;
+      }
+      function renderTodayStudy() {
+        const now = new Date(), plan = learningPlan(now), log = state.studyLog[todayKey()] || { attempts: 0, correct: 0, enToJa: { attempts: 0, correct: 0 }, jaToEn: { attempts: 0, correct: 0 } };
+        const weekday = weekdays[now.getDay()];
+        $("todayStudyPanel").innerHTML = `<h3>${now.getMonth() + 1}月${now.getDate()}日 ${weekday}曜日</h3><strong>今日の学習方針</strong><p>${escapeHtml(plan.reason)}</p>${plan.friday ? `<div class="caution">今日は暗記構文テストがあります。2周目なので、10〜15分だけ確認しましょう。</div>` : ""}<div class="plan-grid">${rangePlanHtml("最優先", plan.primary, now)}${rangePlanHtml("先取り", plan.preview, now)}</div><div class="meta">今日: ${log.attempts}回答 / ${log.correct}正解 / 正答率 ${log.attempts ? Math.round(log.correct / log.attempts * 100) : 0}%（英→日 ${log.enToJa.attempts}、日→英 ${log.jaToEn.attempts}）</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>今日の学習を始める</button></div>`;
+        $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTest($("todayDirection").value, plan.mode); });
       }
 
       function render() {
@@ -407,6 +446,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         $("storageSize").textContent = formatBytes(bytes);
         $("rangeCount").textContent = state.ranges.length;
         renderStorageWarning(bytes);
+        renderTodayStudy();
         renderRanges();
         if (state.selectedRangeId && currentTab() === "ranges") renderWords();
       }
@@ -443,16 +483,18 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
                 </div>
                 <span class="badge ${badgeClass}">${range.status}</span>
               </div>
-              <div class="progress" aria-label="進捗"><span style="width:${s.pct}%"></span></div>
+              <div class="meta">学習定着率 ${s.learningPct}% / API取得率 ${s.pct}%</div><div class="progress" aria-label="API取得率"><span style="width:${s.pct}%"></span></div>
               <div class="mini-grid">
                 <div class="mini"><strong>${s.total}</strong>単語</div>
                 <div class="mini"><strong>${s.fetched}</strong>API取得済み</div>
                 <div class="mini"><strong>${s.hard}</strong>苦手</div>
                 <div class="mini"><strong>${s.known}</strong>覚えた</div>
+                <div class="mini"><strong>${s.unseen}</strong>未出題</div>
               </div>
               <div class="actions" style="margin-top:10px">
                 <button class="primary" data-action="open" data-id="${range.id}">開く</button>
                 <button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>
+                ${range.testDate === todayKey() ? (isRangeEnded(range) ? `<button class="soft" data-action="test-before" data-id="${range.id}">テスト前</button>` : `<button class="soft" data-action="test-ended" data-id="${range.id}">テスト終了</button>`) : ""}
               </div>
               <div class="danger-actions">
                 <button class="compact refetch" data-action="clear-cache" data-id="${range.id}">キャッシュ削除</button>
@@ -553,11 +595,11 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         $("testPanel").classList.toggle("hidden", !active);
       }
 
-      function startTest(direction) {
+      function startTest(direction, mode = $("testMode")?.value || "normal") {
         stopContinuousPlayback();
         const range = state.ranges.find(item => item.id === state.selectedRangeId);
         if (!range) return;
-        const session = createTestSession(range, direction);
+        const session = createTestSession(range, direction, { mode });
         if (session.error) return toast(session.error, true);
         state.activeTest = session;
         hideForTest(true);
@@ -587,6 +629,15 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           stats.consecutiveCorrect = 0;
           if (answer.selectedWordId) stats.confusedWith[answer.selectedWordId] = (stats.confusedWith[answer.selectedWordId] || 0) + 1;
         }
+        const other = word.testStats[session.direction === "enToJa" ? "jaToEn" : "enToJa"];
+        const before = word.studyStatus;
+        if (!answer.correct) word.studyStatus = "hard";
+        else if (stats.consecutiveCorrect >= 2 && other.consecutiveCorrect >= 2 && stats.lastResult === "correct" && other.lastResult === "correct") word.studyStatus = "known";
+        answer.studyStatusChanged = before !== word.studyStatus ? word.studyStatus : "";
+        const key = todayKey();
+        const log = state.studyLog[key] || (state.studyLog[key] = { attempts: 0, correct: 0, enToJa: { attempts: 0, correct: 0 }, jaToEn: { attempts: 0, correct: 0 } });
+        log.attempts++; log.correct += Number(answer.correct); log[session.direction].attempts++; log[session.direction].correct += Number(answer.correct);
+        Object.keys(state.studyLog).filter(date => date < localDateString(new Date(Date.now() - 29 * 86400000))).forEach(date => delete state.studyLog[date]);
         save(false);
       }
 
@@ -600,7 +651,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         });
         const feedback = document.createElement("div");
         feedback.className = `test-feedback ${answer.correct ? "correct-note" : "danger-note"}`;
-        feedback.innerHTML = `<strong>${answer.correct ? "正解" : "不正解"}</strong><div class="test-answer-word">${escapeHtml(word.word)} — ${escapeHtml(word.meaningsJa.join("／"))}</div><div>${pronunciationFeedback(word)}</div><button class="soft" data-test-action="replay">公式音声</button>${answer.correct ? "" : `<button class="primary" data-test-action="next">次の問題</button>`}`;
+        const changed = answer.studyStatusChanged === "hard" ? "苦手に変更しました" : answer.studyStatusChanged === "known" ? "覚えたに変更しました" : "";
+        feedback.innerHTML = `<strong>${answer.correct ? "正解" : "不正解"}</strong><div class="test-answer-word">${escapeHtml(word.word)} — ${escapeHtml(word.meaningsJa.join("／"))}</div><div>${pronunciationFeedback(word)}</div>${changed ? `<div><strong>${changed}</strong></div>` : ""}<button class="soft" data-test-action="replay">公式音声</button>${answer.correct ? "" : `<button class="primary" data-test-action="next">次の問題</button>`}`;
         $("testContent").appendChild(feedback);
         if (session.direction === "jaToEn" || !answer.correct) playTestAudio(word);
         if (answer.correct) setTimeout(nextTestQuestion, 700);
@@ -625,7 +677,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         save(false);
         const wrong = result.wrongWordIds.map(id => testWord(range, id)).filter(Boolean);
         const histories = (range.testHistory || []).slice(-5).reverse();
-        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${result.categoryCorrect.urgent || 0}</strong>苦手・直前ミス</div><div><strong>${wrong.length}</strong>間違い</div></div><h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${item.finishedAt.slice(0, 10)} ${item.correct}/${item.total}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${word.id}">公式音声</button><button class="soft" data-test-hard="${word.id}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
+        const modeLabel = { normal: "通常", cram: "直前", wrong: "間違い集中" }[result.mode] || "通常";
+        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><p>${session.direction === "enToJa" ? "英語 → 日本語" : "日本語 → 英語"} / ${modeLabel}モード</p><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${wrong.length}</strong>間違い</div></div><h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${item.finishedAt.slice(0, 10)} ${item.correct}/${item.total}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${word.id}">公式音声</button><button class="soft" data-test-hard="${word.id}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
       }
 
       function leaveTest(openWrong = false) {
@@ -704,7 +757,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           confirmButton.disabled = true;
           try {
             await onConfirm?.();
-            closeModal();
+            // Long-running flows may replace the confirmation with a completion screen.
+            if (root.querySelector("[data-modal-confirm]")) closeModal();
           } finally {
             confirmButton.disabled = false;
           }
@@ -811,9 +865,15 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 
       async function fetchWords(rangeId, wordIds, reference) {
         const range = state.ranges.find(r => r.id === rangeId);
-        if (!range) return;
+        if (!range || state.fetchingRangeId === rangeId) return;
+        state.fetchingRangeId = rangeId;
         const targets = range.words.filter(w => wordIds.includes(w.id));
         let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0, apiCalls = 0;
+        const renderProgress = (current = "") => {
+          const done = success + failed, total = targets.length, pct = total ? Math.floor(done / total * 100) : 100;
+          $("modalRoot").innerHTML = `<div class="modal api-progress"><h2>APIデータを取得しています</h2><div>${escapeHtml(range.rangeName || "無題の範囲")}</div><strong>${done} / ${total}語（${pct}%）</strong><div class="api-progress-bar"><span style="width:${pct}%"></span></div><div>現在処理中: ${escapeHtml(current || "完了")}</div><div class="mini-grid"><div class="mini"><strong>${success}</strong>成功</div><div class="mini"><strong>${failed}</strong>失敗</div><div class="mini"><strong>${audio}</strong>音声あり</div><div class="mini"><strong>${noAudio}</strong>音声なし</div><div class="mini"><strong>${defYes}</strong>定義あり</div><div class="mini"><strong>${defNo}</strong>定義なし</div></div></div>`;
+        };
+        renderProgress(targets[0]?.word || "");
         for (const word of targets) {
           try {
             const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
@@ -835,9 +895,14 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
             word.error = err.message || "取得に失敗しました";
             failed++;
           }
+          renderProgress(word.word);
         }
         if (!state.settings.demoMode) incrementUsage(apiCalls);
         save();
+        renderProgress("完了");
+        $("modalRoot").querySelector(".api-progress").insertAdjacentHTML("beforeend", `<div class="actions"><button class="primary" data-progress-close>範囲画面へ戻る</button></div>`);
+        $("modalRoot").querySelector("[data-progress-close]").addEventListener("click", closeModal);
+        state.fetchingRangeId = "";
         toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls} / 音声あり${audio} / 音声なし${noAudio} / 定義あり${defYes} / 定義なし${defNo} / Learner's ${learnersCount} / Collegiate ${collegiateCount}`);
       }
 
@@ -1500,6 +1565,9 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
             state.settings.saveKey = wantsSave;
             state.settings.dictionaryType = $("dictionaryType").value;
             state.settings.definitionLimit = Number($("definitionLimit").value) || 2;
+            state.settings.mondayEndTime = $("mondayEndTime").value;
+            state.settings.wednesdayEndTime = $("wednesdayEndTime").value;
+            state.settings.fridayEndTime = $("fridayEndTime").value;
             state.settings.apiKeySession = wantsSave ? "" : apiKey;
             state.settings.collegiateApiKeySession = wantsSave ? "" : collegiateApiKey;
             $("apiKey").value = apiKey;
@@ -1555,6 +1623,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           if (!range) return;
           if (btn.dataset.action === "open") { stopContinuousPlayback(); state.selectedRangeId = range.id; state.pendingWordScroll = true; renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
           if (btn.dataset.action === "fetch") confirmFetch(range);
+          if (btn.dataset.action === "test-ended") { range.manualTestEndedDate = todayKey(); save(); toast("テスト終了として記録しました。次の範囲を優先します。"); }
+          if (btn.dataset.action === "test-before") { range.manualTestEndedDate = ""; save(); toast("テスト前として記録しました。"); }
           if (btn.dataset.action === "clear-cache") clearCache(range.id);
           if (btn.dataset.action === "delete-range") deleteRange(range.id);
         });
@@ -1612,7 +1682,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           if (action === "return") leaveTest();
           if (action === "open-wrong") leaveTest(true);
           if (action === "hard-all") { session.answers.filter(answer => !answer.correct).forEach(answer => { testWord(range, answer.wordId).studyStatus = "hard"; }); save(false); toast("間違えた単語を苦手にしました。"); }
-          if (action === "repeat") startTest(session.direction);
+          if (action === "repeat") startTest(session.direction, session.mode || "normal");
         });
         $("wordList").addEventListener("click", event => {
           const btn = event.target.closest("button[data-word-action]");
@@ -1650,7 +1720,9 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         $("wipeAll").addEventListener("click", wipeAll);
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) stopContinuousPlayback();
+          else render();
         });
+        window.addEventListener("focus", render);
       }
 
       load();

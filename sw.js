@@ -3,9 +3,9 @@ const CACHE_PREFIX = "mw-pronunciation-pwa-";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=23",
-  "./js/app.js?v=23",
-  "./js/test.js?v=23",
+  "./styles.css?v=26",
+  "./js/app.js?v=26",
+  "./js/test.js?v=26",
   "./manifest.webmanifest",
   "./icon.png"
 ];
@@ -52,4 +52,3 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
-

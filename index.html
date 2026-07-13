@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=24">
+  <link rel="stylesheet" href="styles.css?v=26">
 </head>
 <body>
   <div class="app">
@@ -55,6 +55,8 @@
         </select>
         <label class="switch"><input id="demoMode" type="checkbox"> デモモードON</label>
         <label class="switch"><input id="saveKey" type="checkbox"> このブラウザにAPIキーを保存する</label>
+        <h3>学校テストの終了時刻（未設定なら範囲ごとの手動切替）</h3>
+        <div class="row"><div><label for="mondayEndTime">月曜英単語</label><input id="mondayEndTime" type="time"></div><div><label for="wednesdayEndTime">水曜英単語</label><input id="wednesdayEndTime" type="time"></div><div><label for="fridayEndTime">金曜暗記構文</label><input id="fridayEndTime" type="time"></div></div>
         <div class="actions">
           <button class="soft" id="saveApiSettings">設定を保存</button>
           <button class="danger" id="clearApiKey">APIキー削除</button>
@@ -63,6 +65,7 @@
 
       <section class="panel tab-page" id="page-ranges">
         <h2>範囲一覧</h2>
+        <section id="todayStudyPanel" class="today-study" aria-live="polite"></section>
         <div class="row">
           <div>
             <label for="rangeFilter">絞り込み</label>
@@ -151,8 +154,9 @@ record&#9;記録／記録する"></textarea>
         </div>
         <div class="learning-toolbar">
           <div class="test-launch-actions">
-            <button class="primary" id="startEnToJa">英語 → 日本語 15問</button>
-            <button class="primary" id="startJaToEn">日本語 → 英語 15問</button>
+            <select id="testMode" aria-label="テストモード"><option value="normal">通常テスト</option><option value="cram">直前モード</option><option value="wrong">間違い集中</option></select>
+            <button class="primary" id="startEnToJa">英語 → 日本語</button>
+            <button class="primary" id="startJaToEn">日本語 → 英語</button>
           </div>
           <div class="toolbar-field">
             <label for="wordFilter">単語の表示</label>
@@ -192,8 +196,7 @@ record&#9;記録／記録する"></textarea>
   <div id="modalRoot" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
   <div id="toast" class="toast hidden"></div>
 
-  <script defer src="js/test.js?v=24"></script>
-  <script defer src="js/app.js?v=24"></script>
+  <script defer src="js/test.js?v=26"></script>
+  <script defer src="js/app.js?v=26"></script>
 </body>
 </html>
-
