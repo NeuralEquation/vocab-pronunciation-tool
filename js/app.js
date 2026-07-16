@@ -382,7 +382,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const deleteAt = range.deleteAt ? new Date(range.deleteAt) : null;
         if (range.cacheClearedAt) return "キャッシュ削除済み";
         if (deleteAt && now >= deleteAt) return "削除予定";
-        if (range.testDate === today) return "今日の範囲";
+        if (range.testDate === today) return isRangeEnded(range, now) ? "終了" : "今日の範囲";
         if (range.id === nextId) return "次回の範囲";
         if (range.testDate && range.testDate > today) return "待機中";
         if (range.testDate && range.testDate < today) return "終了";
@@ -392,7 +392,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       function nextRangeId() {
         const today = localDateString(new Date());
         const candidates = state.ranges
-          .filter(r => r.words.length && r.testDate >= today)
+          .filter(r => r.words.length && r.testDate >= today && !(r.testDate === today && isRangeEnded(r, new Date())))
           .sort((a, b) => a.testDate.localeCompare(b.testDate));
         return candidates[0]?.id || "";
       }
@@ -414,17 +414,20 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       function isRangeEnded(range, now = new Date()) {
         if (range.manualTestEndedDate === localDateString(now)) return true;
         if (range.testDate !== localDateString(now)) return false;
-        const key = now.getDay() === 1 ? "mondayEndTime" : now.getDay() === 3 ? "wednesdayEndTime" : "";
-        return Boolean(key && state.settings[key] && `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}` >= state.settings[key]);
+        const endTimeKey = { 1: "mondayEndTime", 3: "wednesdayEndTime", 5: "fridayEndTime" }[now.getDay()];
+        const endTime = endTimeKey ? state.settings[endTimeKey] : "";
+        const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        return Boolean(endTime && currentTime >= endTime);
       }
       function learningPlan(now = new Date()) {
         const today = localDateString(now);
+        const endedToday = state.ranges.find(r => r.words?.length && r.testDate === today && isRangeEnded(r, now)) || null;
         const future = state.ranges.filter(r => r.words?.length && r.testDate && (r.testDate > today || (r.testDate === today && !isRangeEnded(r, now)))).sort((a,b) => a.testDate.localeCompare(b.testDate));
-        const primary = future[0] || null, preview = future[1] || null;
+        const primary = endedToday || future[0] || null, preview = endedToday ? (future[0] || null) : (future[1] || null);
         const day = now.getDay(), todayTest = primary?.testDate === today;
-        const mode = (todayTest || day === 2 || day === 0 || (day === 1 || day === 3) && !isRangeEnded(primary || {}, now)) ? "cram" : "normal";
-        const reason = todayTest ? "テスト当日のため、苦手・未定着単語を優先します。" : day === 2 ? "明日が水曜テストのため、直前確認を行います。" : day === 0 ? "明日が月曜テストのため、仕上げを行います。" : "次回テストに向けて未出題・苦手単語を優先します。";
-        return { primary, preview, mode, reason, friday: day === 5 };
+        const mode = endedToday ? "wrong" : (todayTest || day === 2 || day === 0 || (day === 1 || day === 3) && !isRangeEnded(primary || {}, now)) ? "cram" : "normal";
+        const reason = endedToday ? "今日のテスト時間は終了しました。間違えた単語を復習し、次回の範囲を少し先取りしましょう。" : todayTest ? "テスト当日のため、苦手・未定着単語を優先します。" : day === 2 ? "明日が水曜テストのため、直前確認を行います。" : day === 0 ? "明日が月曜テストのため、仕上げを行います。" : "次回テストに向けて未出題・苦手単語を優先します。";
+        return { primary, preview, mode, reason, friday: day === 5, endedToday };
       }
       function rangePlanHtml(label, range, now) {
         if (!range) return `<div class="plan-card"><strong>${label}</strong><span class="meta">対象範囲はありません</span></div>`;
@@ -435,7 +438,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       function renderTodayStudy() {
         const now = new Date(), plan = learningPlan(now), log = state.studyLog[todayKey()] || { attempts: 0, correct: 0, enToJa: { attempts: 0, correct: 0 }, jaToEn: { attempts: 0, correct: 0 } };
         const weekday = weekdays[now.getDay()];
-        $("todayStudyPanel").innerHTML = `<h3>${now.getMonth() + 1}月${now.getDate()}日 ${weekday}曜日</h3><strong>今日の学習方針</strong><p>${escapeHtml(plan.reason)}</p>${plan.friday ? `<div class="caution">今日は暗記構文テストがあります。2周目なので、10〜15分だけ確認しましょう。</div>` : ""}<div class="plan-grid">${rangePlanHtml("最優先", plan.primary, now)}${rangePlanHtml("先取り", plan.preview, now)}</div><div class="meta">今日: ${log.attempts}回答 / ${log.correct}正解 / 正答率 ${log.attempts ? Math.round(log.correct / log.attempts * 100) : 0}%（英→日 ${log.enToJa.attempts}、日→英 ${log.jaToEn.attempts}）</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>今日の学習を始める</button></div>`;
+        $("todayStudyPanel").innerHTML = `<h3>${now.getMonth() + 1}月${now.getDate()}日 ${weekday}曜日</h3><strong>今日の学習方針</strong><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">まず「間違い集中」で今日のテストの復習を行いましょう。</div>` : ""}${plan.friday ? `<div class="caution">今日は暗記構文テストがあります。2周目なので、10〜15分だけ確認しましょう。</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "次回の優先範囲" : "最優先", plan.primary, now)}${rangePlanHtml("先取り", plan.preview, now)}</div><div class="meta">今日: ${log.attempts}回答 / ${log.correct}正解 / 正答率 ${log.attempts ? Math.round(log.correct / log.attempts * 100) : 0}%（英→日 ${log.enToJa.attempts}、日→英 ${log.jaToEn.attempts}）</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>今日の学習を始める</button></div>`;
         $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTest($("todayDirection").value, plan.mode); });
       }
 
