@@ -20,3 +20,8 @@ A PWA for checking pronunciation, parts of speech, and short definitions with th
 ## PWA Notes
 
 The service worker only caches the app files. Merriam-Webster API responses and audio files are not stored in the PWA cache.
+
+### Feedback and bug reports
+
+Bug reports and feature suggestions are welcome through GitHub Issues.
+Please do not include API keys or personal information in issues or pull requests.
