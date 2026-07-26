@@ -1,3 +1,4 @@
+
 # Merriam-Webster Pronunciation Checker
 
 A PWA for checking pronunciation, parts of speech, and short definitions with the Merriam-Webster Learner's Dictionary API before vocabulary quizzes based on *Sokudoku Eitango*, a Japanese English vocabulary book.
@@ -25,6 +26,10 @@ The service worker only caches the app files. Merriam-Webster API responses and 
 * 英語→日本語・日本語→英語の4択テストを原則15問で実施できます。
 * 通常、直前、間違い集中の3モードがあり、苦手語・未定着語・直近の誤答を優先できます。
 * 両方向で連続2回正解すると「覚えた」になり、不正解は自動で「苦手」に戻ります。手動変更も可能です。
+* 高速周回では「知らない・怪しい・即答」で範囲を絞り込み、全語を即答できるまで周回できます。この判定は4択テストの成績や「苦手／覚えた」には反映されません。
+* 単語カードでは、複数の二重文字や長く不規則な綴りなど、誤りやすい条件が重なった単語だけに「スペル注意 高」を表示します。
+* 最後に開いていた範囲と単語を保存し、ページ更新後も同じ単語へ戻ります。
+* 連続再生中は画面下部の固定操作から、どのスクロール位置でも一時停止・再開・即時停止できます。
 * 月曜・水曜のテスト日、端末のローカル日時、設定した終了時刻を使い、最優先範囲と先取り範囲、今日の目標を提案します。金曜は暗記構文の短い通知だけを表示し、本文は保存・表示・出題しません。
 * API取得は確認後に進捗画面へ切り替わり、処理数、割合、現在の単語、成功・失敗、音声・定義の有無を表示します。
 * 回答履歴は今日の記録として過去30日分を保持します。JSONバックアップとCSV出力に対応します。
@@ -32,3 +37,4 @@ The service worker only caches the app files. Merriam-Webster API responses and 
 ## オフライン利用
 
 一度オンラインでアプリ本体を開けば、Service Workerのアプリシェルキャッシュでオフライン起動できます。未取得のAPIデータと公式音声はオンライン時に取得してください。APIキーはエクスポートされません。
+

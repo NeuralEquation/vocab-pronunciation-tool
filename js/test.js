@@ -1,3 +1,4 @@
+
 const DIRECTIONS = ["enToJa", "jaToEn"];
 
 const shuffle = (items, random = Math.random) => {
@@ -14,6 +15,108 @@ const statFor = (word, direction) => word.testStats?.[direction] || {};
 const meaningKey = word => meanings(word).map(v => v.toLocaleLowerCase("ja")).sort().join("|");
 const sharesMeaning = (a, b) => meanings(a).some(value => meanings(b).includes(value));
 const accuracy = stat => stat.attempts ? stat.correct / stat.attempts : -1;
+
+function analyzeSpellingRisk(value) {
+  const word = String(value || "").toLowerCase().trim();
+  const reasons = [];
+  let score = 0;
+  const add = (reason, weight = 1) => {
+    if (!reasons.includes(reason)) reasons.push(reason);
+    score += weight;
+  };
+  const doubleGroups = word.match(/([a-z])\1/g) || [];
+  if (doubleGroups.length >= 2) add("二重文字が複数", 4);
+  else if (doubleGroups.length === 1) add("二重文字", 2);
+  if (/(cial|tial)$/.test(word)) add("語尾 -cial / -tial", 2);
+  else if (/(tion|sion|cian)$/.test(word)) add("語尾 -tion / -sion", 2);
+  else if (/(ance|ence|ant|ent)$/.test(word)) add("紛らわしい語尾", 2);
+  else if (/(able|ible)$/.test(word)) add("語尾 -able / -ible", 2);
+  else if (/(ary|ery|ory)$/.test(word)) add("語尾 -ary / -ery / -ory", 2);
+  if (/(ie|ei)/.test(word)) add("ie / ei の並び");
+  if (/(ough|eigh)/.test(word)) add("不規則な母音綴り", 3);
+  else if (/(gh|kn|wr|mb|mn$|bt$|ps|rh)/.test(word)) add("発音と綴りのずれ", 2);
+  if (/[-']/.test(word)) add("記号の位置");
+  if (word.length >= 10 && reasons.length) score++;
+  if (word.length >= 12) add("長い綴り");
+  return {
+    level: score >= 4 ? "high" : score >= 1 ? "medium" : "low",
+    score,
+    reasons: reasons.slice(0, 2)
+  };
+}
+
+function createSpeedReviewSession(range, wordIds = null, now = Date.now()) {
+  const available = new Set((range.words || []).filter(word => word.word).map(word => word.id));
+  const selected = [...new Set((Array.isArray(wordIds) ? wordIds : [...available]).filter(id => available.has(id)))];
+  if (!selected.length) return { error: "高速周回できる単語がありません。" };
+  return {
+    id: `speed_${now.toString(36)}`,
+    rangeId: range.id,
+    round: 1,
+    allWordIds: selected,
+    roundWordIds: selected,
+    roundStartCount: selected.length,
+    repeatWordIds: [],
+    index: 0,
+    assessments: [],
+    completedRounds: [],
+    startedAtMs: now,
+    wordStartedAtMs: now,
+    finished: false
+  };
+}
+
+function restartSpeedReviewSession(session, now = Date.now()) {
+  if (!session?.finished || !Array.isArray(session.allWordIds) || !session.allWordIds.length) return false;
+  session.round++;
+  session.roundWordIds = [...session.allWordIds];
+  session.roundStartCount = session.roundWordIds.length;
+  session.repeatWordIds = [];
+  session.index = 0;
+  session.wordStartedAtMs = now;
+  session.finished = false;
+  delete session.finishedAtMs;
+  return true;
+}
+
+function rateSpeedReviewWord(session, rating, now = Date.now()) {
+  if (!session || session.finished || !["unknown", "unsure", "instant"].includes(rating)) return null;
+  const wordId = session.roundWordIds[session.index];
+  if (!wordId) return null;
+  const assessment = {
+    wordId,
+    rating,
+    round: session.round,
+    responseMs: Math.max(0, Math.min(300000, now - session.wordStartedAtMs))
+  };
+  session.assessments.push(assessment);
+  if (rating !== "instant" && !session.repeatWordIds.includes(wordId)) session.repeatWordIds.push(wordId);
+  session.index++;
+  if (session.index < session.roundWordIds.length) {
+    session.wordStartedAtMs = now;
+    return { assessment, roundComplete: false, finished: false };
+  }
+  const roundAssessments = session.assessments.filter(item => item.round === session.round);
+  session.completedRounds.push({
+    round: session.round,
+    total: session.roundStartCount,
+    unknown: roundAssessments.filter(item => item.rating === "unknown").length,
+    unsure: roundAssessments.filter(item => item.rating === "unsure").length,
+    instant: roundAssessments.filter(item => item.rating === "instant").length
+  });
+  if (!session.repeatWordIds.length) {
+    session.finished = true;
+    session.finishedAtMs = now;
+    return { assessment, roundComplete: true, finished: true };
+  }
+  session.round++;
+  session.roundWordIds = [...session.repeatWordIds];
+  session.roundStartCount = session.roundWordIds.length;
+  session.repeatWordIds = [];
+  session.index = 0;
+  session.wordStartedAtMs = now;
+  return { assessment, roundComplete: true, finished: false };
+}
 
 function selectTestWords(words, direction, limit = 15, random = Math.random, mode = "normal") {
   const eligible = words.filter(word => word.word && meanings(word).length);
@@ -170,8 +273,22 @@ function runTestFeatureSelfCheck() {
   const positionCounts = session.questions.reduce((counts, q) => (counts[q.correctPosition]++, counts), [0, 0, 0, 0]);
   const cram = createTestSession({ id: "r", words }, "enToJa", { mode: "cram" }, () => 0.37);
   const wrong = createTestSession({ id: "r", words }, "enToJa", { mode: "wrong" }, () => 0.37);
-  const passed = !session.error && session.questions.length === 15 && positionCounts.sort().join(",") === "3,4,4,4" && session.questions.every(q => q.choices.length === 4) && cram.questions?.length === 15 && wrong.questions?.every(q => ["w0", "w1", "w2"].includes(q.wordId));
-  return { passed, questionCount: session.questions?.length || 0, positionCounts, cramCount: cram.questions?.length || 0, wrongCount: wrong.questions?.length || 0 };
+  const speed = createSpeedReviewSession({ id: "r", words }, ["w0", "w1", "w2"], 1000);
+  rateSpeedReviewWord(speed, "instant", 2000);
+  rateSpeedReviewWord(speed, "unsure", 3000);
+  const roundResult = rateSpeedReviewWord(speed, "unknown", 4000);
+  const testStatsSnapshot = JSON.stringify(words.map(word => word.testStats));
+  rateSpeedReviewWord(speed, "instant", 5000);
+  rateSpeedReviewWord(speed, "instant", 6000);
+  const restarted = restartSpeedReviewSession(speed, 7000);
+  const spelling = { accommodate: analyzeSpellingRisk("accommodate"), crucial: analyzeSpellingRisk("crucial"), besides: analyzeSpellingRisk("besides"), science: analyzeSpellingRisk("science"), cat: analyzeSpellingRisk("cat") };
+  const passed = !session.error && session.questions.length === 15 && positionCounts.sort().join(",") === "3,4,4,4" &&
+    session.questions.every(q => q.choices.length === 4) && cram.questions?.length === 15 &&
+    wrong.questions?.every(q => ["w0", "w1", "w2"].includes(q.wordId)) &&
+    roundResult?.roundComplete && restarted && speed.round === 3 && speed.roundWordIds.join(",") === "w0,w1,w2" && !speed.finished &&
+    testStatsSnapshot === JSON.stringify(words.map(word => word.testStats)) &&
+    spelling.accommodate.level === "high" && spelling.crucial.level !== "high" && spelling.besides.level === "low" && spelling.science.level !== "high" && spelling.cat.level === "low";
+  return { passed, questionCount: session.questions?.length || 0, positionCounts, cramCount: cram.questions?.length || 0, wrongCount: wrong.questions?.length || 0, speedRounds: speed.completedRounds.length, spelling };
 }
 
 window.MWTest = Object.freeze({
@@ -184,5 +301,10 @@ window.MWTest = Object.freeze({
   answerTestQuestion,
   finishTest,
   abortTest,
+  analyzeSpellingRisk,
+  createSpeedReviewSession,
+  restartSpeedReviewSession,
+  rateSpeedReviewWord,
   runTestFeatureSelfCheck
 });
+
