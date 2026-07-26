@@ -1,3 +1,4 @@
+
     :root {
       color-scheme: dark;
       --bg: #0b0f17;
@@ -42,6 +43,51 @@
 .history-list span { white-space:nowrap; background:var(--panel-2); padding:8px 10px; border-radius:8px; }
 .wrong-word { display:grid; grid-template-columns:minmax(90px, .7fr) 1fr 1fr auto auto; gap:10px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line); }
 .test-result-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:20px; }
+.speed-start { background:#3a2368; color:#f1e7ff; font-weight:800; }
+.speed-panel { min-height:calc(100vh - 40px); display:grid; place-items:center; }
+.speed-panel.hidden { display:none; }
+#speedContent { width:min(720px, 100%); margin:auto; }
+.speed-head { display:flex; justify-content:space-between; gap:12px; color:var(--muted); font-weight:700; }
+.speed-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:12px 0; }
+.speed-metrics div { padding:9px; border:1px solid var(--line); border-radius:10px; background:var(--panel-2); text-align:center; color:var(--muted); }
+.speed-metrics strong { display:block; color:var(--text); font-size:1.15rem; }
+.speed-audio { display:flex; justify-content:center; margin-top:10px; }
+.speed-card { min-height:290px; display:grid; place-items:center; align-content:center; gap:18px; margin:18px 0; padding:24px; border:1px solid #7458b8; border-radius:18px; background:linear-gradient(145deg,#171e2b,#231b38); text-align:center; touch-action:none; user-select:none; }
+.speed-word { font-size:clamp(2.3rem,10vw,5.2rem); line-height:1.1; font-weight:850; overflow-wrap:anywhere; }
+.speed-meaning { font-size:clamp(1.25rem,5vw,2rem); color:var(--accent-2); }
+.speed-hint { color:var(--muted); font-size:.9rem; }
+.speed-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+.speed-actions button { min-height:60px; font-weight:800; }
+.speed-unknown { background:#55242a; color:#ffd3d8; }
+.speed-unsure { background:#4a3515; color:#ffe2a0; }
+.speed-instant { background:#174b35; color:#c2f8d7; }
+.speed-footer { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:18px; }
+.spelling-risk { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:7px; color:#e9d5ff; font-size:.78rem; }
+.spelling-risk strong { padding:2px 7px; border:1px solid #7654ae; border-radius:999px; background:#2c1f43; color:#f0ddff; }
+.spelling-risk.high strong { border-color:#d47797; background:#4c2334; color:#ffd3df; }
+.playback-dock {
+  position:fixed;
+  left:50%;
+  bottom:max(10px,env(safe-area-inset-bottom));
+  z-index:55;
+  width:min(680px,calc(100% - 24px));
+  transform:translateX(-50%);
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:8px;
+  align-items:center;
+  padding:10px;
+  border:1px solid #3a6088;
+  border-radius:16px;
+  background:rgba(13,21,31,.96);
+  box-shadow:0 14px 40px rgba(0,0,0,.42);
+  backdrop-filter:blur(10px);
+}
+.playback-dock-status { min-width:0; display:grid; }
+.playback-dock-status strong { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.playback-dock-status span { color:var(--muted); font-size:.78rem; }
+body.playback-active .app { padding-bottom:105px; }
+body.playback-active .jump-fab { bottom:112px; }
 .today-study { margin:0 0 16px; padding:16px; border:1px solid var(--line); border-radius:var(--radius); background:linear-gradient(135deg, rgba(77,168,255,.13), var(--panel-2)); }
 .today-study h3 { margin:0 0 6px; }
 .today-study .plan-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:12px 0; }
@@ -57,6 +103,10 @@
   .test-choice { min-height:64px; }
   .wrong-word { grid-template-columns:1fr 1fr; }
   .wrong-word span { grid-column:1/-1; }
+  .speed-card { min-height:260px; padding:20px 14px; }
+  .speed-actions { grid-template-columns:1fr; }
+  .playback-dock { grid-template-columns:minmax(0,1fr) auto; }
+  .playback-dock-status { grid-column:1/-1; }
 }
 
     * { box-sizing: border-box; }
@@ -521,3 +571,4 @@
       .audio-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
   
+
