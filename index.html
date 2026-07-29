@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=33">
+  <link rel="stylesheet" href="styles.css?v=34">
 </head>
 <body>
   <div class="app">
@@ -85,8 +85,15 @@
       </section>
 
       <section class="panel tab-page hidden" id="page-import">
-        <h2>範囲登録</h2>
+        <h2>教材登録</h2>
         <div class="row">
+          <div>
+            <label for="rangeKind">教材の種類</label>
+            <select id="rangeKind">
+              <option value="vocabulary">英単語・例文・熟語</option>
+              <option value="memorization">金曜の暗記構文</option>
+            </select>
+          </div>
           <div>
             <label for="rangeName">範囲名</label>
             <input id="rangeName" placeholder="Section 59-60">
@@ -110,16 +117,24 @@
             <label for="deleteAt">削除予定日時</label>
             <input id="deleteAt" type="datetime-local">
           </div>
-          <div class="wide">
+          <div class="wide import-fields" id="vocabImportFields">
             <label for="wordInput">単語リスト</label>
-            <div class="meta input-help">1行に「英単語[TAB]日本語訳」。複数の訳は「／」で区切れます。英単語だけの登録も可能です。</div>
-            <textarea id="wordInput" placeholder="previous&#9;以前の／前の
-previously&#9;以前に／前もって
-record&#9;記録／記録する"></textarea>
+            <div class="meta input-help">推奨: 単語ID[TAB]英単語[TAB]日本語訳。従来の「英単語[TAB]日本語訳」も使えます。</div>
+            <textarea id="wordInput" placeholder="W001&#9;record&#9;記録／記録する
+W002&#9;expense&#9;費用／出費"></textarea>
+            <label for="usageInput">例文・熟語リスト</label>
+            <div class="meta input-help">項目ID[TAB]example または phrase[TAB]関連単語ID[TAB]英語全文[TAB]日本語訳。関連付けは入力されたIDだけを使用し、自動推測しません。</div>
+            <textarea id="usageInput" placeholder="E001&#9;example&#9;W001,W002&#9;Keep a record of your expenses.&#9;出費を記録しておきなさい。
+P001&#9;phrase&#9;W002&#9;at the expense of A&#9;Aを犠牲にして"></textarea>
+          </div>
+          <div class="wide import-fields hidden" id="memoryImportFields">
+            <label for="memoryInput">暗記構文リスト</label>
+            <div class="meta input-help">構文ID[TAB]番号・ラベル（任意）[TAB]英文全文[TAB]日本語訳。英文と日本語訳だけの2列も使えます。</div>
+            <textarea id="memoryInput" placeholder="M001&#9;1&#9;I am ready for the test.&#9;私はテストの準備ができています。"></textarea>
           </div>
         </div>
         <div class="actions">
-          <button class="primary" id="importRange">範囲を登録</button>
+          <button class="primary" id="importRange">教材を登録</button>
           <button class="soft" id="clearImport">入力クリア</button>
         </div>
       </section>
@@ -129,6 +144,9 @@ record&#9;記録／記録する"></textarea>
         <div class="actions">
           <button class="soft" id="exportJson">JSONエクスポート</button>
           <button class="soft" id="exportCsv">CSVエクスポート</button>
+          <button class="soft" id="exportQuizlet">例文をQuizlet形式で出力</button>
+          <button class="soft" id="exportPreUpgrade">改修前データを保存</button>
+          <button class="warn" id="restorePreUpgrade">改修前データへ戻す</button>
           <button class="danger" id="wipeAll">全データ削除</button>
         </div>
         <label for="importJson" style="margin-top:12px">JSONインポート</label>
@@ -152,7 +170,7 @@ record&#9;記録／記録する"></textarea>
           </div>
           <button class="soft" id="closeWords">閉じる</button>
         </div>
-        <div class="learning-toolbar">
+        <div class="learning-toolbar" id="vocabLearningControls">
           <div class="test-launch-actions">
             <select id="testMode" aria-label="テストモード"><option value="normal">通常テスト</option><option value="cram">直前モード</option><option value="wrong">間違い集中</option></select>
             <button class="primary" id="startEnToJa">英語 → 日本語</button>
@@ -181,7 +199,36 @@ record&#9;記録／記録する"></textarea>
             <button class="soft" id="continuousStop" disabled>停止</button>
           </div>
         </div>
+        <div class="content-learning-toolbar" id="usageLearningControls">
+          <strong>例文・熟語の全文暗唱</strong>
+          <div class="actions">
+            <select id="usageRecallType" aria-label="対象">
+              <option value="all">例文＋熟語</option>
+              <option value="example">例文のみ</option>
+              <option value="phrase">熟語のみ</option>
+            </select>
+            <select id="usageRecallMode" aria-label="暗唱モード">
+              <option value="test15">15問</option>
+              <option value="unsettled">未定着のみ</option>
+              <option value="all">全範囲</option>
+            </select>
+            <button class="primary" id="startUsageRecall">暗唱を始める</button>
+          </div>
+        </div>
+        <div class="content-learning-toolbar hidden" id="memoryLearningControls">
+          <strong>暗記構文の全文暗唱</strong>
+          <div class="actions">
+            <select id="memoryRecallMode" aria-label="暗唱構文モード">
+              <option value="unsettled">未定着のみ</option>
+              <option value="all">全範囲</option>
+              <option value="random5">ランダム5文</option>
+              <option value="random10">ランダム10文</option>
+            </select>
+            <button class="primary" id="startMemoryRecall">暗唱を始める</button>
+          </div>
+        </div>
         <div id="wordList"></div>
+        <div id="usageList"></div>
       </section>
 
       <section class="panel hidden test-panel" id="testPanel" style="grid-column:1/-1">
@@ -190,6 +237,10 @@ record&#9;記録／記録する"></textarea>
 
       <section class="panel hidden speed-panel" id="speedPanel" style="grid-column:1/-1">
         <div id="speedContent"></div>
+      </section>
+
+      <section class="panel hidden recall-panel" id="recallPanel" style="grid-column:1/-1">
+        <div id="recallContent"></div>
       </section>
     </main>
     <div class="jump-fab" id="jumpFab">
@@ -209,7 +260,8 @@ record&#9;記録／記録する"></textarea>
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/test.js?v=33"></script>
-  <script defer src="js/app.js?v=33"></script>
+  <script defer src="js/content.js?v=34"></script>
+  <script defer src="js/test.js?v=34"></script>
+  <script defer src="js/app.js?v=34"></script>
 </body>
 </html>
