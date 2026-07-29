@@ -1,10 +1,13 @@
 var { createTestSession, renderTestQuestion, answerTestQuestion, finishTest, abortTest, analyzeSpellingRisk, createSpeedReviewSession, restartSpeedReviewSession, rateSpeedReviewWord, runTestFeatureSelfCheck } = window.MWTest;
 window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
+var { parseUnifiedRows, parseMemoryRows, makeUsageItems, makeMemoryItems, normalizeRangeContent, isSettled, createRecallSession, rateRecallItem, contentStats, runContentSelfCheck } = window.MWContent;
+window.runContentFeatureSelfCheck = runContentSelfCheck;
 
     (() => {
       "use strict";
 
       const STORAGE_KEY = "mwPronunciationTool.v1";
+      const PRE_SUPERAPP_BACKUP_KEY = "mwPronunciationTool.preSuperappBackup.v1";
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
@@ -37,6 +40,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         lastImportWords: [],
         activeTest: null,
         speedSession: null,
+        recallSession: null,
         speedMeaningVisible: false,
         pendingWordScroll: false,
         temporaryWordIds: null,
@@ -54,6 +58,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         paused: false,
         phase: "idle"
       };
+      let previewAudio = null;
 
       const $ = (id) => document.getElementById(id);
 
@@ -236,6 +241,9 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
           if (raw) {
+            if (!localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY) && new Blob([raw]).size < 1.5 * 1024 * 1024) {
+              localStorage.setItem(PRE_SUPERAPP_BACKUP_KEY, raw);
+            }
             const parsed = JSON.parse(raw);
             state.ranges = Array.isArray(parsed.ranges) ? parsed.ranges : [];
             normalizeLoadedData();
@@ -339,6 +347,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           });
           const savedWordExists = range.words.some(word => word.id === range.currentWordId);
           range.currentWordId = savedWordExists ? range.currentWordId : range.words[0]?.id || "";
+          normalizeRangeContent(range, uid);
         });
       }
 
@@ -386,8 +395,45 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         return localDateTimeString(d);
       }
 
+      function validateTestDate(showMessage = false) {
+        const input = $("testDate");
+        const feedback = $("dateValidation");
+        const materialType = $("rangeKind").value;
+        const value = input.value;
+        input.setCustomValidity("");
+        feedback.textContent = "";
+        $("weekday").value = "";
+        if (!value) {
+          const message = "テスト日を入力してください。";
+          input.setCustomValidity(message);
+          feedback.textContent = message;
+          if (showMessage) {
+            input.reportValidity();
+            toast(message, true);
+          }
+          return false;
+        }
+        const day = new Date(`${value}T12:00:00`).getDay();
+        const allowed = materialType === "memorization" ? [5] : [1, 3];
+        if (!allowed.includes(day)) {
+          const message = materialType === "memorization"
+            ? "暗記構文のテスト日は金曜日を選んでください。"
+            : "英単語テストの日付は月曜日または水曜日を選んでください。";
+          input.setCustomValidity(message);
+          feedback.textContent = message;
+          if (showMessage) {
+            input.reportValidity();
+            toast(message, true);
+          }
+          return false;
+        }
+        $("weekday").value = weekdays[day];
+        feedback.textContent = `${weekdays[day]}曜日として登録します。`;
+        return true;
+      }
+
       function statusForRange(range, nextId) {
-        if (!range.words.length) return "単語未登録";
+        if (!range.words.length && !range.memoryItems?.length) return "教材未登録";
         const now = new Date();
         const today = localDateString(now);
         const deleteAt = range.deleteAt ? new Date(range.deleteAt) : null;
@@ -403,7 +449,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       function nextRangeId() {
         const today = localDateString(new Date());
         const candidates = state.ranges
-          .filter(r => r.words.length && r.testDate >= today && !(r.testDate === today && isRangeEnded(r, new Date())))
+          .filter(r => (r.words.length || r.memoryItems?.length) && r.testDate >= today && !(r.testDate === today && isRangeEnded(r, new Date())))
           .sort((a, b) => a.testDate.localeCompare(b.testDate));
         return candidates[0]?.id || "";
       }
@@ -419,7 +465,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const known = words.filter(w => w.studyStatus === "known").length;
         const unseen = words.filter(w => !(w.testStats?.enToJa?.attempts || 0) && !(w.testStats?.jaToEn?.attempts || 0)).length;
         const unsettled = words.filter(w => w.studyStatus !== "known" || (w.testStats?.enToJa?.consecutiveCorrect || 0) < 2 || (w.testStats?.jaToEn?.consecutiveCorrect || 0) < 2 || w.testStats?.enToJa?.lastResult === "incorrect" || w.testStats?.jaToEn?.lastResult === "incorrect").length;
-        return { total, fetched, audio, noAudio, definitions, hard, known, unseen, unsettled, pct: total ? Math.round(fetched / total * 100) : 0, learningPct: total ? Math.round(known / total * 100) : 0 };
+        return { total, fetched, audio, noAudio, definitions, hard, known, unseen, unsettled, pct: total ? Math.round(fetched / total * 100) : 0, learningPct: total ? Math.round(known / total * 100) : 0, ...contentStats(range) };
       }
 
       function isRangeEnded(range, now = new Date()) {
@@ -432,13 +478,15 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       }
       function learningPlan(now = new Date()) {
         const today = localDateString(now);
-        const endedToday = state.ranges.find(r => r.words?.length && r.testDate === today && isRangeEnded(r, now)) || null;
-        const future = state.ranges.filter(r => r.words?.length && r.testDate && (r.testDate > today || (r.testDate === today && !isRangeEnded(r, now)))).sort((a,b) => a.testDate.localeCompare(b.testDate));
+        const vocabRanges = state.ranges.filter(r => r.materialType !== "memorization");
+        const endedToday = vocabRanges.find(r => r.words?.length && r.testDate === today && isRangeEnded(r, now)) || null;
+        const future = vocabRanges.filter(r => r.words?.length && r.testDate && (r.testDate > today || (r.testDate === today && !isRangeEnded(r, now)))).sort((a,b) => a.testDate.localeCompare(b.testDate));
         const primary = endedToday || future[0] || null, preview = endedToday ? (future[0] || null) : (future[1] || null);
+        const memory = state.ranges.filter(r => r.materialType === "memorization" && r.memoryItems?.length && r.testDate && (r.testDate > today || (r.testDate === today && !isRangeEnded(r, now)))).sort((a,b) => a.testDate.localeCompare(b.testDate))[0] || null;
         const day = now.getDay(), todayTest = primary?.testDate === today;
         const mode = endedToday ? "wrong" : (todayTest || day === 2 || day === 0 || (day === 1 || day === 3) && !isRangeEnded(primary || {}, now)) ? "cram" : "normal";
         const reason = endedToday ? "今日のテスト時間は終了しました。間違えた単語を復習し、次回の範囲を少し先取りしましょう。" : todayTest ? "テスト当日のため、苦手・未定着単語を優先します。" : day === 2 ? "明日が水曜テストのため、直前確認を行います。" : day === 0 ? "明日が月曜テストのため、仕上げを行います。" : "次回テストに向けて未出題・苦手単語を優先します。";
-        return { primary, preview, mode, reason, friday: day === 5, endedToday };
+        return { primary, preview, memory, mode, reason, friday: day === 5, endedToday };
       }
       function rangePlanHtml(label, range, now) {
         if (!range) return `<div class="plan-card"><strong>${label}</strong><span class="meta">対象範囲はありません</span></div>`;
@@ -449,8 +497,10 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       function renderTodayStudy() {
         const now = new Date(), plan = learningPlan(now), log = state.studyLog[todayKey()] || { attempts: 0, correct: 0, enToJa: { attempts: 0, correct: 0 }, jaToEn: { attempts: 0, correct: 0 } };
         const weekday = weekdays[now.getDay()];
-        $("todayStudyPanel").innerHTML = `<h3>${now.getMonth() + 1}月${now.getDate()}日 ${weekday}曜日</h3><strong>今日の学習方針</strong><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">まず「間違い集中」で今日のテストの復習を行いましょう。</div>` : ""}${plan.friday ? `<div class="caution">今日は暗記構文テストがあります。2周目なので、10〜15分だけ確認しましょう。</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "次回の優先範囲" : "最優先", plan.primary, now)}${rangePlanHtml("先取り", plan.preview, now)}</div><div class="meta">今日: ${log.attempts}回答 / ${log.correct}正解 / 正答率 ${log.attempts ? Math.round(log.correct / log.attempts * 100) : 0}%（英→日 ${log.enToJa.attempts}、日→英 ${log.jaToEn.attempts}）</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>今日の学習を始める</button></div>`;
+        const memoryStats = plan.memory ? contentStats(plan.memory) : null;
+        $("todayStudyPanel").innerHTML = `<h3>${now.getMonth() + 1}月${now.getDate()}日 ${weekday}曜日</h3><strong>今日の学習方針</strong><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">まず「間違い集中」で今日のテストの復習を行いましょう。</div>` : ""}${plan.memory ? `<div class="caution">暗記構文「${escapeHtml(plan.memory.rangeName)}」: 未定着 ${memoryStats.memoryUnsettled}/${memoryStats.memoryTotal}件</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "次回の優先範囲" : "最優先", plan.primary, now)}${rangePlanHtml("先取り", plan.preview, now)}</div><div class="meta">今日: ${log.attempts}回答 / ${log.correct}正解 / 正答率 ${log.attempts ? Math.round(log.correct / log.attempts * 100) : 0}%（英→日 ${log.enToJa.attempts}、日→英 ${log.jaToEn.attempts}）</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>単語学習を始める</button>${plan.memory ? `<button class="primary" id="startTodayMemory">暗記構文を始める</button>` : ""}</div>`;
         $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTest($("todayDirection").value, plan.mode); });
+        $("startTodayMemory")?.addEventListener("click", () => { state.selectedRangeId = plan.memory.id; startRecall("memory", "unsettled"); });
       }
 
       function render() {
@@ -486,6 +536,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         }
         $("rangeList").innerHTML = ranges.map(range => {
           const s = statsForRange(range);
+          const isMemory = range.materialType === "memorization";
           const statusClass = range.status === "今日の範囲" ? "today" : range.status === "次回の範囲" ? "next" : "";
           const badgeClass = range.status === "削除予定" ? "danger" : range.status === "今日の範囲" || range.status === "次回の範囲" ? "ok" : "warn";
           return `
@@ -493,21 +544,17 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
               <div class="range-head">
                 <div>
                   <div class="range-title">${escapeHtml(range.rangeName || "無題の範囲")}</div>
-                  <div class="meta">${escapeHtml(range.testDate || "日付未設定")} ${escapeHtml(range.weekday || "")}</div>
+                  <div class="meta">${isMemory ? "暗記構文" : "英単語"} / ${escapeHtml(range.testDate || "日付未設定")} ${escapeHtml(range.weekday || "")}</div>
                 </div>
                 <span class="badge ${badgeClass}">${range.status}</span>
               </div>
-              <div class="meta">学習定着率 ${s.learningPct}% / API取得率 ${s.pct}%</div><div class="progress" aria-label="API取得率"><span style="width:${s.pct}%"></span></div>
+              <div class="meta">${isMemory ? `未定着 ${s.memoryUnsettled}/${s.memoryTotal}件` : `学習定着率 ${s.learningPct}% / API取得率 ${s.pct}%`}</div>${isMemory ? "" : `<div class="progress" aria-label="API取得率"><span style="width:${s.pct}%"></span></div>`}
               <div class="mini-grid">
-                <div class="mini"><strong>${s.total}</strong>単語</div>
-                <div class="mini"><strong>${s.fetched}</strong>API取得済み</div>
-                <div class="mini"><strong>${s.hard}</strong>苦手</div>
-                <div class="mini"><strong>${s.known}</strong>覚えた</div>
-                <div class="mini"><strong>${s.unseen}</strong>未出題</div>
+                ${isMemory ? `<div class="mini"><strong>${s.memoryTotal}</strong>構文</div><div class="mini"><strong>${s.memoryUnsettled}</strong>未定着</div>` : `<div class="mini"><strong>${s.total}</strong>単語</div><div class="mini"><strong>${s.examples}</strong>例文</div><div class="mini"><strong>${s.phrases}</strong>熟語</div><div class="mini"><strong>${s.hard}</strong>苦手</div><div class="mini"><strong>${s.usageUnsettled}</strong>例文等未定着</div>`}
               </div>
               <div class="actions" style="margin-top:10px">
                 <button class="primary" data-action="open" data-id="${range.id}">開く</button>
-                <button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>
+                ${isMemory ? "" : `<button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>`}
                 ${range.testDate === todayKey() ? (isRangeEnded(range) ? `<button class="soft" data-action="test-before" data-id="${range.id}">テスト前</button>` : `<button class="soft" data-action="test-ended" data-id="${range.id}">テスト終了</button>`) : ""}
               </div>
               <div class="danger-actions">
@@ -524,16 +571,70 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         return `<div class="spelling-risk high"><strong>スペル注意 高</strong><span>${escapeHtml(risk.reasons.join("・"))}</span></div>`;
       }
 
+      function renderLinkedUsage(range, wordId) {
+        const items = (range.usageItems || []).filter(item => item.linkedWordIds.includes(wordId));
+        if (!items.length) return "";
+        return `<details class="linked-usage"><summary>例文・熟語 ${items.length}件</summary>${items.map(item => `<div class="linked-usage-item"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><strong>${escapeHtml(item.english)}</strong><span>${escapeHtml(item.japanese)}</span></div>`).join("")}</details>`;
+      }
+
+      function renderUsageOverview(range) {
+        const items = range.usageItems || [];
+        if (!items.length) {
+          $("usageList").innerHTML = `<div class="empty">例文・熟語は未登録です。</div>`;
+          return;
+        }
+        const wordsById = new Map(range.words.map(word => [word.id, word.word]));
+        $("usageList").innerHTML = `<h3>例文・熟語一覧</h3>${items.map(item => {
+          const linked = item.linkedWordIds.map(id => wordsById.get(id)).filter(Boolean);
+          return `<article class="content-card ${isSettled(item) ? "settled" : ""}">
+            <div class="range-head"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><span class="rating-status">${item.recallStats.lastRating === "circle" ? "○" : item.recallStats.lastRating === "triangle" ? "△" : item.recallStats.lastRating === "cross" ? "×" : "未判定"}</span></div>
+            <strong>${escapeHtml(item.english)}</strong><div>${escapeHtml(item.japanese)}</div>
+            <div class="meta">関連単語: ${linked.length ? escapeHtml(linked.join("、")) : "未設定"}${item.unresolvedRefs?.length ? ` / 未解決ID: ${escapeHtml(item.unresolvedRefs.join("、"))}` : ""}</div>
+            <button class="soft compact" data-usage-action="edit-links" data-id="${item.id}">関連単語を編集</button>
+          </article>`;
+        }).join("")}`;
+      }
+
+      function renderMemoryOverview(range) {
+        $("wordList").innerHTML = (range.memoryItems || []).map((item, index) => `<article class="content-card ${isSettled(item) ? "settled" : ""}">
+          <div class="range-head"><span class="content-type">暗記構文 ${escapeHtml(item.label || String(index + 1))}</span><span class="rating-status">${item.recallStats.lastRating === "circle" ? "○" : item.recallStats.lastRating === "triangle" ? "△" : item.recallStats.lastRating === "cross" ? "×" : "未判定"}</span></div>
+          <strong>${escapeHtml(item.english)}</strong><div>${escapeHtml(item.japanese)}</div>
+          <div class="meta">○を2回連続で定着扱い</div>
+        </article>`).join("") || `<div class="empty">暗記構文は未登録です。</div>`;
+        $("usageList").innerHTML = "";
+      }
+
+      function editUsageLinks(itemId) {
+        const range = state.ranges.find(r => r.id === state.selectedRangeId);
+        const item = range?.usageItems?.find(entry => entry.id === itemId);
+        if (!range || !item) return;
+        showModal(`<h2>関連単語を編集</h2><p><strong>${escapeHtml(item.english)}</strong></p><div class="link-editor">${range.words.map(word => `<label class="switch"><input type="checkbox" data-link-word="${word.id}" ${item.linkedWordIds.includes(word.id) ? "checked" : ""}> ${escapeHtml(word.word)}</label>`).join("")}</div><div class="actions"><button class="primary" data-modal-confirm>保存</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
+          item.linkedWordIds = [...$("modalRoot").querySelectorAll("[data-link-word]:checked")].map(input => input.dataset.linkWord);
+          item.unresolvedRefs = [];
+          save();
+          toast("関連単語を更新しました。");
+        });
+      }
+
       function renderWords() {
         const range = state.ranges.find(r => r.id === state.selectedRangeId);
         if (!range) return;
         $("wordPanel").classList.remove("hidden");
+        const isMemory = range.materialType === "memorization";
+        $("vocabLearningControls").classList.toggle("hidden", isMemory);
+        $("usageLearningControls").classList.toggle("hidden", isMemory);
+        $("memoryLearningControls").classList.toggle("hidden", !isMemory);
+        $("openRangeTitle").textContent = `${range.rangeName || "無題の範囲"} の${isMemory ? "暗記構文" : "教材"}`;
+        const s = statsForRange(range);
+        if (isMemory) {
+          $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.memoryTotal}構文 / 未定着${s.memoryUnsettled}`;
+          renderMemoryOverview(range);
+          return;
+        }
         $("wordFilter").value = state.settings.studyFilter;
         $("playbackInterval").value = String(state.settings.playbackInterval);
         updatePlaybackControls();
-        $("openRangeTitle").textContent = `${range.rangeName || "無題の範囲"} の単語`;
-        const s = statsForRange(range);
-        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 苦手${s.hard} / 覚えた${s.known}`;
+        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 例文${s.examples}・熟語${s.phrases} / 苦手${s.hard}`;
         const words = filteredWords(range);
         if (!words.length) {
           $("wordList").innerHTML = `<div class="empty">この条件に一致する単語はありません。</div>`;
@@ -557,6 +658,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
                   <span class="pos-text">候補 : ${(word.pronunciationVariants || []).length}件</span>
                 </div>
                 ${renderSpellingRisk(word)}
+                ${renderLinkedUsage(range, word.id)}
               </div>
               ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
             </div>
@@ -577,6 +679,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
               <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate</button>
             </div>
           </article>`).join("");
+        renderUsageOverview(range);
         if (state.pendingWordScroll) {
           const target = $("wordList").querySelector(`[data-word-id="${CSS.escape(rememberedWordId)}"]`);
           target?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -600,6 +703,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const variant = (word.pronunciationVariants || []).find(item => item.audioUrl);
         if (variant) playPronunciationVariant(word.id, variant.id);
         else if (word.audioUrl) playOfficial(word.id);
+        else if (!speakWordText(word.word)) toast("この端末では代替読み上げを利用できません。", true);
       }
 
       function hideForSpeed(active) {
@@ -655,10 +759,13 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const etaMinutes = wordsPerMinute > 0 ? Math.ceil(remaining / wordsPerMinute) : 0;
         const progress = session.roundWordIds.length ? session.index / session.roundWordIds.length * 100 : 0;
         const meaning = word.meaningsJa?.length ? word.meaningsJa.join("／") : "日本語訳未登録";
-        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio"><button class="soft" data-speed-action="audio" ${word.audioUrl || (word.pronunciationVariants || []).some(item => item.audioUrl) ? "" : "disabled"}>公式音声</button></div><div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">この判定は15問テストと独立しています</span><button class="soft" data-speed-action="abort">終了</button></div>`;
+        const hasOfficial = Boolean(word.audioUrl || (word.pronunciationVariants || []).some(item => item.audioUrl));
+        const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio"><button class="soft" data-speed-action="audio" ${hasOfficial || canSpeak ? "" : "disabled"}>${hasOfficial ? "公式音声" : "端末読み上げ"}</button></div><div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">この判定は15問テストと独立しています</span><button class="soft" data-speed-action="abort">終了</button></div>`;
       }
 
       function rateCurrentSpeedWord(rating) {
+        stopPreviewAudio();
         const result = rateSpeedReviewWord(state.speedSession, rating);
         if (!result) return;
         state.speedMeaningVisible = false;
@@ -667,9 +774,77 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       }
 
       function leaveSpeedReview() {
+        stopPreviewAudio();
         state.speedSession = null;
         state.speedMeaningVisible = false;
         hideForSpeed(false);
+        switchTab("ranges");
+        renderWords();
+        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function recallItems(range, source) {
+        return source === "memory" ? (range.memoryItems || []) : (range.usageItems || []);
+      }
+
+      function currentRecallItem() {
+        const session = state.recallSession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        return recallItems(range || {}, session?.source).find(item => item.id === session?.queue?.[0]) || null;
+      }
+
+      function hideForRecall(active) {
+        document.querySelector("header")?.classList.toggle("hidden", active);
+        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
+        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
+        $("wordPanel").classList.toggle("hidden", active);
+        $("jumpFab").classList.toggle("hidden", active);
+        $("testPanel").classList.add("hidden");
+        $("speedPanel").classList.add("hidden");
+        $("recallPanel").classList.toggle("hidden", !active);
+      }
+
+      function startRecall(source, mode, type = "all") {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        if (!range) return;
+        const session = createRecallSession(recallItems(range, source), { source, mode, type });
+        if (session.error) return toast(session.error, true);
+        session.rangeId = range.id;
+        state.recallSession = session;
+        hideForRecall(true);
+        renderRecall();
+      }
+
+      function renderRecall() {
+        const session = state.recallSession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        if (session.finished) {
+          const counts = { circle: 0, triangle: 0, cross: 0 };
+          session.assessments.forEach(entry => counts[entry.rating]++);
+          $("recallContent").innerHTML = `<div class="test-result"><h2>全文暗唱 完了</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-grid"><div><strong>${counts.circle}</strong>○</div><div><strong>${counts.triangle}</strong>△</div><div><strong>${counts.cross}</strong>×</div></div><p class="meta">△・×は同じ周回内で○になるまで再出題しました。別の周回でもう一度○になると定着です。</p><div class="actions"><button class="primary" data-recall-action="repeat">もう一周</button><button class="soft" data-recall-action="return">教材へ戻る</button></div></div>`;
+          return;
+        }
+        const item = currentRecallItem();
+        if (!item) return;
+        const total = session.itemIds.length;
+        const completed = Math.max(0, total - new Set(session.queue).size);
+        $("recallContent").innerHTML = `<div class="recall-head"><span>${session.source === "memory" ? "暗記構文" : item.type === "phrase" ? "熟語" : "例文"}</span><span>未完了 ${session.queue.length} / 初回${total}件</span></div><div class="test-progressbar"><span style="width:${total ? completed / total * 100 : 0}%"></span></div><article class="recall-card"><div class="recall-prompt-label">日本語から英語全文を暗唱</div><div class="recall-japanese">${escapeHtml(item.japanese)}</div>${session.answerVisible ? `<div class="recall-answer">${escapeHtml(item.english)}</div><div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="言えなかった">×</button><button class="rating triangle" data-recall-rating="triangle" aria-label="一部ミス">△</button><button class="rating circle" data-recall-rating="circle" aria-label="完全に言えた">○</button></div>` : `<button class="primary reveal-answer" data-recall-action="reveal">答えを表示</button>`}</article><button class="soft" data-recall-action="abort">終了</button>`;
+      }
+
+      function rateCurrentRecall(rating) {
+        const item = currentRecallItem();
+        if (!item) return;
+        const result = rateRecallItem(state.recallSession, item, rating);
+        if (!result) return;
+        save(false);
+        renderRecall();
+      }
+
+      function leaveRecall() {
+        state.recallSession = null;
+        hideForRecall(false);
         switchTab("ranges");
         renderWords();
         $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -754,6 +929,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       }
 
       function nextTestQuestion() {
+        stopPreviewAudio();
         const session = state.activeTest;
         if (!session) return;
         session.index++;
@@ -777,6 +953,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
       }
 
       function leaveTest(openWrong = false) {
+        stopPreviewAudio();
         const session = state.activeTest;
         if (openWrong && session) {
           state.savedFilterBeforeTemporary = state.settings.studyFilter;
@@ -883,10 +1060,20 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         $("modalRoot").innerHTML = "";
       }
 
-      function buildRangeFromForm(words) {
+      function buildRangeFromForm(wordRows, memoryRows, materialType) {
         const testDate = $("testDate").value;
-        const weekday = $("weekday").value || (testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "");
-        const rangeWords = words.map(w => createWord(w.raw, w.normalized, w.meaningsJa));
+        const weekday = $("weekday").value;
+        const augmentedRows = wordRows.map((row, index) => ({ ...row, sourceId: `ROW${String(index + 1).padStart(3, "0")}` }));
+        const rangeWords = augmentedRows.map(row => {
+          const word = createWord(row.word, row.normalized, row.meaningsJa);
+          word.sourceId = row.sourceId;
+          return word;
+        });
+        const sourceWordMap = new Map(rangeWords.filter(word => word.sourceId).map(word => [word.sourceId.toLowerCase(), word.id]));
+        const usageRows = augmentedRows.flatMap((row, wordIndex) => [
+          ...row.examples.map((item, itemIndex) => ({ sourceId: `E${wordIndex + 1}-${itemIndex + 1}`, type: "example", sourceRefs: [row.sourceId], english: item.english, japanese: item.japanese })),
+          ...row.phrases.map((item, itemIndex) => ({ sourceId: `P${wordIndex + 1}-${itemIndex + 1}`, type: "phrase", sourceRefs: [row.sourceId], english: item.english, japanese: item.japanese }))
+        ]);
         return {
           id: uid("range"),
           rangeName: $("rangeName").value.trim() || "無題の範囲",
@@ -898,20 +1085,39 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           createdAt: new Date().toISOString(),
           currentWordId: rangeWords[0]?.id || "",
           words: rangeWords,
+          materialType,
+          usageItems: makeUsageItems(usageRows, sourceWordMap, uid),
+          memoryItems: makeMemoryItems(memoryRows, uid),
           testHistory: []
         };
       }
 
       function registerRange() {
-        const parsed = parseWords($("wordInput").value);
-        if (!$("rangeName").value.trim() && !parsed.words.length) {
-          toast("範囲名か単語リストを入力してください。", true);
+        const materialType = $("rangeKind").value;
+        if (!validateTestDate(true)) return;
+        const parsedWords = parseUnifiedRows($("wordInput").value);
+        const parsedMemory = parseMemoryRows($("memoryInput").value);
+        const hasContent = materialType === "memorization" ? parsedMemory.rows.length : parsedWords.rows.length;
+        if (!$("rangeName").value.trim() && !hasContent) {
+          toast("教材名か学習内容を入力してください。", true);
           return;
         }
-        const range = buildRangeFromForm(parsed.words);
+        if (materialType === "memorization" && !parsedMemory.rows.length) return toast("暗記構文を1件以上入力してください。", true);
+        if (materialType === "vocabulary" && !parsedWords.rows.length) return toast("例文・熟語を関連付けるため、単語を1語以上入力してください。", true);
+        const range = buildRangeFromForm(parsedWords.rows, parsedMemory.rows, materialType);
         state.ranges.push(range);
         save();
-        toast(parsed.words.length ? `${parsed.words.length}語を登録しました。API通信はしていません。` : "範囲枠を作成しました。API通信はしていません。");
+        if (materialType === "memorization") {
+          toast(`暗記構文${range.memoryItems.length}件を登録しました。`);
+        } else {
+          const stats = contentStats(range);
+          const warnings = [
+            parsedWords.duplicates ? `重複${parsedWords.duplicates}行` : "",
+            parsedWords.invalid ? `無効${parsedWords.invalid}行` : "",
+            stats.unresolved ? `関連ID要確認${stats.unresolved}件` : ""
+          ].filter(Boolean).join("、");
+          toast(`${range.words.length}語・例文${stats.examples}件・熟語${stats.phrases}件を登録しました。API通信はしていません。${warnings ? ` ${warnings}` : ""}`, Boolean(stats.unresolved));
+        }
         switchTab("ranges");
       }
 
@@ -1397,8 +1603,13 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const word = findWord(wordId);
         if (!word || !word.audioUrl) return;
         rememberWord(wordId);
-        const audio = new Audio(word.audioUrl);
-        audio.play().catch(() => toast("公式音声を再生できませんでした。MWリンクや読み上げを使ってください。", true));
+        stopPreviewAudio();
+        previewAudio = new Audio(word.audioUrl);
+        previewAudio.onended = () => { previewAudio = null; };
+        previewAudio.play().catch(() => {
+          previewAudio = null;
+          if (!speakWordText(word.word)) toast("公式音声と端末読み上げを再生できませんでした。", true);
+        });
       }
 
       function playPronunciationVariant(wordId, variantId) {
@@ -1407,21 +1618,44 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         const variant = word?.pronunciationVariants?.find(item => item.id === variantId);
         if (!word || !variant?.audioUrl) return;
         rememberWord(wordId);
-        const audio = new Audio(variant.audioUrl);
-        audio.play().catch(() => toast("この発音の公式音声を再生できませんでした。", true));
+        stopPreviewAudio();
+        previewAudio = new Audio(variant.audioUrl);
+        previewAudio.onended = () => { previewAudio = null; };
+        previewAudio.play().catch(() => {
+          previewAudio = null;
+          if (!speakWordText(word.word)) toast("この発音の公式音声を再生できませんでした。", true);
+        });
       }
 
       function speakWord(wordId) {
         const word = findWord(wordId);
-        if (!word || !("speechSynthesis" in window)) {
+        if (!word || !speakWordText(word.word)) {
           toast("このブラウザでは読み上げに対応していません。", true);
           return;
         }
         rememberWord(wordId);
-        const u = new SpeechSynthesisUtterance(word.word);
-        u.lang = "en-US";
-        speechSynthesis.cancel();
-        speechSynthesis.speak(u);
+      }
+
+      function stopPreviewAudio() {
+        if (previewAudio) {
+          previewAudio.onended = null;
+          previewAudio.onerror = null;
+          previewAudio.pause();
+          previewAudio.removeAttribute("src");
+          previewAudio = null;
+        }
+        if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      }
+
+      function speakWordText(text) {
+        if (!text || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return false;
+        stopPreviewAudio();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "en-US";
+        const voices = window.speechSynthesis.getVoices?.() || [];
+        utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang)) || voices.find(voice => /^en\b/i.test(voice.lang)) || null;
+        window.speechSynthesis.speak(utterance);
+        return true;
       }
 
       function rememberWord(wordId) {
@@ -1493,6 +1727,7 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         playbackState.currentWordId = "";
         playbackState.paused = false;
         playbackState.phase = "idle";
+        stopPreviewAudio();
         updatePlaybackControls();
       }
 
@@ -1638,6 +1873,30 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
         download(`mw-pronunciation-${todayKey()}.csv`, csv, "text/csv");
       }
 
+      function exportQuizlet() {
+        const examples = state.ranges.flatMap(range => (range.usageItems || []).filter(item => item.type === "example"));
+        if (!examples.length) return toast("Quizlet用に出力できる例文がありません。", true);
+        const text = examples.map(item => `${item.english}\t${item.japanese}`).join("\n");
+        download(`quizlet-examples-${todayKey()}.txt`, text, "text/plain");
+        toast(`例文${examples.length}件をQuizlet形式で書き出しました。熟語と管理IDは含みません。`);
+      }
+
+      function exportPreUpgrade() {
+        const raw = localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY);
+        if (!raw) return toast("この端末には改修前データの自動保存がありません。通常のJSON保存を使ってください。", true);
+        download(`mw-before-superapp-${todayKey()}.json`, raw, "application/json");
+        toast("改修前データを書き出しました。APIキーは含まれていません。");
+      }
+
+      function restorePreUpgrade() {
+        const raw = localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY);
+        if (!raw) return toast("改修前データの自動保存がありません。", true);
+        showModal(`<h2>改修前データへ戻す</h2><div class="danger-note">現在の学習データを改修開始時の状態に置き換えます。先に現在のJSONも保存してください。</div><div class="actions"><button class="warn" data-modal-confirm>改修前へ戻す</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
+          localStorage.setItem(STORAGE_KEY, raw);
+          location.reload();
+        });
+      }
+
       function studyStatusLabel(status) {
         if (status === "hard") return "苦手";
         if (status === "known") return "覚えた";
@@ -1770,16 +2029,20 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           toast("APIキーを削除しました。");
         }));
         $("testDate").addEventListener("change", () => {
-          const testDate = $("testDate").value;
-          const weekday = testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "";
-          if (!$("weekday").value) $("weekday").value = weekday;
-          $("deleteAt").value = deleteAtFor(testDate, $("weekday").value || weekday);
+          if (validateTestDate(false)) $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value);
         });
-        $("weekday").addEventListener("change", () => { $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value); });
+        $("rangeKind").addEventListener("change", () => {
+          const isMemory = $("rangeKind").value === "memorization";
+          $("vocabImportFields").classList.toggle("hidden", isMemory);
+          $("memoryImportFields").classList.toggle("hidden", !isMemory);
+          validateTestDate(false);
+        });
         $("importRange").addEventListener("click", registerRange);
         $("clearImport").addEventListener("click", () => {
-          ["rangeName", "testDate", "pages", "deleteAt", "wordInput"].forEach(id => $(id).value = "");
+          ["rangeName", "testDate", "pages", "deleteAt", "wordInput", "memoryInput"].forEach(id => $(id).value = "");
           $("weekday").value = "";
+          $("dateValidation").textContent = "";
+          $("testDate").setCustomValidity("");
         });
         $("rangeFilter").addEventListener("change", renderRanges);
         $("rangeList").addEventListener("click", (event) => {
@@ -1829,6 +2092,8 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           last?.scrollIntoView({ behavior: "smooth", block: "end" });
         });
         $("startSpeedReview").addEventListener("click", startSpeedReview);
+        $("startUsageRecall").addEventListener("click", () => startRecall("usage", $("usageRecallMode").value, $("usageRecallType").value));
+        $("startMemoryRecall").addEventListener("click", () => startRecall("memory", $("memoryRecallMode").value));
         $("startEnToJa").addEventListener("click", () => startTest("enToJa"));
         $("startJaToEn").addEventListener("click", () => startTest("jaToEn"));
         $("testContent").addEventListener("click", event => {
@@ -1890,6 +2155,21 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
           }
         });
         $("speedContent").addEventListener("pointercancel", () => { speedPointerStart = null; });
+        $("recallContent").addEventListener("click", event => {
+          const rating = event.target.closest("[data-recall-rating]")?.dataset.recallRating;
+          if (rating) return rateCurrentRecall(rating);
+          const action = event.target.closest("[data-recall-action]")?.dataset.recallAction;
+          if (action === "reveal") {
+            state.recallSession.answerVisible = true;
+            return renderRecall();
+          }
+          if (action === "repeat") {
+            const previous = state.recallSession;
+            return startRecall(previous.source, previous.mode, previous.type);
+          }
+          if (action === "return") return leaveRecall();
+          if (action === "abort") return showModal(`<h2>全文暗唱を終了しますか？</h2><p>ここまでの○・△・×は保存されています。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
+        });
         document.addEventListener("keydown", event => {
           if (!state.speedSession || state.speedSession.finished || event.repeat) return;
           if (event.target.closest?.("button, input, select, textarea")) return;
@@ -1931,8 +2211,15 @@ window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
             }
           }
         });
+        $("usageList").addEventListener("click", event => {
+          const button = event.target.closest("[data-usage-action='edit-links']");
+          if (button) editUsageLinks(button.dataset.id);
+        });
         $("exportJson").addEventListener("click", exportJson);
         $("exportCsv").addEventListener("click", exportCsv);
+        $("exportQuizlet").addEventListener("click", exportQuizlet);
+        $("exportPreUpgrade").addEventListener("click", exportPreUpgrade);
+        $("restorePreUpgrade").addEventListener("click", restorePreUpgrade);
         $("appendJson").addEventListener("click", () => importJson(false));
         $("replaceJson").addEventListener("click", () => importJson(true));
         $("wipeAll").addEventListener("click", wipeAll);
