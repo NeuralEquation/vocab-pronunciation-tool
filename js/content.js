@@ -42,6 +42,92 @@
     return { rows, duplicates, invalid };
   }
 
+  function normalizeUsageList(value) {
+    const list = Array.isArray(value) ? value : value && typeof value === "object" ? [value] : [];
+    return list.map(item => ({
+      english: clean(item?.english ?? item?.en),
+      japanese: clean(item?.japanese ?? item?.ja)
+    })).filter(item => item.english && item.japanese);
+  }
+
+  function splitMultiValue(value) {
+    return clean(value).split(/\s*\|\|\s*/).map(clean).filter(Boolean);
+  }
+
+  function normalizeUnifiedEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+    const word = clean(entry.word ?? entry.headword).replace(/^[^A-Za-z'-]+|[^A-Za-z'-]+$/g, "");
+    if (!/^[A-Za-z][A-Za-z'-]{0,59}$/.test(word)) return null;
+    const meaningsValue = entry.meaningsJa ?? entry.meaning ?? entry.japanese ?? "";
+    const meaningsJa = Array.isArray(meaningsValue) ? unique(meaningsValue.map(clean)) : splitJapanese(meaningsValue);
+    return {
+      word,
+      normalized: word.toLowerCase(),
+      meaningsJa,
+      examples: normalizeUsageList(entry.examples ?? entry.example),
+      phrases: normalizeUsageList(entry.phrases ?? entry.expressions ?? entry.phrase)
+    };
+  }
+
+  function parseUnifiedRows(text) {
+    const source = clean(text);
+    const candidates = [];
+    let invalid = 0;
+    if (!source) return { rows: [], duplicates: 0, invalid: 0 };
+    if (source.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(source);
+        if (!Array.isArray(parsed)) return { rows: [], duplicates: 0, invalid: 1 };
+        candidates.push(...parsed);
+      } catch {
+        return { rows: [], duplicates: 0, invalid: 1 };
+      }
+    } else {
+      source.split(/\r?\n/).map(clean).filter(Boolean).forEach(line => {
+        if (line.startsWith("{")) {
+          try {
+            candidates.push(JSON.parse(line));
+          } catch {
+            invalid++;
+          }
+          return;
+        }
+        const parts = line.split("\t").map(clean);
+        if (parts.length < 2) {
+          invalid++;
+          return;
+        }
+        const exampleEnglish = splitMultiValue(parts[2]);
+        const exampleJapanese = splitMultiValue(parts[3]);
+        const phraseEnglish = splitMultiValue(parts[4]);
+        const phraseJapanese = splitMultiValue(parts[5]);
+        candidates.push({
+          word: parts[0],
+          meaning: parts[1],
+          examples: exampleEnglish.map((english, index) => ({ english, japanese: exampleJapanese[index] || "" })),
+          phrases: phraseEnglish.map((english, index) => ({ english, japanese: phraseJapanese[index] || "" }))
+        });
+      });
+    }
+    const rows = [];
+    const seen = new Set();
+    let duplicates = 0;
+    candidates.forEach(candidate => {
+      const row = normalizeUnifiedEntry(candidate);
+      if (!row) {
+        invalid++;
+        return;
+      }
+      if (seen.has(row.normalized)) {
+        duplicates++;
+        return;
+      }
+      seen.add(row.normalized);
+      rows.push(row);
+    });
+    return { rows, duplicates, invalid };
+  }
+
   function parseUsageRows(text) {
     const rows = [];
     let invalid = 0;
@@ -240,12 +326,14 @@
     const sourceMap = new Map(words.map((word, index) => [word.sourceId.toLowerCase(), `word_${index + 1}`]));
     const usage = makeUsageItems(usageRows, sourceMap, uid);
     const memory = makeMemoryItems(parseMemoryRows("M001\t1\tI am ready.\t私は準備ができている").rows, uid);
+    const unified = parseUnifiedRows('{"word":"record","meaning":"記録","examples":[{"en":"Keep a record.","ja":"記録をつける。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}');
     const session = createRecallSession(usage, { mode: "all", source: "usage" }, () => 0.5, 1000);
     rateRecallItem(session, usage[0], "cross", 2000);
     rateRecallItem(session, usage[1], "circle", 3000);
     rateRecallItem(session, usage[0], "circle", 4000);
     return {
       passed: words.length === 2 && usage.length === 2 && usage[0].linkedWordIds.length === 2 &&
+        unified.rows.length === 1 && unified.rows[0].examples.length === 1 && unified.rows[0].phrases.length === 1 &&
         memory.length === 1 && session.finished && usage[0].recallStats.cross === 1 &&
         estimateBytes({ usage, memory }) < 10000,
       wordCount: words.length,
@@ -257,6 +345,7 @@
 
   window.MWContent = Object.freeze({
     parseWordRows,
+    parseUnifiedRows,
     parseUsageRows,
     parseMemoryRows,
     makeUsageItems,

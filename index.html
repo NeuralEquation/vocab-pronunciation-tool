@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=34">
+  <link rel="stylesheet" href="styles.css?v=35">
 </head>
 <body>
   <div class="app">
@@ -101,12 +101,15 @@
           <div>
             <label for="testDate">テスト日</label>
             <input id="testDate" type="date">
+            <div class="meta date-validation" id="dateValidation" aria-live="polite"></div>
           </div>
           <div>
-            <label for="weekday">曜日</label>
-            <select id="weekday">
-              <option value="">自動</option>
-              <option>月</option><option>火</option><option>水</option><option>木</option><option>金</option><option>土</option><option>日</option>
+            <label for="weekday">曜日（テスト日から自動）</label>
+            <select id="weekday" disabled>
+              <option value="">日付を選択</option>
+              <option value="月">月曜日</option>
+              <option value="水">水曜日</option>
+              <option value="金">金曜日</option>
             </select>
           </div>
           <div>
@@ -118,14 +121,15 @@
             <input id="deleteAt" type="datetime-local">
           </div>
           <div class="wide import-fields" id="vocabImportFields">
-            <label for="wordInput">単語リスト</label>
-            <div class="meta input-help">推奨: 単語ID[TAB]英単語[TAB]日本語訳。従来の「英単語[TAB]日本語訳」も使えます。</div>
-            <textarea id="wordInput" placeholder="W001&#9;record&#9;記録／記録する
-W002&#9;expense&#9;費用／出費"></textarea>
-            <label for="usageInput">例文・熟語リスト</label>
-            <div class="meta input-help">項目ID[TAB]example または phrase[TAB]関連単語ID[TAB]英語全文[TAB]日本語訳。関連付けは入力されたIDだけを使用し、自動推測しません。</div>
-            <textarea id="usageInput" placeholder="E001&#9;example&#9;W001,W002&#9;Keep a record of your expenses.&#9;出費を記録しておきなさい。
-P001&#9;phrase&#9;W002&#9;at the expense of A&#9;Aを犠牲にして"></textarea>
+            <label for="wordInput">単語・例文・熟語の一体データ</label>
+            <div class="meta input-help">推奨形式は1単語＝1行のJSON Linesです。各行に単語・日本語訳・対応する例文・熟語をまとめます。例文の単語推測は行いません。</div>
+            <textarea id="wordInput" class="unified-input" placeholder='{"word":"record","meaning":"記録／記録する","examples":[{"en":"Keep a record of your expenses.","ja":"出費を記録しておきなさい。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}
+{"word":"expense","meaning":"費用／出費","examples":[],"phrases":[{"en":"at the expense of A","ja":"Aを犠牲にして"}]}'></textarea>
+            <details class="format-help">
+              <summary>カスタムGPT向け出力形式</summary>
+              <pre>{"word":"英単語","meaning":"日本語訳","examples":[{"en":"例文","ja":"例文訳"}],"phrases":[{"en":"熟語","ja":"熟語訳"}]}</pre>
+              <div class="meta">複数ある場合は examples / phrases の配列へ追加します。範囲全体をJSON配列で貼り付ける形式にも対応します。</div>
+            </details>
           </div>
           <div class="wide import-fields hidden" id="memoryImportFields">
             <label for="memoryInput">暗記構文リスト</label>
@@ -260,8 +264,8 @@ P001&#9;phrase&#9;W002&#9;at the expense of A&#9;Aを犠牲にして"></textarea
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/content.js?v=34"></script>
-  <script defer src="js/test.js?v=34"></script>
-  <script defer src="js/app.js?v=34"></script>
+  <script defer src="js/content.js?v=35"></script>
+  <script defer src="js/test.js?v=35"></script>
+  <script defer src="js/app.js?v=35"></script>
 </body>
 </html>

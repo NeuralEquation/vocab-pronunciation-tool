@@ -1,6 +1,6 @@
 var { createTestSession, renderTestQuestion, answerTestQuestion, finishTest, abortTest, analyzeSpellingRisk, createSpeedReviewSession, restartSpeedReviewSession, rateSpeedReviewWord, runTestFeatureSelfCheck } = window.MWTest;
 window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
-var { parseWordRows, parseUsageRows, parseMemoryRows, makeUsageItems, makeMemoryItems, normalizeRangeContent, isSettled, createRecallSession, rateRecallItem, contentStats, runContentSelfCheck } = window.MWContent;
+var { parseUnifiedRows, parseMemoryRows, makeUsageItems, makeMemoryItems, normalizeRangeContent, isSettled, createRecallSession, rateRecallItem, contentStats, runContentSelfCheck } = window.MWContent;
 window.runContentFeatureSelfCheck = runContentSelfCheck;
 
     (() => {
@@ -58,6 +58,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         paused: false,
         phase: "idle"
       };
+      let previewAudio = null;
 
       const $ = (id) => document.getElementById(id);
 
@@ -394,6 +395,43 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         return localDateTimeString(d);
       }
 
+      function validateTestDate(showMessage = false) {
+        const input = $("testDate");
+        const feedback = $("dateValidation");
+        const materialType = $("rangeKind").value;
+        const value = input.value;
+        input.setCustomValidity("");
+        feedback.textContent = "";
+        $("weekday").value = "";
+        if (!value) {
+          const message = "テスト日を入力してください。";
+          input.setCustomValidity(message);
+          feedback.textContent = message;
+          if (showMessage) {
+            input.reportValidity();
+            toast(message, true);
+          }
+          return false;
+        }
+        const day = new Date(`${value}T12:00:00`).getDay();
+        const allowed = materialType === "memorization" ? [5] : [1, 3];
+        if (!allowed.includes(day)) {
+          const message = materialType === "memorization"
+            ? "暗記構文のテスト日は金曜日を選んでください。"
+            : "英単語テストの日付は月曜日または水曜日を選んでください。";
+          input.setCustomValidity(message);
+          feedback.textContent = message;
+          if (showMessage) {
+            input.reportValidity();
+            toast(message, true);
+          }
+          return false;
+        }
+        $("weekday").value = weekdays[day];
+        feedback.textContent = `${weekdays[day]}曜日として登録します。`;
+        return true;
+      }
+
       function statusForRange(range, nextId) {
         if (!range.words.length && !range.memoryItems?.length) return "教材未登録";
         const now = new Date();
@@ -665,6 +703,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const variant = (word.pronunciationVariants || []).find(item => item.audioUrl);
         if (variant) playPronunciationVariant(word.id, variant.id);
         else if (word.audioUrl) playOfficial(word.id);
+        else if (!speakWordText(word.word)) toast("この端末では代替読み上げを利用できません。", true);
       }
 
       function hideForSpeed(active) {
@@ -720,10 +759,13 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const etaMinutes = wordsPerMinute > 0 ? Math.ceil(remaining / wordsPerMinute) : 0;
         const progress = session.roundWordIds.length ? session.index / session.roundWordIds.length * 100 : 0;
         const meaning = word.meaningsJa?.length ? word.meaningsJa.join("／") : "日本語訳未登録";
-        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio"><button class="soft" data-speed-action="audio" ${word.audioUrl || (word.pronunciationVariants || []).some(item => item.audioUrl) ? "" : "disabled"}>公式音声</button></div><div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">この判定は15問テストと独立しています</span><button class="soft" data-speed-action="abort">終了</button></div>`;
+        const hasOfficial = Boolean(word.audioUrl || (word.pronunciationVariants || []).some(item => item.audioUrl));
+        const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio"><button class="soft" data-speed-action="audio" ${hasOfficial || canSpeak ? "" : "disabled"}>${hasOfficial ? "公式音声" : "端末読み上げ"}</button></div><div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">この判定は15問テストと独立しています</span><button class="soft" data-speed-action="abort">終了</button></div>`;
       }
 
       function rateCurrentSpeedWord(rating) {
+        stopPreviewAudio();
         const result = rateSpeedReviewWord(state.speedSession, rating);
         if (!result) return;
         state.speedMeaningVisible = false;
@@ -732,6 +774,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
 
       function leaveSpeedReview() {
+        stopPreviewAudio();
         state.speedSession = null;
         state.speedMeaningVisible = false;
         hideForSpeed(false);
@@ -886,6 +929,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
 
       function nextTestQuestion() {
+        stopPreviewAudio();
         const session = state.activeTest;
         if (!session) return;
         session.index++;
@@ -909,6 +953,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
 
       function leaveTest(openWrong = false) {
+        stopPreviewAudio();
         const session = state.activeTest;
         if (openWrong && session) {
           state.savedFilterBeforeTemporary = state.settings.studyFilter;
@@ -1015,15 +1060,20 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         $("modalRoot").innerHTML = "";
       }
 
-      function buildRangeFromForm(wordRows, usageRows, memoryRows, materialType) {
+      function buildRangeFromForm(wordRows, memoryRows, materialType) {
         const testDate = $("testDate").value;
-        const weekday = $("weekday").value || (testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "");
-        const rangeWords = wordRows.map(row => {
+        const weekday = $("weekday").value;
+        const augmentedRows = wordRows.map((row, index) => ({ ...row, sourceId: `ROW${String(index + 1).padStart(3, "0")}` }));
+        const rangeWords = augmentedRows.map(row => {
           const word = createWord(row.word, row.normalized, row.meaningsJa);
-          word.sourceId = row.sourceId || "";
+          word.sourceId = row.sourceId;
           return word;
         });
         const sourceWordMap = new Map(rangeWords.filter(word => word.sourceId).map(word => [word.sourceId.toLowerCase(), word.id]));
+        const usageRows = augmentedRows.flatMap((row, wordIndex) => [
+          ...row.examples.map((item, itemIndex) => ({ sourceId: `E${wordIndex + 1}-${itemIndex + 1}`, type: "example", sourceRefs: [row.sourceId], english: item.english, japanese: item.japanese })),
+          ...row.phrases.map((item, itemIndex) => ({ sourceId: `P${wordIndex + 1}-${itemIndex + 1}`, type: "phrase", sourceRefs: [row.sourceId], english: item.english, japanese: item.japanese }))
+        ]);
         return {
           id: uid("range"),
           rangeName: $("rangeName").value.trim() || "無題の範囲",
@@ -1044,17 +1094,17 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
 
       function registerRange() {
         const materialType = $("rangeKind").value;
-        const parsedWords = parseWordRows($("wordInput").value);
-        const parsedUsage = parseUsageRows($("usageInput").value);
+        if (!validateTestDate(true)) return;
+        const parsedWords = parseUnifiedRows($("wordInput").value);
         const parsedMemory = parseMemoryRows($("memoryInput").value);
-        const hasContent = materialType === "memorization" ? parsedMemory.rows.length : parsedWords.rows.length || parsedUsage.rows.length;
+        const hasContent = materialType === "memorization" ? parsedMemory.rows.length : parsedWords.rows.length;
         if (!$("rangeName").value.trim() && !hasContent) {
           toast("教材名か学習内容を入力してください。", true);
           return;
         }
         if (materialType === "memorization" && !parsedMemory.rows.length) return toast("暗記構文を1件以上入力してください。", true);
         if (materialType === "vocabulary" && !parsedWords.rows.length) return toast("例文・熟語を関連付けるため、単語を1語以上入力してください。", true);
-        const range = buildRangeFromForm(parsedWords.rows, parsedUsage.rows, parsedMemory.rows, materialType);
+        const range = buildRangeFromForm(parsedWords.rows, parsedMemory.rows, materialType);
         state.ranges.push(range);
         save();
         if (materialType === "memorization") {
@@ -1063,7 +1113,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           const stats = contentStats(range);
           const warnings = [
             parsedWords.duplicates ? `重複${parsedWords.duplicates}行` : "",
-            parsedWords.invalid + parsedUsage.invalid ? `無効${parsedWords.invalid + parsedUsage.invalid}行` : "",
+            parsedWords.invalid ? `無効${parsedWords.invalid}行` : "",
             stats.unresolved ? `関連ID要確認${stats.unresolved}件` : ""
           ].filter(Boolean).join("、");
           toast(`${range.words.length}語・例文${stats.examples}件・熟語${stats.phrases}件を登録しました。API通信はしていません。${warnings ? ` ${warnings}` : ""}`, Boolean(stats.unresolved));
@@ -1553,8 +1603,13 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const word = findWord(wordId);
         if (!word || !word.audioUrl) return;
         rememberWord(wordId);
-        const audio = new Audio(word.audioUrl);
-        audio.play().catch(() => toast("公式音声を再生できませんでした。MWリンクや読み上げを使ってください。", true));
+        stopPreviewAudio();
+        previewAudio = new Audio(word.audioUrl);
+        previewAudio.onended = () => { previewAudio = null; };
+        previewAudio.play().catch(() => {
+          previewAudio = null;
+          if (!speakWordText(word.word)) toast("公式音声と端末読み上げを再生できませんでした。", true);
+        });
       }
 
       function playPronunciationVariant(wordId, variantId) {
@@ -1563,21 +1618,44 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const variant = word?.pronunciationVariants?.find(item => item.id === variantId);
         if (!word || !variant?.audioUrl) return;
         rememberWord(wordId);
-        const audio = new Audio(variant.audioUrl);
-        audio.play().catch(() => toast("この発音の公式音声を再生できませんでした。", true));
+        stopPreviewAudio();
+        previewAudio = new Audio(variant.audioUrl);
+        previewAudio.onended = () => { previewAudio = null; };
+        previewAudio.play().catch(() => {
+          previewAudio = null;
+          if (!speakWordText(word.word)) toast("この発音の公式音声を再生できませんでした。", true);
+        });
       }
 
       function speakWord(wordId) {
         const word = findWord(wordId);
-        if (!word || !("speechSynthesis" in window)) {
+        if (!word || !speakWordText(word.word)) {
           toast("このブラウザでは読み上げに対応していません。", true);
           return;
         }
         rememberWord(wordId);
-        const u = new SpeechSynthesisUtterance(word.word);
-        u.lang = "en-US";
-        speechSynthesis.cancel();
-        speechSynthesis.speak(u);
+      }
+
+      function stopPreviewAudio() {
+        if (previewAudio) {
+          previewAudio.onended = null;
+          previewAudio.onerror = null;
+          previewAudio.pause();
+          previewAudio.removeAttribute("src");
+          previewAudio = null;
+        }
+        if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      }
+
+      function speakWordText(text) {
+        if (!text || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return false;
+        stopPreviewAudio();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "en-US";
+        const voices = window.speechSynthesis.getVoices?.() || [];
+        utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang)) || voices.find(voice => /^en\b/i.test(voice.lang)) || null;
+        window.speechSynthesis.speak(utterance);
+        return true;
       }
 
       function rememberWord(wordId) {
@@ -1649,6 +1727,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         playbackState.currentWordId = "";
         playbackState.paused = false;
         playbackState.phase = "idle";
+        stopPreviewAudio();
         updatePlaybackControls();
       }
 
@@ -1950,22 +2029,20 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           toast("APIキーを削除しました。");
         }));
         $("testDate").addEventListener("change", () => {
-          const testDate = $("testDate").value;
-          const weekday = testDate ? weekdays[new Date(`${testDate}T12:00:00`).getDay()] : "";
-          if (!$("weekday").value) $("weekday").value = weekday;
-          $("deleteAt").value = deleteAtFor(testDate, $("weekday").value || weekday);
+          if (validateTestDate(false)) $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value);
         });
-        $("weekday").addEventListener("change", () => { $("deleteAt").value = deleteAtFor($("testDate").value, $("weekday").value); });
         $("rangeKind").addEventListener("change", () => {
           const isMemory = $("rangeKind").value === "memorization";
           $("vocabImportFields").classList.toggle("hidden", isMemory);
           $("memoryImportFields").classList.toggle("hidden", !isMemory);
-          if (isMemory && !$("weekday").value) $("weekday").value = "金";
+          validateTestDate(false);
         });
         $("importRange").addEventListener("click", registerRange);
         $("clearImport").addEventListener("click", () => {
-          ["rangeName", "testDate", "pages", "deleteAt", "wordInput", "usageInput", "memoryInput"].forEach(id => $(id).value = "");
+          ["rangeName", "testDate", "pages", "deleteAt", "wordInput", "memoryInput"].forEach(id => $(id).value = "");
           $("weekday").value = "";
+          $("dateValidation").textContent = "";
+          $("testDate").setCustomValidity("");
         });
         $("rangeFilter").addEventListener("change", renderRanges);
         $("rangeList").addEventListener("click", (event) => {

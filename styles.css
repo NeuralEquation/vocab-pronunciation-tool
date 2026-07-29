@@ -560,6 +560,11 @@ body.playback-active .jump-fab { bottom:112px; }
     .help-list { color: var(--muted); padding-left: 1.1rem; }
     .help-list li { margin: 4px 0; }
     .import-fields { display: grid; gap: 8px; }
+    .unified-input { min-height: 240px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .82rem; }
+    .format-help { border: 1px solid #283140; border-radius: var(--radius); padding: 10px; background: #0d141e; }
+    .format-help summary { cursor: pointer; color: var(--accent-2); font-weight: 700; }
+    .format-help pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font-size: .78rem; }
+    .date-validation { min-height: 1.2em; margin-top: 4px; color: var(--warn); }
     .content-learning-toolbar {
       border: 1px solid #31506f;
       border-radius: var(--radius);
