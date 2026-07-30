@@ -32,9 +32,13 @@ Choose **英単語・例文・熟語** on the registration screen. Paste all wor
 
 `examples` and `phrases` are arrays, so each word can contain zero, one, or many items. Because the relationship is defined by the containing word record, the app does not inspect English text or guess links. A JSON array containing the same records is also accepted. A six-column TSV fallback is accepted for simple one-line transfers; multiple values use ` || ` in the corresponding English and Japanese columns.
 
+Before registration, the app previews the word, example, and phrase counts. Missing translations, malformed rows, mismatched TSV pairs, and duplicate words are shown with their line number and block registration until fixed.
+
 Vocabulary test dates must be Monday or Wednesday. The app derives the weekday from the date and blocks registration when another weekday is selected. Friday memorization similarly requires a Friday date.
 
-Examples and phrases are recalled from Japanese to the complete English text. After revealing the answer, rate it with `○`, `△`, or `×`. `△` and `×` are repeated in the same session; two consecutive `○` ratings mark an item as settled. There are no cloze or word-order questions.
+Examples and phrases are recalled from Japanese to the complete English text. After revealing the answer, rate it with `○`, `△`, or `×`. `×` returns after a few questions, while `△` returns near the end of the session. Repeating `○` on the same day does not mark an item as settled; an `○` on two different dates is required. There are no cloze or word-order questions.
+
+Each range shows a full-score readiness checklist for unconfirmed or unsettled words, hard words, unsettled examples and phrases, and latest mistakes. The range is marked **満点準備完了** only when every applicable count is zero.
 
 The Quizlet export contains examples only in `English[TAB]Japanese` format. Phrase rows and internal IDs are excluded.
 
@@ -50,11 +54,11 @@ Memorization uses the same full-text `○` / `△` / `×` recall flow, but its d
 
 ## Speech Fallback
 
-Official Merriam-Webster audio remains the first choice. In speed review, a word without official audio shows a manual **端末読み上げ** button when the Web Speech API is available. Manual playback is used instead of assuming unrestricted autoplay across mobile PWAs. Moving to another speed-review card, leaving review/test mode, or stopping continuous playback cancels queued speech immediately and prevents overlap with official audio.
+Official Merriam-Webster audio remains the first choice. In speed review, each card automatically plays the official audio or, when it is unavailable, the device's English voice through the Web Speech API. Starting review and moving cards both happen directly from a tap, swipe, or key action so iOS user-gesture restrictions are respected. **もう一度聞く** remains available only as a replay control. Moving to another card, leaving review/test mode, or stopping continuous playback cancels queued speech immediately and prevents overlap.
 
 ## Rollback and Backups
 
-The repository tag `stable-before-superapp-2026-07-29` identifies the code before this change. Work is kept on the `agent/superapp-learning` branch.
+The repository tag `stable-before-superapp-2026-07-29` identifies the code before the super-app changes.
 
 On the first load, the app keeps a one-time copy of the existing main data when it is small enough to duplicate safely. The backup screen can export or restore this copy. JSON export remains the recommended manual backup before a large import. API keys are never included.
 

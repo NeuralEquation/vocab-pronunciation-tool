@@ -135,13 +135,6 @@ function selectTestWords(words, direction, limit = 15, random = Math.random, mod
     const recentWrong = new Set((words.flatMap(word => DIRECTIONS.some(dir => word.testStats?.[dir]?.lastResult === "incorrect") ? [word.id] : [])));
     return sortReview(canBuild.filter(word => word.studyStatus === "hard" || recentWrong.has(word.id))).slice(0, limit).map(word => ({ word, category: "wrong" }));
   }
-  if (mode === "cram") {
-    const score = word => {
-      const own = statFor(word, direction), other = statFor(word, direction === "enToJa" ? "jaToEn" : "enToJa");
-      return (own.lastResult === "incorrect" ? 100 : 0) + (word.studyStatus === "hard" ? 80 : 0) + ((own.consecutiveCorrect || 0) < 2 ? 40 : 0) + ((other.consecutiveCorrect || 0) < 2 ? 35 : 0) + (!(own.attempts || 0) && !(other.attempts || 0) ? 20 : 0);
-    };
-    return [...canBuild].sort((a, b) => score(b) - score(a) || String(statFor(a, direction).lastTestedAt || "").localeCompare(String(statFor(b, direction).lastTestedAt || "")) || tie.get(a.id) - tie.get(b.id)).slice(0, limit).map(word => ({ word, category: "cram" }));
-  }
   const chosen = [];
   const take = (list, count, category) => sortReview(list).slice(0, count).forEach(word => chosen.push({ word, category }));
   take(urgent, Math.min(6, limit), "urgent");
@@ -215,7 +208,7 @@ function createTestSession(range, direction, options = {}, legacyRandom = Math.r
   if (!DIRECTIONS.includes(direction)) throw new Error("Invalid direction");
   // Old callers passed a random function as the third argument. Keep that API working.
   const random = typeof options === "function" ? options : (typeof legacyRandom === "function" ? legacyRandom : Math.random);
-  const mode = typeof options === "object" && ["normal", "cram", "wrong"].includes(options.mode) ? options.mode : "normal";
+  const mode = typeof options === "object" && ["normal", "wrong"].includes(options.mode) ? options.mode : "normal";
   const selected = selectTestWords(range.words || [], direction, 15, random, mode);
   if (!selected.length) return { error: mode === "wrong" ? "現在、間違い集中モードの対象単語はありません。" : "出題できる単語がありません。" };
   if (selected.length < 15 && mode !== "wrong") return { error: "日本語訳と有効な選択肢がある単語が15語必要です。" };
@@ -260,7 +253,7 @@ function finishTest(session, range) {
   session.finishedAt = new Date().toISOString();
   const correct = session.answers.filter(a => a.correct).length;
   const result = { id: session.id, direction: session.direction, mode: session.mode || "normal", startedAt: session.startedAt, finishedAt: session.finishedAt, total: session.questions.length, correct, accuracy: Math.round(correct / session.questions.length * 100), averageResponseMs: Math.round(session.answers.reduce((sum, a) => sum + a.responseMs, 0) / Math.max(1, session.answers.length)), categoryCorrect: {}, wrongWordIds: session.answers.filter(a => !a.correct).map(a => a.wordId) };
-  ["urgent", "untested", "normal", "cram", "wrong"].forEach(category => { result.categoryCorrect[category] = session.answers.filter(a => a.category === category && a.correct).length; });
+  ["urgent", "untested", "normal", "wrong"].forEach(category => { result.categoryCorrect[category] = session.answers.filter(a => a.category === category && a.correct).length; });
   range.testHistory = [...(range.testHistory || []), result].slice(-30);
   return result;
 }
@@ -271,7 +264,6 @@ function runTestFeatureSelfCheck() {
   const words = Array.from({ length: 20 }, (_, i) => ({ id: `w${i}`, word: `word${i}`, normalized: `word${i}`, meaningsJa: [`意味${i}`], studyStatus: i < 3 ? "hard" : "unrated", partOfSpeech: i % 2 ? "noun" : "verb", testStats: {} }));
   const session = createTestSession({ id: "r", words }, "enToJa", () => 0.37);
   const positionCounts = session.questions.reduce((counts, q) => (counts[q.correctPosition]++, counts), [0, 0, 0, 0]);
-  const cram = createTestSession({ id: "r", words }, "enToJa", { mode: "cram" }, () => 0.37);
   const wrong = createTestSession({ id: "r", words }, "enToJa", { mode: "wrong" }, () => 0.37);
   const speed = createSpeedReviewSession({ id: "r", words }, ["w0", "w1", "w2"], 1000);
   rateSpeedReviewWord(speed, "instant", 2000);
@@ -283,12 +275,12 @@ function runTestFeatureSelfCheck() {
   const restarted = restartSpeedReviewSession(speed, 7000);
   const spelling = { accommodate: analyzeSpellingRisk("accommodate"), crucial: analyzeSpellingRisk("crucial"), besides: analyzeSpellingRisk("besides"), science: analyzeSpellingRisk("science"), cat: analyzeSpellingRisk("cat") };
   const passed = !session.error && session.questions.length === 15 && positionCounts.sort().join(",") === "3,4,4,4" &&
-    session.questions.every(q => q.choices.length === 4) && cram.questions?.length === 15 &&
+    session.questions.every(q => q.choices.length === 4) &&
     wrong.questions?.every(q => ["w0", "w1", "w2"].includes(q.wordId)) &&
     roundResult?.roundComplete && restarted && speed.round === 3 && speed.roundWordIds.join(",") === "w0,w1,w2" && !speed.finished &&
     testStatsSnapshot === JSON.stringify(words.map(word => word.testStats)) &&
     spelling.accommodate.level === "high" && spelling.crucial.level !== "high" && spelling.besides.level === "low" && spelling.science.level !== "high" && spelling.cat.level === "low";
-  return { passed, questionCount: session.questions?.length || 0, positionCounts, cramCount: cram.questions?.length || 0, wrongCount: wrong.questions?.length || 0, speedRounds: speed.completedRounds.length, spelling };
+  return { passed, questionCount: session.questions?.length || 0, positionCounts, wrongCount: wrong.questions?.length || 0, speedRounds: speed.completedRounds.length, spelling };
 }
 
 window.MWTest = Object.freeze({

@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=35">
+  <link rel="stylesheet" href="styles.css?v=42">
 </head>
 <body>
   <div class="app">
@@ -136,6 +136,9 @@
             <div class="meta input-help">構文ID[TAB]番号・ラベル（任意）[TAB]英文全文[TAB]日本語訳。英文と日本語訳だけの2列も使えます。</div>
             <textarea id="memoryInput" placeholder="M001&#9;1&#9;I am ready for the test.&#9;私はテストの準備ができています。"></textarea>
           </div>
+          <div class="wide import-preview" id="importPreview" aria-live="polite">
+            <span class="meta">貼り付けると、登録前に件数と不完全行を確認できます。</span>
+          </div>
         </div>
         <div class="actions">
           <button class="primary" id="importRange">教材を登録</button>
@@ -174,62 +177,38 @@
           </div>
           <button class="soft" id="closeWords">閉じる</button>
         </div>
-        <div class="learning-toolbar" id="vocabLearningControls">
-          <div class="test-launch-actions">
-            <select id="testMode" aria-label="テストモード"><option value="normal">通常テスト</option><option value="cram">直前モード</option><option value="wrong">間違い集中</option></select>
-            <button class="primary" id="startEnToJa">英語 → 日本語</button>
-            <button class="primary" id="startJaToEn">日本語 → 英語</button>
-            <button class="speed-start" id="startSpeedReview">高速周回</button>
+        <div class="learning-toolbar" id="learningControls">
+          <label for="testMode">学習モード</label>
+          <div class="mode-start-row">
+            <select id="testMode" aria-label="学習モード"></select>
+            <button class="primary" id="startSelectedMode">開始</button>
           </div>
-          <div class="toolbar-field">
-            <label for="wordFilter">単語の表示</label>
-            <select id="wordFilter">
-              <option value="all">すべて</option>
-              <option value="unrated">未判定</option>
-              <option value="hard">苦手</option>
-              <option value="known">覚えた</option>
-            </select>
-          </div>
-          <div class="toolbar-field">
-            <label for="playbackInterval">単語間隔</label>
-            <select id="playbackInterval">
-              <option value="1">1秒</option>
-              <option value="2">2秒</option>
-              <option value="3">3秒</option>
-            </select>
-          </div>
-          <div class="playback-actions">
-            <button class="primary" id="continuousStart" aria-pressed="false">連続再生開始</button>
-            <button class="soft" id="continuousStop" disabled>停止</button>
-          </div>
-        </div>
-        <div class="content-learning-toolbar" id="usageLearningControls">
-          <strong>例文・熟語の全文暗唱</strong>
-          <div class="actions">
-            <select id="usageRecallType" aria-label="対象">
-              <option value="all">例文＋熟語</option>
-              <option value="example">例文のみ</option>
-              <option value="phrase">熟語のみ</option>
-            </select>
-            <select id="usageRecallMode" aria-label="暗唱モード">
-              <option value="test15">15問</option>
-              <option value="unsettled">未定着のみ</option>
-              <option value="all">全範囲</option>
-            </select>
-            <button class="primary" id="startUsageRecall">暗唱を始める</button>
-          </div>
-        </div>
-        <div class="content-learning-toolbar hidden" id="memoryLearningControls">
-          <strong>暗記構文の全文暗唱</strong>
-          <div class="actions">
-            <select id="memoryRecallMode" aria-label="暗唱構文モード">
-              <option value="unsettled">未定着のみ</option>
-              <option value="all">全範囲</option>
-              <option value="random5">ランダム5文</option>
-              <option value="random10">ランダム10文</option>
-            </select>
-            <button class="primary" id="startMemoryRecall">暗唱を始める</button>
-          </div>
+          <details class="learning-options" id="vocabLearningOptions">
+            <summary>表示・連続再生</summary>
+            <div class="learning-options-body">
+              <div class="toolbar-field">
+                <label for="wordFilter">単語の表示</label>
+                <select id="wordFilter">
+                  <option value="all">すべて</option>
+                  <option value="unrated">未判定</option>
+                  <option value="hard">苦手</option>
+                  <option value="known">覚えた</option>
+                </select>
+              </div>
+              <div class="toolbar-field">
+                <label for="playbackInterval">単語間隔</label>
+                <select id="playbackInterval">
+                  <option value="1">1秒</option>
+                  <option value="2">2秒</option>
+                  <option value="3">3秒</option>
+                </select>
+              </div>
+              <div class="playback-actions">
+                <button class="primary" id="continuousStart" aria-pressed="false">連続再生開始</button>
+                <button class="soft" id="continuousStop" disabled>停止</button>
+              </div>
+            </div>
+          </details>
         </div>
         <div id="wordList"></div>
         <div id="usageList"></div>
@@ -264,8 +243,8 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/content.js?v=35"></script>
-  <script defer src="js/test.js?v=35"></script>
-  <script defer src="js/app.js?v=35"></script>
+  <script defer src="js/content.js?v=42"></script>
+  <script defer src="js/test.js?v=42"></script>
+  <script defer src="js/app.js?v=42"></script>
 </body>
 </html>
