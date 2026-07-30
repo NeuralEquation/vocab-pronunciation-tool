@@ -7,12 +7,21 @@
   const clean = value => String(value ?? "").trim();
   const unique = values => [...new Set(values.filter(Boolean))];
   const splitJapanese = value => unique(clean(value).split(/[／/、;；]+/).map(clean));
+  const reviewDateKey = now => {
+    const date = new Date(now);
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0")
+    ].join("-");
+  };
   const defaultStats = () => ({
     attempts: 0,
     circle: 0,
     triangle: 0,
     cross: 0,
     consecutiveCircle: 0,
+    successfulReviewDates: [],
     lastRating: "",
     lastReviewedAt: ""
   });
@@ -72,60 +81,99 @@
   function parseUnifiedRows(text) {
     const source = clean(text);
     const candidates = [];
+    const issues = [];
     let invalid = 0;
-    if (!source) return { rows: [], duplicates: 0, invalid: 0 };
+    if (!source) return { rows: [], duplicates: 0, invalid: 0, issues: [] };
     if (source.startsWith("[")) {
       try {
         const parsed = JSON.parse(source);
-        if (!Array.isArray(parsed)) return { rows: [], duplicates: 0, invalid: 1 };
-        candidates.push(...parsed);
+        if (!Array.isArray(parsed)) {
+          return { rows: [], duplicates: 0, invalid: 1, issues: [{ line: 1, message: "JSON配列ではありません。" }] };
+        }
+        parsed.forEach((value, index) => candidates.push({ value, line: index + 1 }));
       } catch {
-        return { rows: [], duplicates: 0, invalid: 1 };
+        return { rows: [], duplicates: 0, invalid: 1, issues: [{ line: 1, message: "JSONの解析に失敗しました。" }] };
       }
     } else {
-      source.split(/\r?\n/).map(clean).filter(Boolean).forEach(line => {
+      source.split(/\r?\n/).map((value, index) => ({ value: clean(value), line: index + 1 })).filter(entry => entry.value).forEach(entry => {
+        const line = entry.value;
         if (line.startsWith("{")) {
           try {
-            candidates.push(JSON.parse(line));
+            candidates.push({ value: JSON.parse(line), line: entry.line });
           } catch {
             invalid++;
+            issues.push({ line: entry.line, message: "JSONの解析に失敗しました。" });
           }
           return;
         }
         const parts = line.split("\t").map(clean);
         if (parts.length < 2) {
           invalid++;
+          issues.push({ line: entry.line, message: "単語と日本語訳の列が不足しています。" });
           return;
         }
         const exampleEnglish = splitMultiValue(parts[2]);
         const exampleJapanese = splitMultiValue(parts[3]);
         const phraseEnglish = splitMultiValue(parts[4]);
         const phraseJapanese = splitMultiValue(parts[5]);
-        candidates.push({
+        if (exampleEnglish.length !== exampleJapanese.length || phraseEnglish.length !== phraseJapanese.length) {
+          invalid++;
+          issues.push({ line: entry.line, message: "例文・熟語の英語と日本語訳の件数が一致しません。" });
+          return;
+        }
+        candidates.push({ line: entry.line, value: {
           word: parts[0],
           meaning: parts[1],
           examples: exampleEnglish.map((english, index) => ({ english, japanese: exampleJapanese[index] || "" })),
           phrases: phraseEnglish.map((english, index) => ({ english, japanese: phraseJapanese[index] || "" }))
-        });
+        } });
       });
     }
     const rows = [];
     const seen = new Set();
     let duplicates = 0;
-    candidates.forEach(candidate => {
+    candidates.forEach(entry => {
+      const candidate = entry.value;
+      const meaningsValue = candidate?.meaningsJa ?? candidate?.meaning ?? candidate?.japanese ?? "";
+      const meanings = Array.isArray(meaningsValue) ? meaningsValue.map(clean).filter(Boolean) : splitJapanese(meaningsValue);
+      const usageKeys = ["examples", "example", "phrases", "expressions", "phrase"];
+      const invalidUsageStructure = usageKeys.some(key => {
+        const value = candidate?.[key];
+        return value != null && value !== "" && !Array.isArray(value) && typeof value !== "object";
+      });
+      const incompleteUsage = usageKeys
+        .flatMap(key => {
+          const value = candidate?.[key];
+          return Array.isArray(value) ? value : value && typeof value === "object" ? [value] : [];
+        })
+        .some(item => !clean(item?.english ?? item?.en) || !clean(item?.japanese ?? item?.ja));
+      if (!meanings.length || invalidUsageStructure || incompleteUsage) {
+        invalid++;
+        issues.push({
+          line: entry.line,
+          message: !meanings.length
+            ? "日本語訳がありません。"
+            : invalidUsageStructure
+              ? "例文・熟語は配列またはオブジェクトで入力してください。"
+              : "例文・熟語の英語または日本語訳が不足しています。"
+        });
+        return;
+      }
       const row = normalizeUnifiedEntry(candidate);
       if (!row) {
         invalid++;
+        issues.push({ line: entry.line, message: "英単語の形式を確認してください。" });
         return;
       }
       if (seen.has(row.normalized)) {
         duplicates++;
+        issues.push({ line: entry.line, message: `重複する単語です: ${row.word}` });
         return;
       }
       seen.add(row.normalized);
       rows.push(row);
     });
-    return { rows, duplicates, invalid };
+    return { rows, duplicates, invalid, issues };
   }
 
   function parseUsageRows(text) {
@@ -160,6 +208,7 @@
 
   function parseMemoryRows(text) {
     const rows = [];
+    const issues = [];
     let invalid = 0;
     clean(text).split(/\r?\n/).map(clean).filter(Boolean).forEach((line, index) => {
       const parts = line.split("\t").map(clean);
@@ -175,6 +224,7 @@
       }
       if (!english || !japanese) {
         invalid++;
+        issues.push({ line: index + 1, message: "英文全文または日本語訳が不足しています。" });
         return;
       }
       rows.push({
@@ -184,7 +234,7 @@
         japanese
       });
     });
-    return { rows, invalid };
+    return { rows, invalid, issues };
   }
 
   function makeUsageItems(rows, sourceWordMap, uid) {
@@ -220,6 +270,11 @@
     ["attempts", "circle", "triangle", "cross", "consecutiveCircle"].forEach(key => {
       stats[key] = Math.max(0, Number(stats[key]) || 0);
     });
+    stats.successfulReviewDates = unique(
+      (Array.isArray(stats.successfulReviewDates) ? stats.successfulReviewDates : [])
+        .map(clean)
+        .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
+    ).slice(-20);
     if (!VALID_RATINGS.has(stats.lastRating)) stats.lastRating = "";
     return stats;
   }
@@ -251,7 +306,7 @@
   }
 
   function isSettled(item) {
-    return item.recallStats?.consecutiveCircle >= 2 && item.recallStats?.lastRating === "circle";
+    return (item.recallStats?.successfulReviewDates?.length || 0) >= 2 && item.recallStats?.lastRating === "circle";
   }
 
   function selectRecallItems(items, options = {}, random = Math.random) {
@@ -290,10 +345,14 @@
     stats.attempts++;
     stats[rating]++;
     stats.consecutiveCircle = rating === "circle" ? stats.consecutiveCircle + 1 : 0;
+    if (rating === "circle") {
+      stats.successfulReviewDates = unique([...(stats.successfulReviewDates || []), reviewDateKey(now)]).slice(-20);
+    }
     stats.lastRating = rating;
     stats.lastReviewedAt = new Date(now).toISOString();
     session.assessments.push({ itemId: item.id, rating, reviewedAt: stats.lastReviewedAt });
-    if (rating !== "circle") session.queue.push(item.id);
+    if (rating === "cross") session.queue.splice(Math.min(3, session.queue.length), 0, item.id);
+    else if (rating === "triangle") session.queue.push(item.id);
     session.index++;
     session.answerVisible = false;
     session.finished = session.queue.length === 0;
@@ -307,6 +366,8 @@
     return {
       examples: usage.filter(item => item.type === "example").length,
       phrases: usage.filter(item => item.type === "phrase").length,
+      examplesUnsettled: usage.filter(item => item.type === "example" && !isSettled(item)).length,
+      phrasesUnsettled: usage.filter(item => item.type === "phrase" && !isSettled(item)).length,
       usageUnsettled: usage.filter(item => !isSettled(item)).length,
       memoryTotal: memory.length,
       memoryUnsettled: memory.filter(item => !isSettled(item)).length,
@@ -327,14 +388,21 @@
     const usage = makeUsageItems(usageRows, sourceMap, uid);
     const memory = makeMemoryItems(parseMemoryRows("M001\t1\tI am ready.\t私は準備ができている").rows, uid);
     const unified = parseUnifiedRows('{"word":"record","meaning":"記録","examples":[{"en":"Keep a record.","ja":"記録をつける。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}');
-    const session = createRecallSession(usage, { mode: "all", source: "usage" }, () => 0.5, 1000);
-    rateRecallItem(session, usage[0], "cross", 2000);
-    rateRecallItem(session, usage[1], "circle", 3000);
-    rateRecallItem(session, usage[0], "circle", 4000);
+    const dayOne = Date.UTC(2026, 6, 28, 3);
+    const dayTwo = Date.UTC(2026, 6, 29, 3);
+    const firstSession = createRecallSession(usage, { mode: "all", source: "usage" }, () => 0.5, dayOne);
+    rateRecallItem(firstSession, usage[0], "cross", dayOne + 1000);
+    rateRecallItem(firstSession, usage[1], "circle", dayOne + 2000);
+    rateRecallItem(firstSession, usage[0], "circle", dayOne + 3000);
+    const settledAfterOneDay = isSettled(usage[0]);
+    const secondSession = createRecallSession(usage, { mode: "unsettled", source: "usage" }, () => 0.5, dayTwo);
+    rateRecallItem(secondSession, usage[0], "circle", dayTwo + 1000);
+    rateRecallItem(secondSession, usage[1], "circle", dayTwo + 2000);
     return {
       passed: words.length === 2 && usage.length === 2 && usage[0].linkedWordIds.length === 2 &&
         unified.rows.length === 1 && unified.rows[0].examples.length === 1 && unified.rows[0].phrases.length === 1 &&
-        memory.length === 1 && session.finished && usage[0].recallStats.cross === 1 &&
+        memory.length === 1 && firstSession.finished && secondSession.finished && !settledAfterOneDay &&
+        isSettled(usage[0]) && isSettled(usage[1]) && usage[0].recallStats.cross === 1 &&
         estimateBytes({ usage, memory }) < 10000,
       wordCount: words.length,
       usageCount: usage.length,
