@@ -1,18 +1,29 @@
-var { createTestSession, renderTestQuestion, answerTestQuestion, finishTest, abortTest, analyzeSpellingRisk, createSpeedReviewSession, restartSpeedReviewSession, rateSpeedReviewWord, runTestFeatureSelfCheck } = window.MWTest;
+var {
+  createTestSession, renderTestQuestion, answerTestQuestion, finishTest, abortTest,
+  analyzeSpellingRisk, createSpeedReviewSession, restartSpeedReviewSession, rateSpeedReviewWord,
+  defaultDirectionStats, normalizeDirectionStats, applyDirectionAttempt,
+  normalizeSpellingStats, evaluateSpellingAnswer, createSpellingSession, answerSpellingQuestion,
+  finishSpellingSession, applySpellingAttempt, selectTestReadyItems,
+  readinessForRange: wordReadinessForRange, runTestFeatureSelfCheck
+} = window.MWTest;
 window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 var { parseUnifiedRows, parseMemoryRows, makeUsageItems, makeMemoryItems, normalizeRangeContent, isSettled, createRecallSession, rateRecallItem, contentStats, runContentSelfCheck } = window.MWContent;
 window.runContentFeatureSelfCheck = runContentSelfCheck;
+var { SCHEMA_VERSION: STORAGE_SCHEMA_VERSION, APP_VERSION, migrateBackup, parseBackup, planImport, createBackup, runStorageSelfCheck } = window.MWStorage;
+window.runStorageSelfCheck = runStorageSelfCheck;
 
     (() => {
       "use strict";
 
       const STORAGE_KEY = "mwPronunciationTool.v1";
       const PRE_SUPERAPP_BACKUP_KEY = "mwPronunciationTool.preSuperappBackup.v1";
+      const PRE_IMPORT_BACKUP_KEY = "mwPronunciationTool.preImportBackup.v1";
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
       const CACHE_SCHEMA_VERSION = 7;
       const TEST_WORD_LIMIT = 3;
+      const READY_EVIDENCE_MAX_AGE_DAYS = 14;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
       const demoData = {
@@ -40,6 +51,9 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         lastImportWords: [],
         activeTest: null,
         speedSession: null,
+        spellingSession: null,
+        spellingFeedback: null,
+        spellingResult: null,
         recallSession: null,
         speedMeaningVisible: false,
         pendingWordScroll: false,
@@ -113,7 +127,29 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
 
       function emptyDirectionStats() {
-        return { attempts: 0, correct: 0, incorrect: 0, consecutiveCorrect: 0, lastResult: "", lastTestedAt: "", totalResponseMs: 0, confusedWith: {} };
+        return defaultDirectionStats();
+      }
+
+      function defaultSpeedStats() {
+        return { attempts: 0, instant: 0, unsure: 0, unknown: 0, lastRating: "", lastReviewedAt: "", totalResponseMs: 0, successfulReviewDates: [], lastLapseAt: "" };
+      }
+
+      function normalizeSpeedProfile(value) {
+        const stats = { ...defaultSpeedStats(), ...(value && typeof value === "object" ? value : {}) };
+        ["attempts", "instant", "unsure", "unknown", "totalResponseMs"].forEach(key => { stats[key] = Math.max(0, Number(stats[key]) || 0); });
+        if (!["instant", "unsure", "unknown"].includes(stats.lastRating)) stats.lastRating = "";
+        stats.successfulReviewDates = [...new Set((Array.isArray(stats.successfulReviewDates) ? stats.successfulReviewDates : []).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))].slice(-20);
+        stats.lastReviewedAt = typeof stats.lastReviewedAt === "string" ? stats.lastReviewedAt : "";
+        stats.lastLapseAt = typeof stats.lastLapseAt === "string" ? stats.lastLapseAt : "";
+        return stats;
+      }
+
+      function normalizeSpeedStats(value) {
+        const nested = value && typeof value === "object" && (value.enToJa || value.jaToEn);
+        return {
+          enToJa: normalizeSpeedProfile(nested ? value.enToJa : value),
+          jaToEn: normalizeSpeedProfile(nested ? value.jaToEn : null)
+        };
       }
 
       function createWord(raw, normalized, meaningsJa = []) {
@@ -137,7 +173,10 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           error: "",
           studyStatus: "unrated",
           meaningsJa,
-          testStats: { enToJa: emptyDirectionStats(), jaToEn: emptyDirectionStats() }
+          acceptedSpellings: [],
+          testStats: { enToJa: emptyDirectionStats(), jaToEn: emptyDirectionStats() },
+          spellingStats: normalizeSpellingStats(),
+          speedStats: normalizeSpeedStats()
         };
       }
 
@@ -245,20 +284,15 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
             if (!localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY) && new Blob([raw]).size < 1.5 * 1024 * 1024) {
               localStorage.setItem(PRE_SUPERAPP_BACKUP_KEY, raw);
             }
-            const parsed = JSON.parse(raw);
-            state.ranges = Array.isArray(parsed.ranges) ? parsed.ranges : [];
+            const migrated = parseBackup(raw);
+            if (!migrated.ok) throw new Error(migrated.errors.join(" "));
+            state.settings = { ...state.settings, ...migrated.data.settings };
+            state.studyLog = migrated.data.studyLog;
+            state.ranges = migrated.data.ranges;
             normalizeLoadedData();
-            const savedSelectedRangeId = String(parsed.ui?.selectedRangeId || "");
+            const savedSelectedRangeId = String(migrated.data.ui?.selectedRangeId || "");
             state.selectedRangeId = state.ranges.some(range => range.id === savedSelectedRangeId) ? savedSelectedRangeId : null;
             state.pendingWordScroll = Boolean(state.selectedRangeId);
-            state.settings.demoMode = parsed.settings?.demoMode !== false;
-            state.settings.saveKey = parsed.settings?.saveKey === true;
-            state.settings.dictionaryType = parsed.settings?.dictionaryType || "learners";
-            state.settings.definitionLimit = Number(parsed.settings?.definitionLimit) || 2;
-            state.settings.studyFilter = ["all", "unrated", "hard", "known"].includes(parsed.settings?.studyFilter) ? parsed.settings.studyFilter : "all";
-            state.settings.playbackInterval = [1, 2, 3].includes(Number(parsed.settings?.playbackInterval)) ? Number(parsed.settings.playbackInterval) : 2;
-            ["mondayEndTime", "wednesdayEndTime", "fridayEndTime"].forEach(key => state.settings[key] = /^\d{2}:\d{2}$/.test(parsed.settings?.[key] || "") ? parsed.settings[key] : "");
-            state.studyLog = parsed.studyLog && typeof parsed.studyLog === "object" ? parsed.studyLog : {};
           }
           if (state.settings.saveKey) {
             $("apiKey").value = localStorage.getItem(API_KEY_KEY) || "";
@@ -279,24 +313,15 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
 
       function save(shouldRender = true) {
-        const payload = {
-          version: 1,
-          savedAt: new Date().toISOString(),
-          settings: {
-            demoMode: state.settings.demoMode,
-            saveKey: state.settings.saveKey,
-            dictionaryType: state.settings.dictionaryType,
-            definitionLimit: state.settings.definitionLimit,
-            studyFilter: state.settings.studyFilter,
-            playbackInterval: state.settings.playbackInterval,
-            mondayEndTime: state.settings.mondayEndTime, wednesdayEndTime: state.settings.wednesdayEndTime, fridayEndTime: state.settings.fridayEndTime
-          },
-          ranges: state.ranges,
-          studyLog: state.studyLog,
-          ui: { selectedRangeId: state.selectedRangeId || "" }
-        };
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+          const savedAt = new Date().toISOString();
+          const payload = createBackup({
+            settings: state.settings,
+            ranges: state.ranges,
+            studyLog: state.studyLog,
+            ui: { selectedRangeId: state.selectedRangeId || "" }
+          }, savedAt);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, savedAt }));
           if (shouldRender) render();
           return true;
         } catch (err) {
@@ -339,7 +364,10 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
             word.definitions = Array.isArray(word.definitions) ? word.definitions : [];
             word.meaningsJa = Array.isArray(word.meaningsJa) ? word.meaningsJa.map(String).filter(Boolean) : [];
             word.testStats = word.testStats && typeof word.testStats === "object" ? word.testStats : {};
-            ["enToJa", "jaToEn"].forEach(direction => { word.testStats[direction] = { ...emptyDirectionStats(), ...(word.testStats[direction] || {}), confusedWith: { ...(word.testStats[direction]?.confusedWith || {}) } }; });
+            ["enToJa", "jaToEn"].forEach(direction => { word.testStats[direction] = normalizeDirectionStats(word.testStats[direction]); });
+            word.acceptedSpellings = [...new Set((Array.isArray(word.acceptedSpellings) ? word.acceptedSpellings : []).map(value => String(value).trim()).filter(Boolean))];
+            word.spellingStats = normalizeSpellingStats(word.spellingStats);
+            word.speedStats = normalizeSpeedStats(word.speedStats);
             word.hasDefinition = Boolean(word.hasDefinition || word.definitions.length);
             word.cacheVersion = Number(word.cacheVersion) || 0;
             word.mwUrl = word.mwUrl || dictionaryUrl(word.normalized || word.word || "");
@@ -457,53 +485,56 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
 
       function statsForRange(range) {
         const words = range.words || [];
+        const readiness = range.materialType === "memorization" ? null : readinessForRange(range);
         const total = words.length;
         const fetched = words.filter(w => isCacheCurrent(w, w.dictionarySource || state.settings.dictionaryType || "learners")).length;
         const audio = words.filter(w => w.hasAudio).length;
         const noAudio = words.filter(w => w.apiFetched && !w.hasAudio).length;
         const definitions = words.filter(w => w.hasDefinition).length;
         const hard = words.filter(w => w.studyStatus === "hard").length;
-        const known = words.filter(w => w.studyStatus === "known").length;
+        const riskyIds = new Set(readiness?.riskItems?.map(item => item.wordId) || []);
+        const known = words.filter(w => !riskyIds.has(w.id) && w.studyStatus === "known").length;
         const unseen = words.filter(w => !(w.testStats?.enToJa?.attempts || 0) && !(w.testStats?.jaToEn?.attempts || 0)).length;
-        const unsettled = words.filter(w => w.studyStatus !== "known" || (w.testStats?.enToJa?.consecutiveCorrect || 0) < 2 || (w.testStats?.jaToEn?.consecutiveCorrect || 0) < 2 || w.testStats?.enToJa?.lastResult === "incorrect" || w.testStats?.jaToEn?.lastResult === "incorrect").length;
+        const unsettled = readiness?.riskItems?.length ?? words.filter(w => w.studyStatus !== "known").length;
         return { total, fetched, audio, noAudio, definitions, hard, known, unseen, unsettled, pct: total ? Math.round(fetched / total * 100) : 0, learningPct: total ? Math.round(known / total * 100) : 0, ...contentStats(range) };
+      }
+
+      function recallReadyForTest(item, now = Date.now()) {
+        if (!isSettled(item)) return false;
+        const dates = Array.isArray(item?.recallStats?.successfulReviewDates) ? item.recallStats.successfulReviewDates : [];
+        const latest = [...dates].sort().at(-1);
+        if (!latest) return false;
+        const today = localDateString(new Date(now));
+        const latestAt = new Date(`${latest}T12:00:00`).getTime();
+        const todayAt = new Date(`${today}T12:00:00`).getTime();
+        const ageDays = Math.round((todayAt - latestAt) / 86400000);
+        return ageDays >= 0 && ageDays <= READY_EVIDENCE_MAX_AGE_DAYS;
       }
 
       function readinessForRange(range) {
         const content = contentStats(range);
         if (range.materialType === "memorization") {
           const finalMistakes = (range.memoryItems || []).filter(item => ["triangle", "cross"].includes(item.recallStats?.lastRating)).length;
+          const memoryRisk = (range.memoryItems || []).filter(item => !recallReadyForTest(item)).length;
           const checks = [
-            { label: "暗記構文未定着", count: content.memoryUnsettled },
-            { label: "最終確認ミス", count: finalMistakes }
+            { key: "memory", label: "暗記構文未定着・14日以内未確認", count: memoryRisk },
+            { key: "memoryMistakes", label: "最終確認ミス", count: finalMistakes }
           ];
-          return { ready: content.memoryTotal > 0 && checks.every(check => check.count === 0), checks };
+          const ready = content.memoryTotal > 0 && checks.every(check => check.count === 0);
+          return { ready, status: ready ? "safe" : content.memoryTotal ? "risk" : "unverified", checks, riskItems: [] };
         }
         const words = range.words || [];
-        const unconfirmed = words.filter(word =>
-          !(word.testStats?.enToJa?.attempts || 0) || !(word.testStats?.jaToEn?.attempts || 0)
-        ).length;
-        const unsettledWords = words.filter(word =>
-          word.studyStatus !== "known" ||
-          (word.testStats?.enToJa?.consecutiveCorrect || 0) < 2 ||
-          (word.testStats?.jaToEn?.consecutiveCorrect || 0) < 2 ||
-          word.testStats?.enToJa?.lastResult === "incorrect" ||
-          word.testStats?.jaToEn?.lastResult === "incorrect"
-        ).length;
-        const wordMistakes = words.filter(word =>
-          word.testStats?.enToJa?.lastResult === "incorrect" ||
-          word.testStats?.jaToEn?.lastResult === "incorrect"
-        ).length;
-        const usageMistakes = (range.usageItems || []).filter(item => ["triangle", "cross"].includes(item.recallStats?.lastRating)).length;
-        const checks = [
-          { label: "未確認単語", count: unconfirmed },
-          { label: "苦手単語", count: words.filter(word => word.studyStatus === "hard").length },
-          { label: "未定着単語", count: unsettledWords },
-          { label: "未定着例文", count: content.examplesUnsettled },
-          { label: "未定着熟語", count: content.phrasesUnsettled },
-          { label: "最終確認ミス", count: wordMistakes + usageMistakes }
+        const wordReadiness = wordReadinessForRange(range, Date.now());
+        const usageItems = range.usageItems || [];
+        const contentChecks = [
+          { key: "examples", label: "例文未定着・14日以内未確認", count: usageItems.filter(item => item.type === "example" && !recallReadyForTest(item)).length },
+          { key: "phrases", label: "熟語未定着・14日以内未確認", count: usageItems.filter(item => item.type === "phrase" && !recallReadyForTest(item)).length }
         ];
-        return { ready: words.length > 0 && checks.every(check => check.count === 0), checks };
+        const checks = [...(wordReadiness.checks || []), ...contentChecks];
+        const contentRisk = contentChecks.some(check => check.count > 0);
+        const ready = words.length > 0 && wordReadiness.status === "safe" && !contentRisk;
+        const status = ready ? "safe" : wordReadiness.status === "unverified" || !words.length ? "unverified" : "risk";
+        return { ...wordReadiness, ready, status, checks };
       }
 
       function isRangeEnded(range, now = new Date()) {
@@ -528,16 +559,17 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
       function rangePlanHtml(label, range, now) {
         if (!range) return `<div class="plan-card"><strong>${label}</strong><span class="meta">対象範囲はありません</span></div>`;
-        const s = statsForRange(range), days = Math.max(0, Math.ceil((new Date(`${range.testDate}T00:00:00`) - new Date(`${localDateString(now)}T00:00:00`)) / 86400000));
-        const goal = days <= 0 ? s.unsettled : Math.ceil(s.unsettled / days), recommend = Math.ceil(goal * 1.25);
-        return `<div class="plan-card"><strong>${label}: ${escapeHtml(range.rangeName || "無題の範囲")}</strong><div class="meta">${range.testDate}まで${days}日 / ${s.total}語</div><div>未出題 ${s.unseen}・苦手 ${s.hard}・覚えた ${s.known}・未定着 ${s.unsettled}</div><div>今日の目標: 最低${goal}問 / 推奨${recommend}問</div></div>`;
+        const s = statsForRange(range);
+        const readiness = readinessForRange(range);
+        const days = Math.max(0, Math.ceil((new Date(`${range.testDate}T00:00:00`) - new Date(`${localDateString(now)}T00:00:00`)) / 86400000));
+        return `<div class="plan-card"><strong>${label}: ${escapeHtml(range.rangeName || "無題の範囲")}</strong><div class="meta">${escapeHtml(range.testDate || "日付未設定")} / あと${days}日 / ${s.total}語</div><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div>`;
       }
       function renderTodayStudy() {
-        const now = new Date(), plan = learningPlan(now), log = state.studyLog[todayKey()] || { attempts: 0, correct: 0, enToJa: { attempts: 0, correct: 0 }, jaToEn: { attempts: 0, correct: 0 } };
-        const weekday = weekdays[now.getDay()];
+        const now = new Date(), plan = learningPlan(now);
         const memoryStats = plan.memory ? contentStats(plan.memory) : null;
-        $("todayStudyPanel").innerHTML = `<h3>${now.getMonth() + 1}月${now.getDate()}日 ${weekday}曜日</h3><strong>今日の学習方針</strong><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">まず「間違い集中」で今日のテストの復習を行いましょう。</div>` : ""}${plan.memory ? `<div class="caution">暗記構文「${escapeHtml(plan.memory.rangeName)}」: 未定着 ${memoryStats.memoryUnsettled}/${memoryStats.memoryTotal}件</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "次回の優先範囲" : "最優先", plan.primary, now)}${rangePlanHtml("先取り", plan.preview, now)}</div><div class="meta">今日: ${log.attempts}回答 / ${log.correct}正解 / 正答率 ${log.attempts ? Math.round(log.correct / log.attempts * 100) : 0}%（英→日 ${log.enToJa.attempts}、日→英 ${log.jaToEn.attempts}）</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>単語学習を始める</button>${plan.memory ? `<button class="primary" id="startTodayMemory">暗記構文を始める</button>` : ""}</div>`;
-        $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTest($("todayDirection").value, plan.mode); });
+        $("todayStudyPanel").innerHTML = `<h3>次の小テストを満点まで仕上げる</h3><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">今日落とした項目は、次の範囲より先に確認します。</div>` : ""}${plan.memory ? `<div class="caution">暗記構文「${escapeHtml(plan.memory.rangeName)}」: 未定着 ${memoryStats.memoryUnsettled}/${memoryStats.memoryTotal}件</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "今日の取りこぼし" : "最優先", plan.primary, now)}${rangePlanHtml("次の範囲", plan.preview, now)}</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>危険単語を満点確認</button><button class="soft" id="startTodayNormal" ${plan.primary ? "" : "disabled"}>通常15問</button>${plan.memory ? `<button class="primary" id="startTodayMemory">暗記構文を始める</button>` : ""}</div>`;
+        $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTestReadyReview($("todayDirection").value); });
+        $("startTodayNormal")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTest($("todayDirection").value, "normal"); });
         $("startTodayMemory")?.addEventListener("click", () => { state.selectedRangeId = plan.memory.id; startRecall("memory", "unsettled"); });
       }
 
@@ -560,6 +592,18 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         else if (mb >= 3) root.innerHTML = `<div class="caution">保存使用量が3MBを超えています。不要なAPIキャッシュを削除すると軽くなります。</div>`;
         else if (mb >= 2) root.innerHTML = `<div class="caution">保存使用量が2MBを超えました。スマホでは容量に注意してください。</div>`;
         else root.innerHTML = "";
+      }
+
+      function readinessLabel(readiness) {
+        if (readiness.status === "safe") return "✓ 満点準備OK";
+        if (readiness.status === "risk") return `⚠ 危険 ${readiness.riskItems?.length || 0}語`;
+        return "未検証項目あり";
+      }
+
+      function readinessChecksHtml(readiness) {
+        const checks = (readiness.checks || []).filter(check => check.count > 0);
+        if (!checks.length) return "";
+        return `<div class="readiness-checks">${checks.map(check => `<span class="open">${escapeHtml(check.label)} ${check.count}</span>`).join("")}</div>`;
       }
 
       function renderRanges() {
@@ -588,18 +632,22 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
                 <span class="badge ${badgeClass}">${range.status}</span>
               </div>
               <div class="meta">${isMemory ? `未定着 ${s.memoryUnsettled}/${s.memoryTotal}件` : `学習定着率 ${s.learningPct}% / API取得率 ${s.pct}%`}</div>${isMemory ? "" : `<div class="progress" aria-label="API取得率"><span style="width:${s.pct}%"></span></div>`}
-              <div class="range-readiness ${readiness.ready ? "ready" : ""}">${readiness.ready ? "✓ 満点準備完了" : "満点準備：確認項目あり"}</div>
+              <div class="readiness-summary">
+                <div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>
+                ${readinessChecksHtml(readiness)}
+              </div>
               <div class="mini-grid">
                 ${isMemory ? `<div class="mini"><strong>${s.memoryTotal}</strong>構文</div><div class="mini"><strong>${s.memoryUnsettled}</strong>未定着</div>` : `<div class="mini"><strong>${s.total}</strong>単語</div><div class="mini"><strong>${s.examples}</strong>例文</div><div class="mini"><strong>${s.phrases}</strong>熟語</div><div class="mini"><strong>${s.hard}</strong>苦手</div><div class="mini"><strong>${s.usageUnsettled}</strong>例文等未定着</div>`}
               </div>
               <div class="actions" style="margin-top:10px">
-                <button class="primary" data-action="open" data-id="${range.id}">開く</button>
-                ${isMemory ? "" : `<button class="soft" data-action="fetch" data-id="${range.id}" ${s.total ? "" : "disabled"}>APIで取得</button>`}
-                ${range.testDate === todayKey() ? (isRangeEnded(range) ? `<button class="soft" data-action="test-before" data-id="${range.id}">テスト前</button>` : `<button class="soft" data-action="test-ended" data-id="${range.id}">テスト終了</button>`) : ""}
+                <button class="primary" data-action="open" data-id="${escapeHtml(range.id)}">開く</button>
+                ${isMemory ? "" : `<button class="warn" data-action="ready" data-id="${escapeHtml(range.id)}">満点確認</button>`}
+                ${isMemory ? "" : `<button class="soft" data-action="fetch" data-id="${escapeHtml(range.id)}" ${s.total ? "" : "disabled"}>APIで取得</button>`}
+                ${range.testDate === todayKey() ? (isRangeEnded(range) ? `<button class="soft" data-action="test-before" data-id="${escapeHtml(range.id)}">テスト前</button>` : `<button class="soft" data-action="test-ended" data-id="${escapeHtml(range.id)}">テスト終了</button>`) : ""}
               </div>
               <div class="danger-actions">
-                <button class="compact refetch" data-action="clear-cache" data-id="${range.id}">キャッシュ削除</button>
-                <button class="compact collegiate" data-action="delete-range" data-id="${range.id}">範囲削除</button>
+                <button class="compact refetch" data-action="clear-cache" data-id="${escapeHtml(range.id)}">キャッシュ削除</button>
+                <button class="compact collegiate" data-action="delete-range" data-id="${escapeHtml(range.id)}">範囲削除</button>
               </div>
             </article>`;
         }).join("");
@@ -630,7 +678,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
             <div class="range-head"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><span class="rating-status">${item.recallStats.lastRating === "circle" ? "○" : item.recallStats.lastRating === "triangle" ? "△" : item.recallStats.lastRating === "cross" ? "×" : "未判定"}</span></div>
             <strong>${escapeHtml(item.english)}</strong><div>${escapeHtml(item.japanese)}</div>
             <div class="meta">関連単語: ${linked.length ? escapeHtml(linked.join("、")) : "未設定"}${item.unresolvedRefs?.length ? ` / 未解決ID: ${escapeHtml(item.unresolvedRefs.join("、"))}` : ""}</div>
-            <button class="soft compact" data-usage-action="edit-links" data-id="${item.id}">関連単語を編集</button>
+            <button class="soft compact" data-usage-action="edit-links" data-id="${escapeHtml(item.id)}">関連単語を編集</button>
           </article>`;
         }).join("")}`;
       }
@@ -648,7 +696,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const range = state.ranges.find(r => r.id === state.selectedRangeId);
         const item = range?.usageItems?.find(entry => entry.id === itemId);
         if (!range || !item) return;
-        showModal(`<h2>関連単語を編集</h2><p><strong>${escapeHtml(item.english)}</strong></p><div class="link-editor">${range.words.map(word => `<label class="switch"><input type="checkbox" data-link-word="${word.id}" ${item.linkedWordIds.includes(word.id) ? "checked" : ""}> ${escapeHtml(word.word)}</label>`).join("")}</div><div class="actions"><button class="primary" data-modal-confirm>保存</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
+        showModal(`<h2>関連単語を編集</h2><p><strong>${escapeHtml(item.english)}</strong></p><div class="link-editor">${range.words.map(word => `<label class="switch"><input type="checkbox" data-link-word="${escapeHtml(word.id)}" ${item.linkedWordIds.includes(word.id) ? "checked" : ""}> ${escapeHtml(word.word)}</label>`).join("")}</div><div class="actions"><button class="primary" data-modal-confirm>保存</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
           item.linkedWordIds = [...$("modalRoot").querySelectorAll("[data-link-word]:checked")].map(input => input.dataset.linkWord);
           item.unresolvedRefs = [];
           save();
@@ -672,6 +720,11 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
               <option value="word-enToJa-wrong">英語→日本語・間違い集中</option>
               <option value="word-jaToEn-wrong">日本語→英語・間違い集中</option>
             </optgroup>
+            <optgroup label="最終殲滅">
+              <option value="ready-enToJa">満点確認・英語→日本語</option>
+              <option value="ready-jaToEn">満点確認・日本語→英語</option>
+              <option value="spelling">スペル確認</option>
+            </optgroup>
             <optgroup label="高速確認">
               <option value="speed">高速周回</option>
             </optgroup>
@@ -685,6 +738,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       function startSelectedLearningMode() {
         const value = $("testMode").value;
         if (value === "speed") return startSpeedReview();
+        if (value === "spelling") return startSpellingReview();
+        if (value.startsWith("ready-")) return startTestReadyReview(value.slice(6));
         if (value.startsWith("word-")) {
           const [, direction, mode] = value.split("-");
           return startTest(direction, mode);
@@ -712,10 +767,13 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         $("wordFilter").value = state.settings.studyFilter;
         $("playbackInterval").value = String(state.settings.playbackInterval);
         updatePlaybackControls();
-        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 例文${s.examples}・熟語${s.phrases} / 苦手${s.hard}`;
+        const readiness = readinessForRange(range);
+        const riskById = new Map((readiness.riskItems || []).map(item => [item.wordId, item.reasons]));
+        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 例文${s.examples}・熟語${s.phrases} / 危険${readiness.riskItems?.length || 0}`;
+        const readinessOverview = `<div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}${readiness.riskItems?.length ? `<div class="risk-list">${readiness.riskItems.slice(0, 5).map(item => { const word = range.words.find(candidate => candidate.id === item.wordId); return `<div class="risk-list-item"><strong>${escapeHtml(word?.word || "不明")}</strong><span>${item.reasons.length}件</span><small>${escapeHtml(item.reasons.join("・"))}</small></div>`; }).join("")}</div>` : ""}</div>`;
         const words = filteredWords(range);
         if (!words.length) {
-          $("wordList").innerHTML = `<div class="empty">この条件に一致する単語はありません。</div>`;
+          $("wordList").innerHTML = `${readinessOverview}<div class="empty">この条件に一致する単語はありません。</div>`;
           return;
         }
         const rememberedWordId = words.some(word => word.id === range.currentWordId) ? range.currentWordId : words[0].id;
@@ -723,8 +781,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           range.currentWordId = rememberedWordId;
           save(false);
         }
-        $("wordList").innerHTML = words.map((word, index) => `
-          <article class="word-card ${word.id === rememberedWordId ? "current-word" : ""}" data-word-id="${word.id}">
+        $("wordList").innerHTML = readinessOverview + words.map((word, index) => `
+          <article class="word-card ${word.id === rememberedWordId ? "current-word" : ""}" data-word-id="${escapeHtml(word.id)}">
             <div class="word-head">
               <div style="min-width:0;flex:1 1 auto">
                 <div class="word-main-line">
@@ -736,6 +794,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
                   <span class="pos-text">候補 : ${(word.pronunciationVariants || []).length}件</span>
                 </div>
                 ${renderSpellingRisk(word)}
+                ${riskById.has(word.id) ? `<div class="caution"><strong>危険:</strong> ${escapeHtml(riskById.get(word.id).join("・"))}</div>` : ""}
                 ${renderLinkedUsage(range, word.id)}
               </div>
               ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
@@ -743,18 +802,18 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
             ${renderPronunciationVariants(word)}
             ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
             <div class="study-actions">
-              <button class="primary" data-word-action="play" data-id="${word.id}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
-              <button class="primary" data-word-action="next" data-id="${word.id}">次へ</button>
+              <button class="primary" data-word-action="play" data-id="${escapeHtml(word.id)}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
+              <button class="primary" data-word-action="next" data-id="${escapeHtml(word.id)}">次へ</button>
             </div>
             <div class="secondary-actions">
-              <button class="soft" data-word-action="speak" data-id="${word.id}">読み上げ</button>
-              <button class="soft study-toggle hard" data-word-action="hard" data-id="${word.id}" aria-pressed="${word.studyStatus === "hard"}">苦手</button>
-              <button class="soft study-toggle known" data-word-action="known" data-id="${word.id}" aria-pressed="${word.studyStatus === "known"}">覚えた</button>
+              <button class="soft" data-word-action="speak" data-id="${escapeHtml(word.id)}">読み上げ</button>
+              <button class="soft study-toggle hard" data-word-action="hard" data-id="${escapeHtml(word.id)}" aria-pressed="${word.studyStatus === "hard"}">苦手</button>
+              <button class="soft study-toggle known" data-word-action="known" data-id="${escapeHtml(word.id)}" aria-pressed="${word.studyStatus === "known"}">覚えた</button>
             </div>
             <div class="danger-actions">
-              <button class="soft mw-small" data-word-action="mw" data-id="${word.id}">MWで開く</button>
-              <button class="compact refetch" data-word-action="refetch" data-id="${word.id}">再取得</button>
-              <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${word.id}">Collegiate</button>
+              <button class="soft mw-small" data-word-action="mw" data-id="${escapeHtml(word.id)}">MWで開く</button>
+              <button class="compact refetch" data-word-action="refetch" data-id="${escapeHtml(word.id)}">再取得</button>
+              <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${escapeHtml(word.id)}">Collegiate</button>
             </div>
           </article>`).join("");
         renderUsageOverview(range);
@@ -791,6 +850,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         $("wordPanel").classList.toggle("hidden", active);
         $("jumpFab").classList.toggle("hidden", active);
         $("testPanel").classList.add("hidden");
+        $("spellingPanel").classList.add("hidden");
+        $("recallPanel").classList.add("hidden");
         $("speedPanel").classList.toggle("hidden", !active);
       }
 
@@ -840,7 +901,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           const elapsedSeconds = Math.max(1, Math.round((session.finishedAtMs - session.startedAtMs) / 1000));
           const counts = { unknown: 0, unsure: 0, instant: 0 };
           session.assessments.forEach(item => { counts[item.rating]++; });
-          $("speedContent").innerHTML = `<div class="test-result"><h2>高速周回 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">全体 ${session.round}周目 完了</div><div class="result-grid"><div><strong>${session.assessments.length}</strong>確認回数</div><div><strong>${counts.instant}</strong>即答</div><div><strong>${counts.unsure}</strong>怪しい</div><div><strong>${counts.unknown}</strong>知らない</div></div><p class="meta">所要時間 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒。高速周回の判定は15問テストの成績や「苦手／覚えた」には反映していません。</p><div class="test-result-actions"><button class="primary" data-speed-action="repeat">全範囲を次の周へ</button><button class="soft" data-speed-action="return">範囲へ戻る</button></div></div>`;
+          const readiness = readinessForRange(range);
+          $("speedContent").innerHTML = `<div class="test-result"><h2>高速周回 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">全体 ${session.round}周目 完了</div><div class="result-grid"><div><strong>${session.assessments.length}</strong>確認回数</div><div><strong>${counts.instant}</strong>即答</div><div><strong>${counts.unsure}</strong>怪しい</div><div><strong>${counts.unknown}</strong>知らない</div></div><div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div><p class="meta">所要時間 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒。判定履歴は危険項目の選定に使いますが、15問テストの正答数は変更しません。</p><div class="test-result-actions"><button class="primary" data-speed-action="repeat">全範囲を次の周へ</button><button class="soft" data-speed-action="return">範囲へ戻る</button></div></div>`;
           return;
         }
         const word = speedReviewWord();
@@ -857,14 +919,36 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const fallbackReplay = !hasOfficial && canSpeak
           ? `<button class="speed-replay" data-speed-action="audio" aria-label="端末読み上げをもう一度聞く" title="端末読み上げをもう一度聞く">🔊</button>`
           : "";
-        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div></div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">この判定は15問テストと独立しています</span><button class="soft" data-speed-action="abort">終了</button></div>`;
+        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div></div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span><button class="soft" data-speed-action="abort">終了</button></div>`;
         autoPlaySpeedReviewWord(word);
+      }
+
+      function applySpeedAssessment(assessment, now = Date.now()) {
+        const word = findWord(assessment?.wordId);
+        if (!word) return;
+        word.speedStats = normalizeSpeedStats(word.speedStats);
+        const stats = word.speedStats.enToJa;
+        const timestamp = new Date(now).toISOString();
+        const day = localDateString(new Date(now));
+        stats.attempts++;
+        stats[assessment.rating]++;
+        stats.lastRating = assessment.rating;
+        stats.lastReviewedAt = timestamp;
+        stats.totalResponseMs += Math.max(0, Number(assessment.responseMs) || 0);
+        if (assessment.rating === "instant") {
+          if (!stats.successfulReviewDates.includes(day)) stats.successfulReviewDates.push(day);
+          stats.successfulReviewDates.sort();
+        } else {
+          stats.lastLapseAt = timestamp;
+        }
       }
 
       function rateCurrentSpeedWord(rating) {
         stopPreviewAudio();
         const result = rateSpeedReviewWord(state.speedSession, rating);
         if (!result) return;
+        applySpeedAssessment(result.assessment);
+        save(false);
         state.speedMeaningVisible = false;
         if (result.roundComplete && !result.finished) toast(`第${state.speedSession.round - 1}周が完了しました。${state.speedSession.roundStartCount}語に絞って続けます。`);
         renderSpeedReview();
@@ -876,6 +960,100 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         state.speedSession = null;
         state.speedMeaningVisible = false;
         hideForSpeed(false);
+        switchTab("ranges");
+        renderWords();
+        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function hideForSpelling(active) {
+        document.querySelector("header")?.classList.toggle("hidden", active);
+        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
+        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
+        $("wordPanel").classList.toggle("hidden", active);
+        $("jumpFab").classList.toggle("hidden", active);
+        $("testPanel").classList.add("hidden");
+        $("speedPanel").classList.add("hidden");
+        $("recallPanel").classList.add("hidden");
+        $("spellingPanel").classList.toggle("hidden", !active);
+      }
+
+      function startSpellingReview() {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        if (!range) return;
+        const risks = wordReadinessForRange(range, Date.now()).riskItems || [];
+        const today = todayKey();
+        const spellingIds = risks.filter(item => item.reasons.some(reason => reason.startsWith("スペル:"))).map(item => {
+          const word = testWord(range, item.wordId);
+          const stats = normalizeSpellingStats(word?.spellingStats);
+          const latestSuccess = stats.successfulReviewDates.at(-1) || "";
+          const priority = Number(stats.lastResult === "incorrect") * 1000 + Number(stats.attempts === 0) * 500 +
+            Number(latestSuccess && latestSuccess < today) * 200 + Number((stats.lastAttemptedAt || "").slice(0, 10) < today) * 100 + item.reasons.length;
+          return { wordId: item.wordId, priority };
+        }).sort((a, b) => b.priority - a.priority || a.wordId.localeCompare(b.wordId)).map(item => item.wordId).slice(0, 15);
+        if (!spellingIds.length) return toast("スペルの危険項目は0です。別日の正解確認まで完了しています。");
+        const session = createSpellingSession(range, spellingIds);
+        if (session.error) return toast(session.error, true);
+        state.spellingSession = session;
+        state.spellingFeedback = null;
+        state.spellingResult = null;
+        hideForSpelling(true);
+        renderSpellingReview();
+      }
+
+      function renderSpellingReview() {
+        const session = state.spellingSession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        if (state.spellingResult) {
+          const result = state.spellingResult;
+          const readiness = readinessForRange(range);
+          $("spellingContent").innerHTML = `<div class="test-result"><h2>スペル確認 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">${result.correct} / ${result.answered}</div><div class="result-grid"><div><strong>${result.correct}</strong>正解</div><div><strong>${result.incorrect}</strong>不正解</div><div><strong>${Math.max(0, result.total - result.answered)}</strong>未回答</div></div><div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div><div class="test-result-actions"><button class="primary" data-spelling-action="repeat">残っている危険スペルを確認</button><button class="soft" data-spelling-action="return">範囲へ戻る</button></div></div>`;
+          return;
+        }
+        if (state.spellingFeedback) {
+          const attempt = state.spellingFeedback;
+          const word = testWord(range, attempt.wordId);
+          $("spellingContent").innerHTML = `<div class="spelling-card"><div class="test-progress"><span>${attempt.questionIndex + 1} / ${session.wordIds.length}</span><span>日本語 → spelling</span></div><div class="spelling-feedback ${attempt.correct ? "correct" : "incorrect"}"><strong>${attempt.correct ? "正解" : "不正解"}</strong><div>入力: ${escapeHtml(attempt.answer || "（空欄）")}</div><div>正解: <strong>${escapeHtml(attempt.expected || word?.word || "")}</strong></div>${attempt.acceptedForms?.length > 1 ? `<div class="meta">許容形: ${escapeHtml(attempt.acceptedForms.join(" / "))}</div>` : ""}</div><button class="primary" data-spelling-action="next">${session.finished ? "結果を見る" : "次の単語"}</button><button class="soft" data-spelling-action="audio">発音を聞く</button></div>`;
+          return;
+        }
+        const wordId = session.wordIds[session.index];
+        const word = testWord(range, wordId);
+        if (!word) return;
+        const progress = session.wordIds.length ? session.index / session.wordIds.length * 100 : 0;
+        $("spellingContent").innerHTML = `<div class="spelling-card"><div class="test-progress"><span>${session.index + 1} / ${session.wordIds.length}</span><span>厳密採点</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="meta">日本語から英単語を入力</div><div class="spelling-meaning">${escapeHtml(word.meaningsJa.join("／") || "日本語訳未登録")}</div><form class="spelling-form" id="spellingForm"><label for="spellingAnswer">spelling</label><input id="spellingAnswer" name="answer" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" required><button class="primary" type="submit">答える</button></form><button class="soft" data-spelling-action="abort">終了</button></div>`;
+        requestAnimationFrame(() => $("spellingAnswer")?.focus());
+      }
+
+      function submitSpellingAnswer(answer) {
+        const session = state.spellingSession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        const attempt = answerSpellingQuestion(session, range, answer, Date.now());
+        if (!attempt) return;
+        const word = testWord(range, attempt.wordId);
+        if (attempt.correct && wordReadinessForRange({ words: [word] }, Date.now()).status === "safe") word.studyStatus = "known";
+        else if (!attempt.correct) word.studyStatus = "hard";
+        state.spellingFeedback = attempt;
+        save(false);
+        renderSpellingReview();
+      }
+
+      function finishPartialSpellingReview() {
+        const session = state.spellingSession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        state.spellingResult = finishSpellingSession(session, range, Date.now());
+        state.spellingFeedback = null;
+        save(false);
+        renderSpellingReview();
+      }
+
+      function leaveSpellingReview() {
+        state.spellingSession = null;
+        state.spellingFeedback = null;
+        state.spellingResult = null;
+        hideForSpelling(false);
         switchTab("ranges");
         renderWords();
         $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -899,6 +1077,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         $("jumpFab").classList.toggle("hidden", active);
         $("testPanel").classList.add("hidden");
         $("speedPanel").classList.add("hidden");
+        $("spellingPanel").classList.add("hidden");
         $("recallPanel").classList.toggle("hidden", !active);
       }
 
@@ -961,6 +1140,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         $("jumpFab").classList.toggle("hidden", active);
         $("testPanel").classList.toggle("hidden", !active);
         $("speedPanel").classList.add("hidden");
+        $("spellingPanel").classList.add("hidden");
+        $("recallPanel").classList.add("hidden");
       }
 
       function startTest(direction, mode = "normal") {
@@ -968,6 +1149,22 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const range = state.ranges.find(item => item.id === state.selectedRangeId);
         if (!range) return;
         const session = createTestSession(range, direction, { mode });
+        if (session.error) return toast(session.error, true);
+        state.activeTest = session;
+        hideForTest(true);
+        renderActiveTest();
+      }
+
+      function startTestReadyReview(direction = "enToJa") {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        if (!range) return;
+        const targets = selectTestReadyItems(range, direction, 15, Date.now());
+        if (!targets.length) {
+          const readiness = readinessForRange(range);
+          return toast(readiness.status === "safe" ? "危険単語は0です。この範囲は満点準備OKです。" : "この方向の危険単語はありません。スペル・例文・熟語の未確認項目を確認してください。");
+        }
+        const session = createTestSession(range, direction, { mode: "ready", wordIds: targets.map(word => word.id) });
         if (session.error) return toast(session.error, true);
         state.activeTest = session;
         hideForTest(true);
@@ -986,21 +1183,12 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       function updateTestStats(range, answer) {
         const session = state.activeTest;
         const word = testWord(range, answer.wordId);
-        const stats = word.testStats[session.direction];
-        stats.attempts++;
-        stats.totalResponseMs += answer.responseMs;
-        stats.lastTestedAt = new Date().toISOString();
-        stats.lastResult = answer.correct ? "correct" : "incorrect";
-        if (answer.correct) { stats.correct++; stats.consecutiveCorrect++; }
-        else {
-          stats.incorrect++;
-          stats.consecutiveCorrect = 0;
-          if (answer.selectedWordId) stats.confusedWith[answer.selectedWordId] = (stats.confusedWith[answer.selectedWordId] || 0) + 1;
-        }
-        const other = word.testStats[session.direction === "enToJa" ? "jaToEn" : "enToJa"];
+        const timing = applyDirectionAttempt(word, session.direction, answer, Date.now());
+        answer.slow = Boolean(timing?.slow);
+        answer.hesitant = Boolean(timing?.hesitant);
         const before = word.studyStatus;
         if (!answer.correct) word.studyStatus = "hard";
-        else if (stats.consecutiveCorrect >= 2 && other.consecutiveCorrect >= 2 && stats.lastResult === "correct" && other.lastResult === "correct") word.studyStatus = "known";
+        else if (wordReadinessForRange({ words: [word] }, Date.now()).status === "safe") word.studyStatus = "known";
         answer.studyStatusChanged = before !== word.studyStatus ? word.studyStatus : "";
         const key = todayKey();
         const log = state.studyLog[key] || (state.studyLog[key] = { attempts: 0, correct: 0, enToJa: { attempts: 0, correct: 0 }, jaToEn: { attempts: 0, correct: 0 } });
@@ -1020,7 +1208,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         const feedback = document.createElement("div");
         feedback.className = `test-feedback ${answer.correct ? "correct-note" : "danger-note"}`;
         const changed = answer.studyStatusChanged === "hard" ? "苦手に変更しました" : answer.studyStatusChanged === "known" ? "覚えたに変更しました" : "";
-        feedback.innerHTML = `<strong>${answer.correct ? "正解" : "不正解"}</strong><div class="test-answer-word">${escapeHtml(word.word)} — ${escapeHtml(word.meaningsJa.join("／"))}</div><div>${pronunciationFeedback(word)}</div>${changed ? `<div><strong>${changed}</strong></div>` : ""}<button class="soft" data-test-action="replay">公式音声</button>${answer.correct ? "" : `<button class="primary" data-test-action="next">次の問題</button>`}`;
+        const timing = answer.slow ? "正解ですが回答が遅く、危険項目に残ります。" : answer.hesitant ? "正解ですが迷いがあり、危険項目に残ります。" : "";
+        feedback.innerHTML = `<strong>${answer.correct ? "正解" : "不正解"}</strong><div class="test-answer-word">${escapeHtml(word.word)} — ${escapeHtml(word.meaningsJa.join("／"))}</div><div>${pronunciationFeedback(word)}</div>${timing ? `<div class="caution">${timing}</div>` : ""}${changed ? `<div><strong>${changed}</strong></div>` : ""}<button class="soft" data-test-action="replay">公式音声</button>${answer.correct ? "" : `<button class="primary" data-test-action="next">次の問題</button>`}`;
         $("testContent").appendChild(feedback);
         if (session.direction === "jaToEn" || !answer.correct) playTestAudio(word);
         if (answer.correct) setTimeout(nextTestQuestion, 700);
@@ -1046,8 +1235,10 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         save(false);
         const wrong = result.wrongWordIds.map(id => testWord(range, id)).filter(Boolean);
         const histories = (range.testHistory || []).slice(-5).reverse();
-        const modeLabel = { normal: "通常", wrong: "間違い集中" }[result.mode] || "通常";
-        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><p>${session.direction === "enToJa" ? "英語 → 日本語" : "日本語 → 英語"} / ${modeLabel}モード</p><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${wrong.length}</strong>間違い</div></div><h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${item.finishedAt.slice(0, 10)} ${item.correct}/${item.total}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${word.id}">公式音声</button><button class="soft" data-test-hard="${word.id}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
+        const slow = session.answers.filter(answer => answer.slow || answer.hesitant).length;
+        const readiness = readinessForRange(range);
+        const modeLabel = { normal: "通常", wrong: "間違い集中", ready: "満点確認" }[result.mode] || "通常";
+        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><p>${session.direction === "enToJa" ? "英語 → 日本語" : "日本語 → 英語"} / ${modeLabel}モード</p><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${wrong.length}</strong>間違い</div><div><strong>${slow}</strong>遅い・迷い</div></div><div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div><h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${escapeHtml((item.finishedAt || "").slice(0, 10))} ${Number(item.correct) || 0}/${Number(item.total) || 0}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${escapeHtml(word.id)}">公式音声</button><button class="soft" data-test-hard="${escapeHtml(word.id)}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
       }
 
       function leaveTest(openWrong = false) {
@@ -1083,7 +1274,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
               ${meta || number ? `<div class="variant-meta">${escapeHtml(meta)}${number}</div>` : ""}
               <div class="variant-pronunciation">${escapeHtml(variant.pronunciation || "発音表記なし")}</div>
             </div>
-            <button class="soft variant-audio" data-word-action="variant-play" data-id="${word.id}" data-variant-id="${variant.id}" ${variant.audioUrl ? "" : "disabled"}>公式音声</button>
+            <button class="soft variant-audio" data-word-action="variant-play" data-id="${escapeHtml(word.id)}" data-variant-id="${escapeHtml(variant.id)}" ${variant.audioUrl ? "" : "disabled"}>公式音声</button>
           </div>`;
         }).join("");
         return `<div class="pronunciation-variants">${rows}</div>`;
@@ -1965,14 +2156,14 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
 
       function exportJson() {
-        const payload = {
-          version: 2,
-          exportedAt: new Date().toISOString(),
-          ranges: state.ranges
-        };
-        const text = JSON.stringify(payload, null, 2);
-        download(`mw-pronunciation-${todayKey()}.json`, text, "application/json");
-        toast(`JSONを書き出しました。APIキーは含まれていません。サイズ: ${formatBytes(new Blob([text]).size)}`);
+        try {
+          const payload = createBackup({ settings: state.settings, ranges: state.ranges, studyLog: state.studyLog, ui: { selectedRangeId: state.selectedRangeId || "" } });
+          const text = JSON.stringify(payload, null, 2);
+          download(`mw-pronunciation-${todayKey()}.json`, text, "application/json");
+          toast(`学習履歴・設定を含むschema v${payload.schemaVersion}のJSONを書き出しました。APIキーは含まれていません。サイズ: ${formatBytes(new Blob([text]).size)}`);
+        } catch (error) {
+          toast(`JSONの作成に失敗しました: ${error.message}`, true);
+        }
       }
 
       function exportCsv() {
@@ -2022,9 +2213,26 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       function restorePreUpgrade() {
         const raw = localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY);
         if (!raw) return toast("改修前データの自動保存がありません。", true);
-        showModal(`<h2>改修前データへ戻す</h2><div class="danger-note">現在の学習データを改修開始時の状態に置き換えます。先に現在のJSONも保存してください。</div><div class="actions"><button class="warn" data-modal-confirm>改修前へ戻す</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
-          localStorage.setItem(STORAGE_KEY, raw);
-          location.reload();
+        restoreStoredBackup(raw, "改修前データ");
+      }
+
+      function restorePreImport() {
+        const raw = localStorage.getItem(PRE_IMPORT_BACKUP_KEY);
+        if (!raw) return toast("前回インポート前の自動保存がありません。", true);
+        restoreStoredBackup(raw, "前回インポート前");
+      }
+
+      function restoreStoredBackup(raw, label) {
+        const migrated = parseBackup(raw);
+        if (!migrated.ok) return toast(`${label}を安全に復元できません: ${migrated.errors[0]}`, true);
+        showModal(`<h2>${escapeHtml(label)}へ戻す</h2><div class="danger-note">現在の学習データを置き換えます。必要なら先に現在のJSONを書き出してください。</div><div class="actions"><button class="warn" data-modal-confirm>復元する</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
+          try {
+            const payload = createBackup(migrated.data);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, savedAt: new Date().toISOString() }));
+            location.reload();
+          } catch (error) {
+            toast(`復元に失敗しました: ${error.message}`, true);
+          }
         });
       }
 
@@ -2051,32 +2259,59 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         URL.revokeObjectURL(url);
       }
 
-      function importJson(replace) {
-        try {
-          const parsed = JSON.parse($("importJson").value);
-          const incoming = Array.isArray(parsed.ranges) ? parsed.ranges : [];
-          if (!incoming.length) {
-            toast("インポートできる範囲が見つかりません。", true);
-            return;
-          }
-          const run = () => {
-            state.ranges = replace ? incoming : state.ranges.concat(incoming);
-            normalizeLoadedData();
-            save();
-            toast(`${incoming.length}件の範囲を${replace ? "置き換え" : "追加"}インポートしました。APIキーは読み込みません。`);
-          };
-          if (replace) {
-            showModal(`
-              <h2>置き換えインポート</h2>
-              <div class="danger-note">現在のデータをすべて置き換えます。</div>
-              <div class="actions"><button class="warn" data-modal-confirm>置き換える</button><button class="soft" data-modal-cancel>キャンセル</button></div>
-            `, run);
-          } else {
-            run();
-          }
-        } catch {
-          toast("JSONの読み込みに失敗しました。", true);
+      function updateBackupImportPreview(mode = "append") {
+        const root = $("backupImportPreview");
+        const text = $("importJson").value;
+        if (!text.trim()) {
+          root.className = "import-preview";
+          root.innerHTML = `<span class="meta">JSONを貼り付けると、変更前に範囲数・単語数・重複・移行内容を確認できます。</span>`;
+          return null;
         }
+        const plan = planImport(text, state.ranges, mode);
+        root.className = `import-preview ${plan.ok ? "valid" : "invalid"}`;
+        if (!plan.ok) {
+          const modeHint = mode === "append" ? `<div class="meta">これは「追加」としての判定です。全体を復元する場合は「置き換えインポート」を押すと別に再検証します。</div>` : "";
+          root.innerHTML = `<strong>${mode === "append" ? "追加できません" : "読み込めません"}</strong><ul class="import-issues">${plan.errors.slice(0, 8).map(error => `<li>${escapeHtml(error)}</li>`).join("")}</ul>${modeHint}`;
+          return plan;
+        }
+        root.innerHTML = `<strong>検証済み</strong><div class="import-preview-counts"><span>範囲 ${plan.summary.ranges}件</span><span>単語 ${plan.summary.words}語</span><span>重複スキップ ${plan.summary.duplicates}件</span></div>${plan.warnings.length ? `<ul class="import-issues">${plan.warnings.slice(0, 8).map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}`;
+        return plan;
+      }
+
+      function commitImport(plan, replace) {
+        const base = replace ? plan.data : {
+          settings: state.settings,
+          ranges: [...state.ranges, ...plan.incoming],
+          studyLog: state.studyLog,
+          ui: { selectedRangeId: state.selectedRangeId || "" }
+        };
+        const combined = migrateBackup({ schemaVersion: STORAGE_SCHEMA_VERSION, ...base });
+        if (!combined.ok) return toast(`インポート候補を統合できません: ${combined.errors[0]}`, true);
+        const currentRaw = localStorage.getItem(STORAGE_KEY);
+        const previousPreImport = localStorage.getItem(PRE_IMPORT_BACKUP_KEY);
+        try {
+          const payload = createBackup(combined.data);
+          if (currentRaw) localStorage.setItem(PRE_IMPORT_BACKUP_KEY, currentRaw);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, savedAt: new Date().toISOString() }));
+          location.reload();
+        } catch (error) {
+
+          try {
+            if (previousPreImport == null) localStorage.removeItem(PRE_IMPORT_BACKUP_KEY);
+            else localStorage.setItem(PRE_IMPORT_BACKUP_KEY, previousPreImport);
+          } catch {
+            // The primary data was never replaced; keep the original error visible.
+          }
+          toast(`保存領域を変更せず中止しました: ${error.message}`, true);
+        }
+      }
+
+      function importJson(replace) {
+        const plan = updateBackupImportPreview(replace ? "replace" : "append");
+        if (!plan?.ok) return toast(plan?.errors?.[0] || "JSONを入力してください。", true);
+        if (!replace && !plan.incoming.length) return toast("追加できる新しい範囲がありません。重複範囲は変更していません。", true);
+        const verb = replace ? "置き換え" : "追加";
+        showModal(`<h2>${verb}インポート</h2><p>範囲 ${plan.summary.ranges}件・単語 ${plan.summary.words}語を${verb}します。</p>${plan.summary.duplicates ? `<div class="caution">重複 ${plan.summary.duplicates}件はスキップします。</div>` : ""}${plan.warnings.length ? `<ul>${plan.warnings.slice(0, 8).map(warning => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>` : ""}${replace ? `<div class="danger-note">現在の範囲・履歴・設定をバックアップ内容で置き換えます。直前状態は自動保存します。</div>` : `<div class="meta">現在の設定と学習ログは維持します。</div>`}<div class="actions"><button class="${replace ? "warn" : "primary"}" data-modal-confirm>${verb}する</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => commitImport(plan, replace));
       }
 
       function wipeAll() {
@@ -2186,6 +2421,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           const range = state.ranges.find(r => r.id === btn.dataset.id);
           if (!range) return;
           if (btn.dataset.action === "open") { stopContinuousPlayback(); state.selectedRangeId = range.id; state.pendingWordScroll = true; save(false); renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
+          if (btn.dataset.action === "ready") { stopContinuousPlayback(); state.selectedRangeId = range.id; save(false); startTestReadyReview("enToJa"); }
           if (btn.dataset.action === "fetch") confirmFetch(range);
           if (btn.dataset.action === "test-ended") { range.manualTestEndedDate = todayKey(); save(); toast("テスト終了として記録しました。次の範囲を優先します。"); }
           if (btn.dataset.action === "test-before") { range.manualTestEndedDate = ""; save(); toast("テスト前として記録しました。"); }
@@ -2255,7 +2491,7 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           if (Date.now() < speedSwipeHandledUntil) return;
           const action = event.target.closest("[data-speed-action]")?.dataset.speedAction;
           if (action === "audio") return playTestAudio(speedReviewWord());
-          if (action === "abort") return showModal(`<h2>高速周回を終了しますか？</h2><p>高速周回の判定は保存されていません。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveSpeedReview);
+          if (action === "abort") return showModal(`<h2>高速周回を終了しますか？</h2><p>ここまでの即答・怪しい・知らないの判定は保存済みです。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveSpeedReview);
           if (action === "return") return leaveSpeedReview();
           if (action === "repeat") return restartSpeedReview();
           const rating = event.target.closest("[data-speed-rating]")?.dataset.speedRating;
@@ -2286,6 +2522,30 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
           }
         });
         $("speedContent").addEventListener("pointercancel", () => { speedPointerStart = null; });
+        $("spellingContent").addEventListener("submit", event => {
+          if (!event.target.matches("#spellingForm")) return;
+          event.preventDefault();
+          submitSpellingAnswer(new FormData(event.target).get("answer"));
+        });
+        $("spellingContent").addEventListener("click", event => {
+          const action = event.target.closest("[data-spelling-action]")?.dataset.spellingAction;
+          if (!action) return;
+          if (action === "next") {
+            const session = state.spellingSession;
+            const range = state.ranges.find(item => item.id === session?.rangeId);
+            state.spellingFeedback = null;
+            if (session?.finished && range) state.spellingResult = finishSpellingSession(session, range, Date.now());
+            save(false);
+            return renderSpellingReview();
+          }
+          if (action === "audio") {
+            const wordId = state.spellingFeedback?.wordId || state.spellingSession?.wordIds?.[state.spellingSession?.index];
+            return playTestAudio(findWord(wordId));
+          }
+          if (action === "repeat") return startSpellingReview();
+          if (action === "return") return leaveSpellingReview();
+          if (action === "abort") return showModal(`<h2>スペル確認を終了しますか？</h2><p>回答済みの履歴は保存し、未回答は残します。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, finishPartialSpellingReview);
+        });
         $("recallContent").addEventListener("click", event => {
           const rating = event.target.closest("[data-recall-rating]")?.dataset.recallRating;
           if (rating) return rateCurrentRecall(rating);
@@ -2351,6 +2611,8 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
         $("exportQuizlet").addEventListener("click", exportQuizlet);
         $("exportPreUpgrade").addEventListener("click", exportPreUpgrade);
         $("restorePreUpgrade").addEventListener("click", restorePreUpgrade);
+        $("restorePreImport").addEventListener("click", restorePreImport);
+        $("importJson").addEventListener("input", () => updateBackupImportPreview("append"));
         $("appendJson").addEventListener("click", () => importJson(false));
         $("replaceJson").addEventListener("click", () => importJson(true));
         $("wipeAll").addEventListener("click", wipeAll);
@@ -2380,3 +2642,4 @@ window.runContentFeatureSelfCheck = runContentSelfCheck;
       }
     })();
   
+

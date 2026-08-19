@@ -22,6 +22,8 @@
     cross: 0,
     consecutiveCircle: 0,
     successfulReviewDates: [],
+    lastSuccessfulReviewDate: "",
+    lastLapseDate: "",
     lastRating: "",
     lastReviewedAt: ""
   });
@@ -274,8 +276,16 @@
       (Array.isArray(stats.successfulReviewDates) ? stats.successfulReviewDates : [])
         .map(clean)
         .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
-    ).slice(-20);
+    ).sort().slice(-20);
     if (!VALID_RATINGS.has(stats.lastRating)) stats.lastRating = "";
+    // Older saved data has no explicit lapse boundary. Its last non-circle
+    // assessment is still enough to prevent a same-day retry from restoring mastery.
+    const reviewedAt = Date.parse(stats.lastReviewedAt);
+    const legacyLapseDate = Number.isNaN(reviewedAt) ? "" : reviewDateKey(reviewedAt);
+    stats.lastLapseDate = /^\d{4}-\d{2}-\d{2}$/.test(clean(stats.lastLapseDate))
+      ? clean(stats.lastLapseDate)
+      : (stats.lastRating === "triangle" || stats.lastRating === "cross" ? legacyLapseDate : "");
+    stats.lastSuccessfulReviewDate = stats.successfulReviewDates.at(-1) || "";
     return stats;
   }
 
@@ -306,7 +316,9 @@
   }
 
   function isSettled(item) {
-    return (item.recallStats?.successfulReviewDates?.length || 0) >= 2 && item.recallStats?.lastRating === "circle";
+    const stats = normalizeRecallStats(item?.recallStats);
+    return stats.successfulReviewDates.length >= 2 && stats.lastRating === "circle" &&
+      (!stats.lastLapseDate || stats.lastSuccessfulReviewDate > stats.lastLapseDate);
   }
 
   function selectRecallItems(items, options = {}, random = Math.random) {
@@ -346,7 +358,10 @@
     stats[rating]++;
     stats.consecutiveCircle = rating === "circle" ? stats.consecutiveCircle + 1 : 0;
     if (rating === "circle") {
-      stats.successfulReviewDates = unique([...(stats.successfulReviewDates || []), reviewDateKey(now)]).slice(-20);
+      stats.successfulReviewDates = unique([...(stats.successfulReviewDates || []), reviewDateKey(now)]).sort().slice(-20);
+      stats.lastSuccessfulReviewDate = stats.successfulReviewDates.at(-1) || "";
+    } else {
+      stats.lastLapseDate = reviewDateKey(now);
     }
     stats.lastRating = rating;
     stats.lastReviewedAt = new Date(now).toISOString();
@@ -390,6 +405,7 @@
     const unified = parseUnifiedRows('{"word":"record","meaning":"記録","examples":[{"en":"Keep a record.","ja":"記録をつける。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}');
     const dayOne = Date.UTC(2026, 6, 28, 3);
     const dayTwo = Date.UTC(2026, 6, 29, 3);
+    const dayThree = Date.UTC(2026, 6, 30, 3);
     const firstSession = createRecallSession(usage, { mode: "all", source: "usage" }, () => 0.5, dayOne);
     rateRecallItem(firstSession, usage[0], "cross", dayOne + 1000);
     rateRecallItem(firstSession, usage[1], "circle", dayOne + 2000);
@@ -398,11 +414,26 @@
     const secondSession = createRecallSession(usage, { mode: "unsettled", source: "usage" }, () => 0.5, dayTwo);
     rateRecallItem(secondSession, usage[0], "circle", dayTwo + 1000);
     rateRecallItem(secondSession, usage[1], "circle", dayTwo + 2000);
+    const settledBeforeLapse = isSettled(usage[0]);
+    const lapseSession = createRecallSession([usage[0]], { mode: "all", source: "usage" }, () => 0.5, dayTwo);
+    rateRecallItem(lapseSession, usage[0], "triangle", dayTwo + 3000);
+    rateRecallItem(lapseSession, usage[0], "circle", dayTwo + 4000);
+    const unsettledAfterSameDayRetry = !isSettled(usage[0]);
+    const verificationSession = createRecallSession([usage[0]], { mode: "all", source: "usage" }, () => 0.5, dayThree);
+    rateRecallItem(verificationSession, usage[0], "circle", dayThree + 1000);
+    const legacyLapseStats = normalizeRecallStats({
+      successfulReviewDates: [reviewDateKey(dayOne), reviewDateKey(dayTwo)],
+      lastRating: "cross",
+      lastReviewedAt: new Date(dayTwo).toISOString()
+    });
+    const legacyLapseMigrated = legacyLapseStats.lastLapseDate === reviewDateKey(dayTwo) &&
+      !isSettled({ recallStats: legacyLapseStats });
     return {
       passed: words.length === 2 && usage.length === 2 && usage[0].linkedWordIds.length === 2 &&
         unified.rows.length === 1 && unified.rows[0].examples.length === 1 && unified.rows[0].phrases.length === 1 &&
         memory.length === 1 && firstSession.finished && secondSession.finished && !settledAfterOneDay &&
-        isSettled(usage[0]) && isSettled(usage[1]) && usage[0].recallStats.cross === 1 &&
+        settledBeforeLapse && lapseSession.finished && unsettledAfterSameDayRetry && verificationSession.finished &&
+        isSettled(usage[0]) && isSettled(usage[1]) && legacyLapseMigrated && usage[0].recallStats.cross === 1 &&
         estimateBytes({ usage, memory }) < 10000,
       wordCount: words.length,
       usageCount: usage.length,
@@ -428,3 +459,4 @@
     runContentSelfCheck
   });
 })();
+

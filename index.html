@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=42">
+  <link rel="stylesheet" href="styles.css?v=43">
 </head>
 <body>
   <div class="app">
@@ -154,10 +154,14 @@
           <button class="soft" id="exportQuizlet">例文をQuizlet形式で出力</button>
           <button class="soft" id="exportPreUpgrade">改修前データを保存</button>
           <button class="warn" id="restorePreUpgrade">改修前データへ戻す</button>
+          <button class="warn" id="restorePreImport">前回インポート前へ戻す</button>
           <button class="danger" id="wipeAll">全データ削除</button>
         </div>
         <label for="importJson" style="margin-top:12px">JSONインポート</label>
         <textarea id="importJson" placeholder="エクスポートしたJSONを貼り付け"></textarea>
+        <div class="import-preview" id="backupImportPreview" aria-live="polite">
+          <span class="meta">JSONを貼り付けると、変更前に範囲数・単語数・重複・移行内容を確認できます。</span>
+        </div>
         <div class="actions">
           <button class="soft" id="appendJson">追加インポート</button>
           <button class="warn" id="replaceJson">置き換えインポート</button>
@@ -222,6 +226,10 @@
         <div id="speedContent"></div>
       </section>
 
+      <section class="panel hidden spelling-panel" id="spellingPanel" style="grid-column:1/-1">
+        <div id="spellingContent"></div>
+      </section>
+
       <section class="panel hidden recall-panel" id="recallPanel" style="grid-column:1/-1">
         <div id="recallContent"></div>
       </section>
@@ -243,8 +251,10 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/content.js?v=42"></script>
-  <script defer src="js/test.js?v=42"></script>
-  <script defer src="js/app.js?v=42"></script>
+  <script defer src="js/storage.js?v=43"></script>
+  <script defer src="js/content.js?v=43"></script>
+  <script defer src="js/test.js?v=43"></script>
+  <script defer src="js/app.js?v=43"></script>
 </body>
 </html>
+

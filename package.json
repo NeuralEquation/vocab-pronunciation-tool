@@ -1,0 +1,9 @@
+{
+  "name": "vocab-pronunciation-superapp",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "test:browser": "node tests/browser-smoke.js"
+  }
+}
+
