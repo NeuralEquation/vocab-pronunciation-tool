@@ -67,6 +67,27 @@
 .spelling-risk { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:7px; color:#e9d5ff; font-size:.78rem; }
 .spelling-risk strong { padding:2px 7px; border:1px solid #7654ae; border-radius:999px; background:#2c1f43; color:#f0ddff; }
 .spelling-risk.high strong { border-color:#d47797; background:#4c2334; color:#ffd3df; }
+.readiness-summary { display:grid; gap:8px; margin-top:10px; }
+.readiness-state { display:inline-flex; width:fit-content; align-items:center; gap:6px; padding:5px 10px; border:1px solid var(--line); border-radius:999px; font-weight:850; }
+.readiness-state.safe { color:#bdf5d2; border-color:#3b7958; background:#143424; }
+.readiness-state.risk { color:#ffdca1; border-color:#845f25; background:#3a2a12; }
+.readiness-state.unverified { color:#cbd5e1; border-color:#526174; background:#202936; }
+.readiness-checks { display:flex; flex-wrap:wrap; gap:6px; }
+.readiness-checks span { padding:3px 8px; border:1px solid var(--line); border-radius:999px; color:var(--muted); font-size:.78rem; }
+.readiness-checks span.open { color:#ffdca1; border-color:#6e542c; }
+.spelling-panel { min-height:calc(100vh - 40px); display:grid; place-items:center; }
+.spelling-panel.hidden { display:none; }
+#spellingContent { width:min(720px,100%); margin:auto; }
+.spelling-card { display:grid; gap:16px; text-align:center; }
+.spelling-meaning { font-size:clamp(1.45rem,6vw,2.6rem); font-weight:850; line-height:1.35; }
+.spelling-form { display:grid; gap:10px; }
+.spelling-form input { min-height:58px; font-size:1.25rem; text-align:center; letter-spacing:.02em; }
+.spelling-feedback { padding:12px; border:1px solid var(--line); border-radius:12px; }
+.spelling-feedback.correct { color:#bdf5d2; border-color:#3b7958; background:#143424; }
+.spelling-feedback.incorrect { color:#ffd3d8; border-color:#87414b; background:#3d1b21; }
+.risk-list { display:grid; gap:7px; margin:10px 0; }
+.risk-list-item { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; background:var(--panel-2); }
+.risk-list-item small { grid-column:1/-1; color:var(--muted); }
 .playback-dock {
   position:fixed;
   left:50%;
@@ -682,7 +703,7 @@ body.playback-active .jump-fab { bottom:112px; }
     .rating.circle { background: #24523d; }
     @media (min-width: 760px) {
       .app { max-width: 900px; padding: 20px; }
-      .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .row.single { grid-template-columns: 1fr; }
       .wide { grid-column: 1 / -1; }
@@ -692,4 +713,5 @@ body.playback-active .jump-fab { bottom:112px; }
       .audio-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     }
   
+
 
