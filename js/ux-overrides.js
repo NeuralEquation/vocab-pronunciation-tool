@@ -30,6 +30,10 @@
     document.head.appendChild(style);
   }
 
+  function setText(element, text) {
+    if (element && element.textContent !== text) element.textContent = text;
+  }
+
   function isMemoryModeSelect(select) {
     return [...select.options].some(option => option.value.startsWith("memory-"));
   }
@@ -72,7 +76,7 @@
     const saved = sessionStorage.getItem(LAST_MODE_KEY) || "";
     select.innerHTML = desiredVocabModeMarkup();
 
-    const preferred = [saved, previous, "speed"].find(value =>
+    const preferred = [saved, "speed", previous].find(value =>
       value && [...select.options].some(option => option.value === value)
     );
     select.value = preferred || "speed";
@@ -94,21 +98,19 @@
     const content = document.getElementById("recallContent");
     if (!panel || !content) return;
 
+    const currentHead = content.querySelector(".recall-head span:first-child")?.textContent || "";
+    if (document.documentElement.dataset.exampleSpeedReview === "1" && currentHead && !["例文", "例文・高速周回"].includes(currentHead)) {
+      document.documentElement.dataset.exampleSpeedReview = "0";
+    }
+
     const active = document.documentElement.dataset.exampleSpeedReview === "1" && !panel.classList.contains("hidden");
     panel.classList.toggle("example-speed-review", active);
     if (!active) return;
 
-    const resultHeading = content.querySelector(".test-result h2");
-    if (resultHeading) resultHeading.textContent = "例文 高速周回 完了";
-
-    const headLabel = content.querySelector(".recall-head span:first-child");
-    if (headLabel) headLabel.textContent = "例文・高速周回";
-
-    const prompt = content.querySelector(".recall-prompt-label");
-    if (prompt) prompt.textContent = "日本語を見て英文を即答";
-
-    const reveal = content.querySelector('[data-recall-action="reveal"]');
-    if (reveal) reveal.textContent = "英文を表示";
+    setText(content.querySelector(".test-result h2"), "例文 高速周回 完了");
+    setText(content.querySelector(".recall-head span:first-child"), "例文・高速周回");
+    setText(content.querySelector(".recall-prompt-label"), "日本語を見て英文を即答");
+    setText(content.querySelector('[data-recall-action="reveal"]'), "英文を表示");
 
     const labels = {
       cross: "知らない",
@@ -117,16 +119,15 @@
     };
     Object.entries(labels).forEach(([rating, label]) => {
       const button = content.querySelector(`[data-recall-rating="${rating}"]`);
-      if (button) {
-        button.textContent = label;
-        button.setAttribute("aria-label", label);
-      }
+      if (!button) return;
+      setText(button, label);
+      if (button.getAttribute("aria-label") !== label) button.setAttribute("aria-label", label);
     });
 
-    const resultNote = content.querySelector(".test-result .meta");
-    if (resultNote) {
-      resultNote.textContent = "「知らない」「怪しい」は同じ周回内で再出題します。即答できるまで絞り込みます。";
-    }
+    setText(
+      content.querySelector(".test-result .meta"),
+      "「知らない」「怪しい」は同じ周回内で再出題します。即答できるまで絞り込みます。"
+    );
   }
 
   function removeVerboseRiskDetails(root = document) {
