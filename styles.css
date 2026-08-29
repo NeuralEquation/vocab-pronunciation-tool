@@ -53,7 +53,7 @@
 .speed-metrics strong { display:block; color:var(--text); font-size:1.15rem; }
 .speed-audio-status { min-height:1.2em; margin-top:10px; text-align:center; }
 .speed-card-wrap { position:relative; }
-.speed-card { min-height:290px; display:grid; place-items:center; align-content:center; gap:18px; margin:10px 0 18px; padding:24px; border:1px solid #7458b8; border-radius:18px; background:linear-gradient(145deg,#171e2b,#231b38); text-align:center; touch-action:pan-y; user-select:none; }
+.speed-card { min-height:290px; display:grid; place-items:center; align-content:center; gap:18px; margin:10px 0 18px; padding:24px; border:1px solid #7458b8; border-radius:18px; background:linear-gradient(145deg,#171e2b,#231b38); text-align:center; touch-action:manipulation; user-select:none; }
 .speed-replay { position:absolute; z-index:2; top:20px; right:10px; width:44px; min-height:44px; padding:0; border:1px solid #5d4b89; border-radius:999px; background:#2a2140; color:#f1e7ff; font-size:1.15rem; line-height:1; }
 .speed-word { font-size:clamp(2.3rem,10vw,5.2rem); line-height:1.1; font-weight:850; overflow-wrap:anywhere; }
 .speed-meaning { font-size:clamp(1.25rem,5vw,2rem); color:var(--accent-2); }
@@ -609,7 +609,8 @@ body.playback-active .jump-fab { bottom:112px; }
       border-radius: var(--radius);
       padding: 12px;
       box-shadow: var(--shadow);
-      touch-action: pan-y;
+      touch-action: manipulation;
+      cursor: pointer;
       transition: opacity .16s ease, transform .16s ease;
     }
     .toast.toast-dismissed { opacity: 0; transform: translateX(110%); }
@@ -733,20 +734,21 @@ body.playback-active .jump-fab { bottom:112px; }
       border-radius: 18px;
       background: linear-gradient(145deg, #151e2a, #15263a);
       text-align: center;
-      touch-action: pan-y;
+      touch-action: manipulation;
       user-select: none;
+      cursor: pointer;
       will-change: transform, opacity;
     }
     .usage-study-english { font-size: clamp(1.45rem, 6vw, 2.5rem); font-weight: 850; line-height: 1.45; }
     .usage-study-japanese { font-size: clamp(1.05rem, 4vw, 1.55rem); color: var(--accent-2); line-height: 1.55; }
-    .swipe-next-hint { color: var(--muted); font-weight: 700; }
+    .tap-next-hint { color: var(--muted); font-weight: 700; }
     .study-card-enter { animation: studyCardEnter .24s ease-out; }
-    .usage-study-card.swipe-out-left { animation: studyCardExitLeft .22s ease-in forwards; }
+    .usage-study-card.study-card-exit { animation: studyCardExit .22s ease-in forwards; }
     @keyframes studyCardEnter {
       from { opacity: 0; transform: translateX(28px); }
       to { opacity: 1; transform: translateX(0); }
     }
-    @keyframes studyCardExitLeft {
+    @keyframes studyCardExit {
       to { opacity: 0; transform: translateX(-115%); }
     }
     .rating { min-height: 72px; font-size: 2rem; font-weight: 900; }
