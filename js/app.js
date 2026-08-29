@@ -56,6 +56,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         spellingResult: null,
         recallSession: null,
         usageStudySession: null,
+        wordStudySession: null,
         speedMeaningVisible: false,
         speedUsageVisible: false,
         pendingWordScroll: false,
@@ -77,6 +78,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       let previewAudio = null;
       let lastAutoSpokenSpeedKey = "";
       let lastAutoSpokenUsageKey = "";
+      let lastAutoSpokenStudyWordKey = "";
 
       const $ = (id) => document.getElementById(id);
 
@@ -898,6 +900,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
 
       function startSpeedReview() {
         stopContinuousPlayback();
+        state.usageStudySession = null;
+        state.wordStudySession = null;
         const range = state.ranges.find(item => item.id === state.selectedRangeId);
         if (!range) return;
         const words = filteredWords(range);
@@ -1118,6 +1122,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const itemIds = (range?.usageItems || []).map(item => item.id);
         if (!range || !itemIds.length) return toast("学習できる例文・熟語がありません。", true);
         state.recallSession = null;
+        state.wordStudySession = null;
         state.usageStudySession = { rangeId: range.id, itemIds, index: 0, transitioning: false, finished: false };
         lastAutoSpokenUsageKey = "";
         hideForRecall(true);
@@ -1128,6 +1133,67 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const session = state.usageStudySession;
         const range = state.ranges.find(item => item.id === session?.rangeId);
         return (range?.usageItems || []).find(item => item.id === session?.itemIds?.[session.index]) || null;
+      }
+
+      function startWordStudy() {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        const itemIds = filteredWords(range).map(word => word.id);
+        if (!range || !itemIds.length) return toast("学習できる単語がありません。", true);
+        state.recallSession = null;
+        state.usageStudySession = null;
+        state.wordStudySession = { rangeId: range.id, itemIds, index: 0, transitioning: false, finished: false };
+        lastAutoSpokenStudyWordKey = "";
+        hideForRecall(true);
+        renderWordStudy();
+      }
+
+      function currentWordStudyWord() {
+        const session = state.wordStudySession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        return (range?.words || []).find(word => word.id === session?.itemIds?.[session.index]) || null;
+      }
+
+      function renderWordStudy() {
+        const session = state.wordStudySession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        if (session.finished) {
+          $("recallContent").innerHTML = `<div class="test-result"><h2>学習モード 完了</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-score">単語 ${session.itemIds.length}件</div><p class="meta">この学習では採点や定着履歴を記録していません。</p><div class="actions"><button class="primary" data-study-action="repeat">もう一周</button><button class="soft" data-study-action="return">教材へ戻る</button></div></div>`;
+          return;
+        }
+        const word = currentWordStudyWord();
+        if (!word) return;
+        const progress = session.itemIds.length ? session.index / session.itemIds.length * 100 : 0;
+        const hasOfficial = Boolean(officialAudioUrlForWord(word));
+        const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+        const audio = hasOfficial ? "公式音声を自動再生" : canSpeak ? "端末音声を自動再生" : "利用できる音声なし";
+        const replay = hasOfficial || canSpeak ? `<button class="soft" data-study-action="audio">発音をもう一度聞く</button>` : "";
+        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${escapeHtml(word.word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="swipe-next-hint">← 左へスワイプして次へ</div></article><button class="soft" data-study-action="abort">終了</button>`;
+        const key = `study-word:${session.rangeId}:${session.index}:${word.id}`;
+        if (key !== lastAutoSpokenStudyWordKey) {
+          lastAutoSpokenStudyWordKey = key;
+          playTestAudio(word);
+        }
+      }
+
+      function advanceWordStudy() {
+        const session = state.wordStudySession;
+        const card = $("recallContent").querySelector("[data-study-card]");
+        if (!session || session.finished || session.transitioning || !card) return;
+        session.transitioning = true;
+        card.classList.add("swipe-out-left");
+        setTimeout(() => {
+          stopPreviewAudio();
+          session.index++;
+          session.transitioning = false;
+          session.finished = session.index >= session.itemIds.length;
+          renderWordStudy();
+        }, 220);
+      }
+
+      function activeStudySession() {
+        return state.wordStudySession || state.usageStudySession;
       }
 
       function renderUsageStudy() {
@@ -1170,8 +1236,19 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
+      function leaveWordStudy() {
+        stopPreviewAudio();
+        lastAutoSpokenStudyWordKey = "";
+        state.wordStudySession = null;
+        hideForRecall(false);
+        switchTab("ranges");
+        renderWords();
+        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
       function startUsageSpeedReview() {
         state.usageStudySession = null;
+        state.wordStudySession = null;
         lastAutoSpokenUsageKey = "";
         startRecall("usage", "speed", "all");
       }
@@ -1203,6 +1280,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         session.rangeId = range.id;
         state.recallSession = session;
         state.usageStudySession = null;
+        state.wordStudySession = null;
         lastAutoSpokenUsageKey = "";
         hideForRecall(true);
         renderRecall();
@@ -2605,6 +2683,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           last?.scrollIntoView({ behavior: "smooth", block: "end" });
         });
         $("startUsageStudy").addEventListener("click", startUsageStudy);
+        $("startWordStudy").addEventListener("click", startWordStudy);
         $("startWordSpeed").addEventListener("click", startSpeedReview);
         $("startUsageSpeed").addEventListener("click", startUsageSpeedReview);
         $("startSelectedMode").addEventListener("click", startSelectedLearningMode);
@@ -2656,13 +2735,16 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         });
         let speedPointerStart = null;
         $("speedContent").addEventListener("pointerdown", event => {
-          if (!event.target.closest("[data-speed-card]")) return;
-          speedPointerStart = { x: event.clientX, y: event.clientY };
+          const card = event.target.closest("[data-speed-card]");
+          if (!card) return;
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          speedPointerStart = { x: event.clientX, y: event.clientY, card };
         });
         $("speedContent").addEventListener("pointerup", event => {
-          if (!speedPointerStart || !event.target.closest("[data-speed-card]")) return;
-          const dx = event.clientX - speedPointerStart.x;
-          const dy = event.clientY - speedPointerStart.y;
+          if (!speedPointerStart) return;
+          const { x, y } = speedPointerStart;
+          const dx = event.clientX - x;
+          const dy = event.clientY - y;
           speedPointerStart = null;
           if (Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy)) {
             event.preventDefault();
@@ -2702,13 +2784,13 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("recallContent").addEventListener("click", event => {
           const studyAction = event.target.closest("[data-study-action]")?.dataset.studyAction;
           if (studyAction === "audio") {
-            const session = state.usageStudySession;
+            const session = activeStudySession();
             const range = state.ranges.find(item => item.id === session?.rangeId);
-            return playUsageLinkedWordAudio(range, currentUsageStudyItem());
+            return session === state.wordStudySession ? playTestAudio(currentWordStudyWord()) : playUsageLinkedWordAudio(range, currentUsageStudyItem());
           }
-          if (studyAction === "repeat") return startUsageStudy();
-          if (studyAction === "return") return leaveUsageStudy();
-          if (studyAction === "abort") return showModal(`<h2>学習モードを終了しますか？</h2><p>このモードでは採点や定着履歴を記録していません。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveUsageStudy);
+          if (studyAction === "repeat") return state.wordStudySession ? startWordStudy() : startUsageStudy();
+          if (studyAction === "return") return state.wordStudySession ? leaveWordStudy() : leaveUsageStudy();
+          if (studyAction === "abort") return showModal(`<h2>学習モードを終了しますか？</h2><p>このモードでは採点や定着履歴を記録していません。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, state.wordStudySession ? leaveWordStudy : leaveUsageStudy);
           const rating = event.target.closest("[data-recall-rating]")?.dataset.recallRating;
           if (rating) return rateCurrentRecall(rating);
           const action = event.target.closest("[data-recall-action]")?.dataset.recallAction;
@@ -2731,7 +2813,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         let usageStudyPointerStart = null;
         $("recallContent").addEventListener("pointerdown", event => {
           const card = event.target.closest("[data-study-card]");
-          if (!card || !state.usageStudySession) return;
+          if (!card || !activeStudySession()) return;
+          event.currentTarget.setPointerCapture?.(event.pointerId);
           usageStudyPointerStart = { x: event.clientX, y: event.clientY, card };
         });
         $("recallContent").addEventListener("pointermove", event => {
@@ -2750,7 +2833,10 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           const dy = event.clientY - y;
           card.style.transform = "";
           card.style.opacity = "";
-          if (dx <= -60 && Math.abs(dx) > Math.abs(dy)) advanceUsageStudy();
+          if (dx <= -60 && Math.abs(dx) > Math.abs(dy)) {
+            if (state.wordStudySession) advanceWordStudy();
+            else advanceUsageStudy();
+          }
         });
         $("recallContent").addEventListener("pointercancel", () => {
           if (usageStudyPointerStart?.card) {
@@ -2811,7 +2897,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("replaceJson").addEventListener("click", () => importJson(true));
         $("wipeAll").addEventListener("click", wipeAll);
         let toastStartX = null;
-        $("toast").addEventListener("pointerdown", event => { toastStartX = event.clientX; });
+        $("toast").addEventListener("pointerdown", event => { event.currentTarget.setPointerCapture?.(event.pointerId); toastStartX = event.clientX; });
         $("toast").addEventListener("pointerup", event => {
           if (toastStartX !== null && Math.abs(event.clientX - toastStartX) >= 48) dismissToast();
           toastStartX = null;

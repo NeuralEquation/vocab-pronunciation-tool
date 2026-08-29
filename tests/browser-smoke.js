@@ -165,6 +165,7 @@ async function main() {
     );
     assert.equal(usageModeOptions.some(option => option.value.startsWith("usage-")), false);
     assert.equal(await page.locator("#startUsageStudy").count(), 1);
+    assert.equal(await page.locator("#startWordStudy").count(), 1);
     assert.equal(await page.locator("#startUsageSpeed").count(), 1);
     assert.equal(await page.getByText("関連単語を編集", { exact: true }).count(), 0);
 
@@ -239,7 +240,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v46"));
+    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v47"));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
