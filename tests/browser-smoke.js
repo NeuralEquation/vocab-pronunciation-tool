@@ -145,6 +145,25 @@ async function main() {
     assert.match(await page.locator("#spellingContent .result-score").textContent(), /14\s*\/\s*15/);
     await page.locator("[data-spelling-action='return']").click();
 
+    const usageModeOptions = await page.locator("#testMode option").evaluateAll(options =>
+      options.map(option => ({ value: option.value, label: option.textContent.trim() }))
+    );
+    assert.equal(usageModeOptions.some(option => option.value.startsWith("usage-example-")), false);
+    assert.deepEqual(
+      usageModeOptions.filter(option => option.value.startsWith("usage-all-")).map(option => option.label),
+      ["例文・熟語・高速周回", "未定着の例文・熟語", "全例文・熟語"]
+    );
+
+    await startMode(page, "usage-all-speed");
+    assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・高速周回[\s\S]*初回2件/);
+    for (let index = 0; index < 2; index++) {
+      await page.locator("[data-recall-action='reveal']").click();
+      await page.locator("[data-recall-rating='circle']").click();
+    }
+    await page.locator("#recallContent .test-result").waitFor();
+    assert.match(await page.locator("#recallContent").textContent(), /例文・熟語 高速周回 完了/);
+    await page.locator("[data-recall-action='return']").click();
+
     await startMode(page, "usage-all-all");
     await page.locator("[data-recall-action='reveal']").click();
     await page.locator("[data-recall-rating='cross']").click();

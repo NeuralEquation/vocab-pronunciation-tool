@@ -23,14 +23,16 @@ The service worker only caches the app files. Merriam-Webster API responses and 
 
 ## Vocabulary, Examples, and Phrases
 
-Choose **英単語・例文・熟語** on the registration screen. Paste all words, examples, and phrases once into the single field. The recommended Custom GPT output is JSON Lines: one complete word record per line.
+Choose **英単語・例文・熟語** on the registration screen. Paste all words, examples, and phrases once into the single field. The recommended Custom GPT output is one JSON array containing the complete range.
 
-```text
-{"word":"record","meaning":"記録／記録する","examples":[{"en":"Keep a record of your expenses.","ja":"出費を記録しておきなさい。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}
-{"word":"expense","meaning":"費用／出費","examples":[],"phrases":[{"en":"at the expense of A","ja":"Aを犠牲にして"}]}
+```json
+[
+  {"word":"record","meaning":"記録／記録する","examples":[{"en":"Keep a record of your expenses.","ja":"出費を記録しておきなさい。"}],"phrases":[{"en":"on record","ja":"記録されて"}]},
+  {"word":"expense","meaning":"費用／出費","examples":[],"phrases":[{"en":"at the expense of A","ja":"Aを犠牲にして"}]}
+]
 ```
 
-`examples` and `phrases` are arrays, so each word can contain zero, one, or many items. Because the relationship is defined by the containing word record, the app does not inspect English text or guess links. A JSON array containing the same records is also accepted. A six-column TSV fallback is accepted for simple one-line transfers; multiple values use ` || ` in the corresponding English and Japanese columns.
+`examples` and `phrases` are arrays, so each word can contain zero, one, or many items. Because the relationship is defined by the containing word record, the app does not inspect English text or guess links. JSON Lines remains accepted for compatibility. A six-column TSV fallback is accepted for simple one-line transfers; multiple values use ` || ` in the corresponding English and Japanese columns.
 
 Before registration, the app previews the word, example, and phrase counts. Missing translations, malformed rows, mismatched TSV pairs, and duplicate words are shown with their line number and block registration until fixed.
 
@@ -105,15 +107,19 @@ If validation, migration, or storage writing fails, the import is cancelled with
 
 ## Study content and recall / 教材と暗唱
 
-For **英単語・例文・熟語**, paste one JSON Lines record per word (or a JSON array). The existing format remains supported:
+For **英単語・例文・熟語**, paste one JSON array containing the complete range. JSON Lines remains supported for compatibility:
 
 ```json
-{"word":"record","meaning":"記録／記録する","examples":[{"en":"Keep a record.","ja":"記録をつける。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}
+[
+  {"word":"record","meaning":"記録／記録する","examples":[{"en":"Keep a record.","ja":"記録をつける。"}],"phrases":[{"en":"on record","ja":"記録されて"}]}
+]
 ```
 
 The parser also accepts a six-column TSV fallback. It previews counts and blocks registration with malformed lines, missing translations, mismatched English/Japanese multi-value pairs, or duplicate words. Examples and phrases keep their source-word relationship through the containing record; the app does not infer links from English text.
 
 For **金曜の暗記構文**, paste TSV containing English full text and its Japanese translation (an optional source ID and label may precede them). Examples, phrases, and memorization sentences are recalled Japanese → complete English. After revealing the answer, rate it `○`, `△`, or `×`: `×` is requeued after a few items and `△` returns near the end. An item is settled only after `○` on two different calendar days and, after a lapse, a later-day `○`; same-day retries do not erase that boundary. This recall progress is separate from vocabulary tests and Speed Review.
+
+Vocabulary recall modes always keep examples and phrases together: **例文・熟語・高速周回**, **未定着の例文・熟語**, and **全例文・熟語**. They reuse the existing recall history instead of creating a separate example-only history.
 
 ## Tests, spelling, and readiness / テスト・スペル・準備判定
 
