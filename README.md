@@ -56,7 +56,7 @@ Memorization uses the same full-text `○` / `△` / `×` recall flow, but its d
 
 ## Speech Fallback
 
-Official Merriam-Webster audio remains the first choice. In speed review, each card automatically plays the official audio or, when it is unavailable, the device's English voice through the Web Speech API. Starting review and moving cards both happen directly from a tap, swipe, or key action so iOS user-gesture restrictions are respected. **もう一度聞く** remains available only as a replay control. Moving to another card, leaving review/test mode, or stopping continuous playback cancels queued speech immediately and prevents overlap.
+Official Merriam-Webster audio remains the first choice. In speed review, each card automatically plays the official audio or, when it is unavailable, the device's English voice through the Web Speech API. Starting review and moving cards use direct taps (with keyboard shortcuts still available) so iOS user-gesture restrictions are respected. **もう一度聞く** remains available only as a replay control. Moving to another card, leaving review/test mode, or stopping continuous playback cancels queued speech immediately and prevents overlap.
 
 ## Rollback and Backups
 
@@ -119,7 +119,7 @@ The parser also accepts a six-column TSV fallback. It previews counts and blocks
 
 For **金曜の暗記構文**, paste TSV containing English full text and its Japanese translation (an optional source ID and label may precede them). Examples, phrases, and memorization sentences are recalled Japanese → complete English. After revealing the answer, rate it `○`, `△`, or `×`: `×` is requeued after a few items and `△` returns near the end. An item is settled only after `○` on two different calendar days and, after a lapse, a later-day `○`; same-day retries do not erase that boundary. This recall progress is separate from vocabulary tests and Speed Review.
 
-Examples and phrases are always handled together. **学習モード（初見用）** is an unrated, swipe-to-advance pass that does not create study history. **例文・熟語の高速周回** keeps the existing recall history and ratings, and automatically plays the official pronunciation of the linked word when that audio is available.
+Examples and phrases are always handled together. **学習モード（初見用）** is an unrated, tap-to-advance pass that does not create study history. **例文・熟語の高速周回** keeps the existing recall history and ratings, and automatically plays the official pronunciation of the linked word when that audio is available. Notifications are dismissed with a tap.
 
 ## Tests, spelling, and readiness / テスト・スペル・準備判定
 
