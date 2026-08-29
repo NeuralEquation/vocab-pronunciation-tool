@@ -2,7 +2,7 @@
   "use strict";
 
   const LAST_MODE_KEY = "mwPronunciationTool.lastVocabMode.v1";
-  const SPEED_EXAMPLE_VALUE = "usage-example-speed";
+  const SPEED_USAGE_VALUE = "usage-all-speed";
 
   function injectStyles() {
     if (document.getElementById("uxOverridesStyle")) return;
@@ -14,13 +14,13 @@
         display: none !important;
       }
 
-      #recallPanel.example-speed-review .recall-ratings {
+      #recallPanel.usage-speed-review .recall-ratings {
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 10px;
       }
 
-      #recallPanel.example-speed-review .recall-ratings .rating {
+      #recallPanel.usage-speed-review .recall-ratings .rating {
         min-height: 50px;
         width: 100%;
         font-size: 1rem;
@@ -42,12 +42,11 @@
     return `
       <optgroup label="高速周回">
         <option value="speed">単語・高速周回</option>
-        <option value="${SPEED_EXAMPLE_VALUE}">例文・高速周回</option>
+        <option value="${SPEED_USAGE_VALUE}">例文・熟語・高速周回</option>
       </optgroup>
-      <optgroup label="例文">
-        <option value="usage-example-unsettled">未定着の例文</option>
-        <option value="usage-example-all">全例文</option>
-        <option value="usage-all-all">例文・熟語（全範囲）</option>
+      <optgroup label="例文・熟語">
+        <option value="usage-all-unsettled">未定着の例文・熟語</option>
+        <option value="usage-all-all">全例文・熟語</option>
       </optgroup>
       <optgroup label="単語テスト">
         <option value="word-enToJa-normal">英語→日本語・通常</option>
@@ -64,8 +63,9 @@
 
   function isDesiredModeLayout(select) {
     const labels = [...select.querySelectorAll("optgroup")].map(group => group.label);
-    return labels.join("|") === "高速周回|例文|単語テスト|仕上げ" &&
-      Boolean(select.querySelector(`option[value="${SPEED_EXAMPLE_VALUE}"]`));
+    return labels.join("|") === "高速周回|例文・熟語|単語テスト|仕上げ" &&
+      Boolean(select.querySelector(`option[value="${SPEED_USAGE_VALUE}"]`)) &&
+      ![...select.options].some(option => option.value.startsWith("usage-example-"));
   }
 
   function patchLearningModes() {
@@ -88,27 +88,27 @@
     sessionStorage.setItem(LAST_MODE_KEY, select.value);
   }
 
-  function setExampleSpeedFlag() {
+  function setUsageSpeedFlag() {
     const select = document.getElementById("testMode");
-    document.documentElement.dataset.exampleSpeedReview = select?.value === SPEED_EXAMPLE_VALUE ? "1" : "0";
+    document.documentElement.dataset.usageSpeedReview = select?.value === SPEED_USAGE_VALUE ? "1" : "0";
   }
 
-  function patchExampleSpeedRecall() {
+  function patchUsageSpeedRecall() {
     const panel = document.getElementById("recallPanel");
     const content = document.getElementById("recallContent");
     if (!panel || !content) return;
 
     const currentHead = content.querySelector(".recall-head span:first-child")?.textContent || "";
-    if (document.documentElement.dataset.exampleSpeedReview === "1" && currentHead && !["例文", "例文・高速周回"].includes(currentHead)) {
-      document.documentElement.dataset.exampleSpeedReview = "0";
+    if (document.documentElement.dataset.usageSpeedReview === "1" && currentHead && !["例文", "熟語", "例文・熟語・高速周回"].includes(currentHead)) {
+      document.documentElement.dataset.usageSpeedReview = "0";
     }
 
-    const active = document.documentElement.dataset.exampleSpeedReview === "1" && !panel.classList.contains("hidden");
-    panel.classList.toggle("example-speed-review", active);
+    const active = document.documentElement.dataset.usageSpeedReview === "1" && !panel.classList.contains("hidden");
+    panel.classList.toggle("usage-speed-review", active);
     if (!active) return;
 
-    setText(content.querySelector(".test-result h2"), "例文 高速周回 完了");
-    setText(content.querySelector(".recall-head span:first-child"), "例文・高速周回");
+    setText(content.querySelector(".test-result h2"), "例文・熟語 高速周回 完了");
+    setText(content.querySelector(".recall-head span:first-child"), "例文・熟語・高速周回");
     setText(content.querySelector(".recall-prompt-label"), "日本語を見て英文を即答");
     setText(content.querySelector('[data-recall-action="reveal"]'), "英文を表示");
 
@@ -137,7 +137,7 @@
 
   function refreshUi() {
     patchLearningModes();
-    patchExampleSpeedRecall();
+    patchUsageSpeedRecall();
     removeVerboseRiskDetails();
   }
 
@@ -145,7 +145,7 @@
   refreshUi();
 
   document.addEventListener("change", rememberSelectedMode);
-  document.getElementById("startSelectedMode")?.addEventListener("click", setExampleSpeedFlag, true);
+  document.getElementById("startSelectedMode")?.addEventListener("click", setUsageSpeedFlag, true);
 
   const observer = new MutationObserver(() => refreshUi());
   observer.observe(document.body, { childList: true, subtree: true });
