@@ -120,11 +120,26 @@ async function main() {
     await returnFromTest(page);
 
     const studyStatusBeforeSpeed = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words.map(word => word.studyStatus));
-    await startMode(page, "speed");
-    await page.locator("[data-speed-rating='unsure']").click();
-    for (let safety = 0; safety < 40 && !(await page.locator("#speedContent .test-result").count()); safety++) {
+    await page.locator("#startWordSpeed").click();
+    assert.equal(await page.locator("[data-speed-action='meaning']").count(), 1);
+    await page.locator("[data-speed-action='meaning']").click();
+    assert.equal(await page.locator(".speed-meaning").count(), 1);
+    let sawUsageConfirmation = false;
+    let markedUnsure = false;
+    for (let safety = 0; safety < 45 && !(await page.locator("#speedContent .test-result").count()); safety++) {
+      if (await page.locator("[data-speed-action='usage']").count()) {
+        sawUsageConfirmation = true;
+        await page.locator("[data-speed-action='usage']").click();
+        assert.match(await page.locator(".speed-usage-list").textContent(), /Keep a record\.|on record/);
+      }
+      if (!markedUnsure) {
+        markedUnsure = true;
+        await page.locator("[data-speed-rating='unsure']").click();
+        continue;
+      }
       await page.locator("[data-speed-rating='instant']").click();
     }
+    assert.equal(sawUsageConfirmation, true);
     await page.locator("#speedContent .test-result").waitFor();
     assert.match(await page.locator("#speedContent").textContent(), /高速周回 完了/);
     const studyStatusAfterSpeed = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words.map(word => word.studyStatus));
@@ -148,13 +163,36 @@ async function main() {
     const usageModeOptions = await page.locator("#testMode option").evaluateAll(options =>
       options.map(option => ({ value: option.value, label: option.textContent.trim() }))
     );
-    assert.equal(usageModeOptions.some(option => option.value.startsWith("usage-example-")), false);
-    assert.deepEqual(
-      usageModeOptions.filter(option => option.value.startsWith("usage-all-")).map(option => option.label),
-      ["例文・熟語・高速周回", "未定着の例文・熟語", "全例文・熟語"]
-    );
+    assert.equal(usageModeOptions.some(option => option.value.startsWith("usage-")), false);
+    assert.equal(await page.locator("#startUsageStudy").count(), 1);
+    assert.equal(await page.locator("#startUsageSpeed").count(), 1);
+    assert.equal(await page.getByText("関連単語を編集", { exact: true }).count(), 0);
 
-    await startMode(page, "usage-all-speed");
+    const usageHistoryBeforeStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
+    await page.locator("#startUsageStudy").click();
+    assert.equal(await page.locator("[data-recall-rating]").count(), 0);
+    assert.match(await page.locator("#recallContent").textContent(), /学習モード[\s\S]*左へスワイプして次へ[\s\S]*公式音声未取得/);
+    const studyCard = page.locator("[data-study-card]");
+    const studyBox = await studyCard.boundingBox();
+    assert.ok(studyBox);
+    await page.mouse.move(studyBox.x + studyBox.width * 0.8, studyBox.y + studyBox.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(studyBox.x + studyBox.width * 0.15, studyBox.y + studyBox.height * 0.5, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForFunction(() => document.querySelector(".recall-head")?.textContent.includes("2 / 2"));
+    assert.equal(await page.locator("[data-recall-rating]").count(), 0);
+    const studyBox2 = await page.locator("[data-study-card]").boundingBox();
+    await page.mouse.move(studyBox2.x + studyBox2.width * 0.8, studyBox2.y + studyBox2.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(studyBox2.x + studyBox2.width * 0.15, studyBox2.y + studyBox2.height * 0.5, { steps: 6 });
+    await page.mouse.up();
+    await page.locator("#recallContent .test-result").waitFor();
+    assert.match(await page.locator("#recallContent").textContent(), /採点や学習履歴は記録していません/);
+    await page.locator("[data-study-action='return']").click();
+    const usageHistoryAfterStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
+    assert.deepEqual(usageHistoryAfterStudy, usageHistoryBeforeStudy);
+
+    await page.locator("#startUsageSpeed").click();
     assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・高速周回[\s\S]*初回2件/);
     for (let index = 0; index < 2; index++) {
       await page.locator("[data-recall-action='reveal']").click();
@@ -162,17 +200,6 @@ async function main() {
     }
     await page.locator("#recallContent .test-result").waitFor();
     assert.match(await page.locator("#recallContent").textContent(), /例文・熟語 高速周回 完了/);
-    await page.locator("[data-recall-action='return']").click();
-
-    await startMode(page, "usage-all-all");
-    await page.locator("[data-recall-action='reveal']").click();
-    await page.locator("[data-recall-rating='cross']").click();
-    await page.locator("[data-recall-action='reveal']").click();
-    await page.locator("[data-recall-rating='circle']").click();
-    await page.locator("[data-recall-action='reveal']").click();
-    await page.locator("[data-recall-rating='circle']").click();
-    await page.locator("#recallContent .test-result").waitFor();
-    assert.match(await page.locator("#recallContent").textContent(), /全文暗唱 完了/);
     await page.locator("[data-recall-action='return']").click();
 
     const beforeImport = JSON.parse(await page.evaluate(() => localStorage.getItem("mwPronunciationTool.v1")));
@@ -212,7 +239,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v43"));
+    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v46"));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();

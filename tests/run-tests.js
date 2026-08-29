@@ -216,7 +216,7 @@ it("sanitizes malformed storage, future schemas, IDs and references, and round-t
   assert.equal(storage.migrateBackup({ schemaVersion: storage.SCHEMA_VERSION + 1, ranges: [] }).ok, false);
   const original = {
     schemaVersion: 1,
-    settings: { saveKey: true, dictionaryType: "collegiate", playbackInterval: 3 },
+    settings: { saveKey: true, dictionaryType: "collegiate", playbackInterval: 3, usageReviewExtraSeconds: 10 },
     studyLog: { "2026-08-20": { attempts: 4, correct: 9, enToJa: { attempts: 3, correct: 9 } }, bad: { attempts: 9 } },
     ui: { selectedRangeId: "bad range" },
     ranges: [{ id: "bad range", rangeName: "A", testDate: "2026-08-22", words: [
@@ -238,11 +238,13 @@ it("sanitizes malformed storage, future schemas, IDs and references, and round-t
   assert.equal(range.words[0].pronunciationVariants[0].audioUrl, "");
   assert.equal(migrated.data.ui.selectedRangeId, range.id, "renamed range references are migrated");
   assert.equal(migrated.data.studyLog["2026-08-20"].correct, 4);
+  assert.equal(migrated.data.settings.usageReviewExtraSeconds, 10);
   const backup = storage.createBackup({ ...migrated.data, ui: { selectedRangeId: range.id }, settings: { ...migrated.data.settings, saveKey: true, apiKeySession: "secret" } }, "2026-08-20T00:00:00.000Z");
   assert.equal(JSON.stringify(backup).includes("secret"), false);
   const imported = storage.planImport(JSON.stringify(backup), [], "append");
   assert.equal(imported.ok, true);
   assert.equal(imported.data.settings.saveKey, false);
+  assert.equal(imported.data.settings.usageReviewExtraSeconds, 10);
   assert.equal(JSON.stringify(imported.data.studyLog), JSON.stringify(backup.studyLog));
   assert.equal(storage.migrateBackup({ ranges: [{ id: "broken", words: [], usageItems: [{ id: "u", english: "", japanese: "欠落" }] }] }).ok, false);
   assert.equal(JSON.stringify(imported.data.ui), JSON.stringify(backup.ui));

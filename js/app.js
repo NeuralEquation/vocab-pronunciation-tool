@@ -44,7 +44,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
 
       const state = {
         ranges: [],
-        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2, usageReviewExtraSeconds: 5, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
         studyLog: {},
         fetchingRangeId: "",
         selectedRangeId: null,
@@ -55,7 +55,9 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         spellingFeedback: null,
         spellingResult: null,
         recallSession: null,
+        usageStudySession: null,
         speedMeaningVisible: false,
+        speedUsageVisible: false,
         pendingWordScroll: false,
         temporaryWordIds: null,
         savedFilterBeforeTemporary: null
@@ -74,6 +76,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       };
       let previewAudio = null;
       let lastAutoSpokenSpeedKey = "";
+      let lastAutoSpokenUsageKey = "";
 
       const $ = (id) => document.getElementById(id);
 
@@ -304,6 +307,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           $("definitionLimit").value = String(state.settings.definitionLimit);
           $("wordFilter").value = state.settings.studyFilter;
           $("playbackInterval").value = String(state.settings.playbackInterval);
+          $("usageReviewExtraSeconds").value = String(state.settings.usageReviewExtraSeconds);
           $("mondayEndTime").value = state.settings.mondayEndTime;
           $("wednesdayEndTime").value = state.settings.wednesdayEndTime;
           $("fridayEndTime").value = state.settings.fridayEndTime;
@@ -662,7 +666,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       function renderLinkedUsage(range, wordId) {
         const items = (range.usageItems || []).filter(item => item.linkedWordIds.includes(wordId));
         if (!items.length) return "";
-        return `<details class="linked-usage"><summary>例文・熟語 ${items.length}件</summary>${items.map(item => `<div class="linked-usage-item"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><strong>${escapeHtml(item.english)}</strong><span>${escapeHtml(item.japanese)}</span></div>`).join("")}</details>`;
+        const open = playbackState.active && playbackState.currentWordId === wordId ? " open" : "";
+        return `<details class="linked-usage" data-linked-usage-word="${escapeHtml(wordId)}"${open}><summary>例文・熟語 ${items.length}件</summary>${items.map(item => `<div class="linked-usage-item"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><strong>${escapeHtml(item.english)}</strong><span>${escapeHtml(item.japanese)}</span></div>`).join("")}</details>`;
       }
 
       function renderUsageOverview(range) {
@@ -678,7 +683,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
             <div class="range-head"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><span class="rating-status">${item.recallStats.lastRating === "circle" ? "○" : item.recallStats.lastRating === "triangle" ? "△" : item.recallStats.lastRating === "cross" ? "×" : "未判定"}</span></div>
             <strong>${escapeHtml(item.english)}</strong><div>${escapeHtml(item.japanese)}</div>
             <div class="meta">関連単語: ${linked.length ? escapeHtml(linked.join("、")) : "未設定"}${item.unresolvedRefs?.length ? ` / 未解決ID: ${escapeHtml(item.unresolvedRefs.join("、"))}` : ""}</div>
-            <button class="soft compact" data-usage-action="edit-links" data-id="${escapeHtml(item.id)}">関連単語を編集</button>
           </article>`;
         }).join("")}`;
       }
@@ -690,18 +694,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           <div class="meta">別の日に○を2回で定着</div>
         </article>`).join("") || `<div class="empty">暗記構文は未登録です。</div>`;
         $("usageList").innerHTML = "";
-      }
-
-      function editUsageLinks(itemId) {
-        const range = state.ranges.find(r => r.id === state.selectedRangeId);
-        const item = range?.usageItems?.find(entry => entry.id === itemId);
-        if (!range || !item) return;
-        showModal(`<h2>関連単語を編集</h2><p><strong>${escapeHtml(item.english)}</strong></p><div class="link-editor">${range.words.map(word => `<label class="switch"><input type="checkbox" data-link-word="${escapeHtml(word.id)}" ${item.linkedWordIds.includes(word.id) ? "checked" : ""}> ${escapeHtml(word.word)}</label>`).join("")}</div><div class="actions"><button class="primary" data-modal-confirm>保存</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
-          item.linkedWordIds = [...$("modalRoot").querySelectorAll("[data-link-word]:checked")].map(input => input.dataset.linkWord);
-          item.unresolvedRefs = [];
-          save();
-          toast("関連単語を更新しました。");
-        });
       }
 
       function configureLearningModes(isMemory) {
@@ -720,33 +712,25 @@ window.runStorageSelfCheck = runStorageSelfCheck;
               <option value="word-enToJa-wrong">英語→日本語・間違い集中</option>
               <option value="word-jaToEn-wrong">日本語→英語・間違い集中</option>
             </optgroup>
-            <optgroup label="最終殲滅">
+            <optgroup label="仕上げ">
               <option value="ready-enToJa">満点確認・英語→日本語</option>
               <option value="ready-jaToEn">満点確認・日本語→英語</option>
               <option value="spelling">スペル確認</option>
-            </optgroup>
-            <optgroup label="高速確認">
-              <option value="speed">高速周回</option>
-            </optgroup>
-            <optgroup label="例文・熟語 全範囲">
-              <option value="usage-all-all">全範囲を暗唱</option>
             </optgroup>`;
         if ([...select.options].some(option => option.value === previous)) select.value = previous;
+        $("vocabPrimaryModes").classList.toggle("hidden", isMemory);
+        $("testModeLabel").textContent = isMemory ? "学習モード" : "確認モード";
+        select.setAttribute("aria-label", isMemory ? "学習モード" : "確認モード");
         $("vocabLearningOptions").classList.toggle("hidden", isMemory);
       }
 
       function startSelectedLearningMode() {
         const value = $("testMode").value;
-        if (value === "speed") return startSpeedReview();
         if (value === "spelling") return startSpellingReview();
         if (value.startsWith("ready-")) return startTestReadyReview(value.slice(6));
         if (value.startsWith("word-")) {
           const [, direction, mode] = value.split("-");
           return startTest(direction, mode);
-        }
-        if (value.startsWith("usage-")) {
-          const [, type, mode] = value.split("-");
-          return startRecall("usage", mode, type);
         }
         if (value.startsWith("memory-")) return startRecall("memory", value.slice(7));
       }
@@ -768,9 +752,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("playbackInterval").value = String(state.settings.playbackInterval);
         updatePlaybackControls();
         const readiness = readinessForRange(range);
-        const riskById = new Map((readiness.riskItems || []).map(item => [item.wordId, item.reasons]));
         $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 例文${s.examples}・熟語${s.phrases} / 危険${readiness.riskItems?.length || 0}`;
-        const readinessOverview = `<div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}${readiness.riskItems?.length ? `<div class="risk-list">${readiness.riskItems.slice(0, 5).map(item => { const word = range.words.find(candidate => candidate.id === item.wordId); return `<div class="risk-list-item"><strong>${escapeHtml(word?.word || "不明")}</strong><span>${item.reasons.length}件</span><small>${escapeHtml(item.reasons.join("・"))}</small></div>`; }).join("")}</div>` : ""}</div>`;
+        const readinessOverview = `<div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div>`;
         const words = filteredWords(range);
         if (!words.length) {
           $("wordList").innerHTML = `${readinessOverview}<div class="empty">この条件に一致する単語はありません。</div>`;
@@ -794,7 +777,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
                   <span class="pos-text">候補 : ${(word.pronunciationVariants || []).length}件</span>
                 </div>
                 ${renderSpellingRisk(word)}
-                ${riskById.has(word.id) ? `<div class="caution"><strong>危険:</strong> ${escapeHtml(riskById.get(word.id).join("・"))}</div>` : ""}
                 ${renderLinkedUsage(range, word.id)}
               </div>
               ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
@@ -843,6 +825,65 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         else if (!speakWordText(word.word)) toast("この端末では代替読み上げを利用できません。", true);
       }
 
+      function linkedUsageItemsForWord(range, wordId) {
+        return (range?.usageItems || []).filter(item => item.linkedWordIds.includes(wordId));
+      }
+
+      function linkedWordsForUsageItem(range, item) {
+        const wordsById = new Map((range?.words || []).map(word => [word.id, word]));
+        return [...new Set(item?.linkedWordIds || [])].map(id => wordsById.get(id)).filter(Boolean);
+      }
+
+      function officialAudioUrlForWord(word) {
+        return preferredPronunciationVariant(word)?.audioUrl || word?.audioUrl || "";
+      }
+
+      function usageAudioInfo(range, item) {
+        const linkedWords = linkedWordsForUsageItem(range, item);
+        const playableWords = linkedWords.filter(word => officialAudioUrlForWord(word));
+        return {
+          linkedWords,
+          playableWords,
+          label: linkedWords.length
+            ? `登録単語: ${linkedWords.map(word => word.word).join("、")}`
+            : "登録単語なし"
+        };
+      }
+
+      function playUsageLinkedWordAudio(range, item) {
+        const { playableWords } = usageAudioInfo(range, item);
+        if (!playableWords.length) return false;
+        stopPreviewAudio();
+        let index = 0;
+        const playNext = () => {
+          const word = playableWords[index++];
+          if (!word) {
+            previewAudio = null;
+            return;
+          }
+          previewAudio = new Audio(officialAudioUrlForWord(word));
+          previewAudio.onended = playNext;
+          previewAudio.onerror = playNext;
+          previewAudio.play().catch(playNext);
+        };
+        playNext();
+        return true;
+      }
+
+      function autoPlayUsageLinkedWord(range, item, key) {
+        if (!range || !item || !key || key === lastAutoSpokenUsageKey) return;
+        lastAutoSpokenUsageKey = key;
+        playUsageLinkedWordAudio(range, item);
+      }
+
+      function usageAudioHtml(range, item, actionName) {
+        const info = usageAudioInfo(range, item);
+        const status = info.playableWords.length
+          ? `${escapeHtml(info.label)} / 公式音声 ${info.playableWords.length}語`
+          : `${escapeHtml(info.label)} / 公式音声未取得`;
+        return `<div class="usage-word-audio"><span>${status}</span>${info.playableWords.length ? `<button class="soft" data-${actionName}-action="audio">単語音声を再生</button>` : ""}</div>`;
+      }
+
       function hideForSpeed(active) {
         document.querySelector("header")?.classList.toggle("hidden", active);
         document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
@@ -864,6 +905,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         if (session.error) return toast(session.error, true);
         state.speedSession = session;
         state.speedMeaningVisible = false;
+        state.speedUsageVisible = false;
         lastAutoSpokenSpeedKey = "";
         hideForSpeed(true);
         renderSpeedReview();
@@ -872,6 +914,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       function restartSpeedReview() {
         if (!restartSpeedReviewSession(state.speedSession)) return startSpeedReview();
         state.speedMeaningVisible = false;
+        state.speedUsageVisible = false;
         renderSpeedReview();
       }
 
@@ -919,7 +962,11 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const fallbackReplay = !hasOfficial && canSpeak
           ? `<button class="speed-replay" data-speed-action="audio" aria-label="端末読み上げをもう一度聞く" title="端末読み上げをもう一度聞く">🔊</button>`
           : "";
-        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="タップして意味を表示"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">タップして意味を表示</div>`}</div></div><div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span><button class="soft" data-speed-action="abort">終了</button></div>`;
+        const usageItems = linkedUsageItemsForWord(range, word.id);
+        const usageReview = usageItems.length
+          ? `<div class="speed-usage-review"><button class="soft speed-usage-toggle" data-speed-action="usage" aria-expanded="${state.speedUsageVisible}">例文・熟語を確認（${usageItems.length}件）</button>${state.speedUsageVisible ? `<div class="speed-usage-list">${usageItems.map(item => `<article><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><strong>${escapeHtml(item.english)}</strong><span>${escapeHtml(item.japanese)}</span></article>`).join("")}</div>` : ""}</div>`
+          : "";
+        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="単語カード"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">下の大きなボタンで意味を確認</div>`}</div></div><button class="primary speed-meaning-toggle" data-speed-action="meaning" aria-expanded="${state.speedMeaningVisible}">${state.speedMeaningVisible ? "意味を隠す" : "意味を確認"}</button>${usageReview}<div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span><button class="soft" data-speed-action="abort">終了</button></div>`;
         autoPlaySpeedReviewWord(word);
       }
 
@@ -950,6 +997,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         applySpeedAssessment(result.assessment);
         save(false);
         state.speedMeaningVisible = false;
+        state.speedUsageVisible = false;
         if (result.roundComplete && !result.finished) toast(`第${state.speedSession.round - 1}周が完了しました。${state.speedSession.roundStartCount}語に絞って続けます。`);
         renderSpeedReview();
       }
@@ -959,6 +1007,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         lastAutoSpokenSpeedKey = "";
         state.speedSession = null;
         state.speedMeaningVisible = false;
+        state.speedUsageVisible = false;
         hideForSpeed(false);
         switchTab("ranges");
         renderWords();
@@ -1063,6 +1112,70 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         return source === "memory" ? (range.memoryItems || []) : (range.usageItems || []);
       }
 
+      function startUsageStudy() {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        const itemIds = (range?.usageItems || []).map(item => item.id);
+        if (!range || !itemIds.length) return toast("学習できる例文・熟語がありません。", true);
+        state.recallSession = null;
+        state.usageStudySession = { rangeId: range.id, itemIds, index: 0, transitioning: false, finished: false };
+        lastAutoSpokenUsageKey = "";
+        hideForRecall(true);
+        renderUsageStudy();
+      }
+
+      function currentUsageStudyItem() {
+        const session = state.usageStudySession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        return (range?.usageItems || []).find(item => item.id === session?.itemIds?.[session.index]) || null;
+      }
+
+      function renderUsageStudy() {
+        const session = state.usageStudySession;
+        const range = state.ranges.find(item => item.id === session?.rangeId);
+        if (!session || !range) return;
+        if (session.finished) {
+          $("recallContent").innerHTML = `<div class="test-result"><h2>学習モード 完了</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-score">例文・熟語 ${session.itemIds.length}件</div><p class="meta">この学習では○・△・×や定着履歴を記録していません。</p><div class="actions"><button class="primary" data-study-action="repeat">もう一周</button><button class="soft" data-study-action="return">教材へ戻る</button></div></div>`;
+          return;
+        }
+        const item = currentUsageStudyItem();
+        if (!item) return;
+        const progress = session.itemIds.length ? session.index / session.itemIds.length * 100 : 0;
+        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・${item.type === "phrase" ? "熟語" : "例文"}</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${usageAudioHtml(range, item, "study")}<div class="usage-study-english">${escapeHtml(item.english)}</div><div class="usage-study-japanese">${escapeHtml(item.japanese)}</div><div class="swipe-next-hint">← 左へスワイプして次へ</div></article><button class="soft" data-study-action="abort">終了</button>`;
+        autoPlayUsageLinkedWord(range, item, `study:${session.rangeId}:${session.index}:${item.id}`);
+      }
+
+      function advanceUsageStudy() {
+        const session = state.usageStudySession;
+        const card = $("recallContent").querySelector("[data-study-card]");
+        if (!session || session.finished || session.transitioning || !card) return;
+        session.transitioning = true;
+        card.classList.add("swipe-out-left");
+        setTimeout(() => {
+          stopPreviewAudio();
+          session.index++;
+          session.transitioning = false;
+          session.finished = session.index >= session.itemIds.length;
+          renderUsageStudy();
+        }, 220);
+      }
+
+      function leaveUsageStudy() {
+        stopPreviewAudio();
+        lastAutoSpokenUsageKey = "";
+        state.usageStudySession = null;
+        hideForRecall(false);
+        switchTab("ranges");
+        renderWords();
+        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function startUsageSpeedReview() {
+        state.usageStudySession = null;
+        lastAutoSpokenUsageKey = "";
+        startRecall("usage", "speed", "all");
+      }
+
       function currentRecallItem() {
         const session = state.recallSession;
         const range = state.ranges.find(item => item.id === session?.rangeId);
@@ -1089,6 +1202,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         if (session.error) return toast(session.error, true);
         session.rangeId = range.id;
         state.recallSession = session;
+        state.usageStudySession = null;
+        lastAutoSpokenUsageKey = "";
         hideForRecall(true);
         renderRecall();
       }
@@ -1098,16 +1213,22 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const range = state.ranges.find(item => item.id === session?.rangeId);
         if (!session || !range) return;
         if (session.finished) {
+          const isUsageSpeed = session.source === "usage" && session.mode === "speed";
           const counts = { circle: 0, triangle: 0, cross: 0 };
           session.assessments.forEach(entry => counts[entry.rating]++);
-          $("recallContent").innerHTML = `<div class="test-result"><h2>全文暗唱 完了</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-grid"><div><strong>${counts.circle}</strong>○</div><div><strong>${counts.triangle}</strong>△</div><div><strong>${counts.cross}</strong>×</div></div><p class="meta">△・×は同じ周回内で○になるまで再出題しました。別の周回でもう一度○になると定着です。</p><div class="actions"><button class="primary" data-recall-action="repeat">もう一周</button><button class="soft" data-recall-action="return">教材へ戻る</button></div></div>`;
+          $("recallContent").innerHTML = `<div class="test-result"><h2>${isUsageSpeed ? "例文・熟語 高速周回 完了" : "全文暗唱 完了"}</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-grid"><div><strong>${counts.circle}</strong>${isUsageSpeed ? "即答" : "○"}</div><div><strong>${counts.triangle}</strong>${isUsageSpeed ? "怪しい" : "△"}</div><div><strong>${counts.cross}</strong>${isUsageSpeed ? "知らない" : "×"}</div></div><p class="meta">${isUsageSpeed ? "「知らない」「怪しい」は同じ周回内で再出題しました。" : "△・×は同じ周回内で○になるまで再出題しました。別の周回でもう一度○になると定着です。"}</p><div class="actions"><button class="primary" data-recall-action="repeat">もう一周</button><button class="soft" data-recall-action="return">教材へ戻る</button></div></div>`;
           return;
         }
         const item = currentRecallItem();
         if (!item) return;
+        const isUsageSpeed = session.source === "usage" && session.mode === "speed";
         const total = session.itemIds.length;
         const completed = Math.max(0, total - new Set(session.queue).size);
-        $("recallContent").innerHTML = `<div class="recall-head"><span>${session.source === "memory" ? "暗記構文" : item.type === "phrase" ? "熟語" : "例文"}</span><span>未完了 ${session.queue.length} / 初回${total}件</span></div><div class="test-progressbar"><span style="width:${total ? completed / total * 100 : 0}%"></span></div><article class="recall-card"><div class="recall-prompt-label">日本語から英語全文を暗唱</div><div class="recall-japanese">${escapeHtml(item.japanese)}</div>${session.answerVisible ? `<div class="recall-answer">${escapeHtml(item.english)}</div><div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="言えなかった">×</button><button class="rating triangle" data-recall-rating="triangle" aria-label="一部ミス">△</button><button class="rating circle" data-recall-rating="circle" aria-label="完全に言えた">○</button></div>` : `<button class="primary reveal-answer" data-recall-action="reveal">答えを表示</button>`}</article><button class="soft" data-recall-action="abort">終了</button>`;
+        const ratings = isUsageSpeed
+          ? `<div class="recall-ratings speed-recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="知らない">知らない</button><button class="rating triangle" data-recall-rating="triangle" aria-label="怪しい">怪しい</button><button class="rating circle" data-recall-rating="circle" aria-label="即答">即答</button></div>`
+          : `<div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="言えなかった">×</button><button class="rating triangle" data-recall-rating="triangle" aria-label="一部ミス">△</button><button class="rating circle" data-recall-rating="circle" aria-label="完全に言えた">○</button></div>`;
+        $("recallContent").innerHTML = `<div class="recall-head"><span>${isUsageSpeed ? "例文・熟語・高速周回" : session.source === "memory" ? "暗記構文" : item.type === "phrase" ? "熟語" : "例文"}</span><span>未完了 ${session.queue.length} / 初回${total}件</span></div><div class="test-progressbar"><span style="width:${total ? completed / total * 100 : 0}%"></span></div><article class="recall-card"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${isUsageSpeed ? usageAudioHtml(range, item, "recall") : ""}<div class="recall-prompt-label">${isUsageSpeed ? "日本語を見て英文を即答" : "日本語から英語全文を暗唱"}</div><div class="recall-japanese">${escapeHtml(item.japanese)}</div>${session.answerVisible ? `<div class="recall-answer">${escapeHtml(item.english)}</div>${ratings}` : `<button class="primary reveal-answer" data-recall-action="reveal">${isUsageSpeed ? "英文を表示" : "答えを表示"}</button>`}</article><button class="soft" data-recall-action="abort">終了</button>`;
+        if (isUsageSpeed) autoPlayUsageLinkedWord(range, item, `usage-speed:${session.id}:${session.index}:${item.id}`);
       }
 
       function rateCurrentRecall(rating) {
@@ -1120,6 +1241,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       }
 
       function leaveRecall() {
+        stopPreviewAudio();
+        lastAutoSpokenUsageKey = "";
         state.recallSession = null;
         hideForRecall(false);
         switchTab("ranges");
@@ -2028,8 +2151,15 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         pause.textContent = playbackState.paused ? "再開" : "一時停止";
         pause.disabled = !playbackState.active;
         const word = findWord(playbackState.currentWordId);
-        $("playbackDockWord").textContent = word?.word || "連続再生";
+        const extra = playbackState.phase === "reviewing" ? Number(state.settings.usageReviewExtraSeconds) || 0 : 0;
+        $("playbackDockWord").textContent = word ? `${word.word}${extra ? `・例文熟語 +${extra}秒` : ""}` : "連続再生";
         $("playbackDockProgress").textContent = playbackState.active ? `${Math.min(playbackState.currentIndex + 1, playbackState.wordIds.length)} / ${playbackState.wordIds.length}` : "0 / 0";
+      }
+
+      function setContinuousUsageOpen(wordId = "") {
+        document.querySelectorAll("details.linked-usage[data-linked-usage-word]").forEach(details => {
+          details.open = Boolean(wordId && details.dataset.linkedUsageWord === wordId);
+        });
       }
 
       function stopContinuousPlayback() {
@@ -2049,6 +2179,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         playbackState.currentWordId = "";
         playbackState.paused = false;
         playbackState.phase = "idle";
+        setContinuousUsageOpen();
         stopPreviewAudio();
         updatePlaybackControls();
       }
@@ -2068,7 +2199,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         if (playbackState.phase === "playing" && playbackState.currentAudio?.src) {
           playbackState.currentAudio.play().catch(() => scheduleNextContinuousWord());
         } else {
-          playContinuousWord();
+          scheduleNextContinuousWord();
         }
       }
 
@@ -2094,7 +2225,9 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         if (!playbackState.active || playbackState.paused) return;
         while (playbackState.currentIndex < playbackState.wordIds.length) {
           const word = findWord(playbackState.wordIds[playbackState.currentIndex]);
-          if (word?.audioUrl) {
+          const officialAudioUrl = word ? officialAudioUrlForWord(word) : "";
+          if (word && officialAudioUrl) {
+            setContinuousUsageOpen(word.id);
             playbackState.currentWordId = word.id;
             playbackState.phase = "playing";
             rememberWord(word.id);
@@ -2102,7 +2235,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
             const audio = playbackState.currentAudio;
             audio.onended = scheduleNextContinuousWord;
             audio.onerror = scheduleNextContinuousWord;
-            audio.src = word.audioUrl;
+            audio.src = officialAudioUrl;
             audio.currentTime = 0;
             audio.play().catch(() => {
               if (isFirst) {
@@ -2123,24 +2256,29 @@ window.runStorageSelfCheck = runStorageSelfCheck;
 
       function scheduleNextContinuousWord() {
         if (!playbackState.active) return;
-        playbackState.phase = "waiting";
         if (playbackState.timerId) return;
         if (playbackState.currentAudio) {
           playbackState.currentAudio.onended = null;
           playbackState.currentAudio.onerror = null;
         }
-        playbackState.currentIndex++;
-        if (playbackState.currentIndex >= playbackState.wordIds.length) {
-          stopContinuousPlayback();
-          toast("連続再生が完了しました。");
-          return;
-        }
+        const range = state.ranges.find(item => item.id === playbackState.rangeId);
+        const usageCount = linkedUsageItemsForWord(range, playbackState.currentWordId).length;
+        const extraSeconds = usageCount ? Number(state.settings.usageReviewExtraSeconds) || 0 : 0;
+        const delaySeconds = (Number(state.settings.playbackInterval) || 2) + extraSeconds;
+        const nextIndex = playbackState.currentIndex + 1;
+        playbackState.phase = extraSeconds ? "reviewing" : "waiting";
         updatePlaybackControls();
         if (playbackState.paused) return;
         playbackState.timerId = setTimeout(() => {
           playbackState.timerId = null;
+          if (nextIndex >= playbackState.wordIds.length) {
+            stopContinuousPlayback();
+            toast("連続再生が完了しました。");
+            return;
+          }
+          playbackState.currentIndex = nextIndex;
           playContinuousWord();
-        }, state.settings.playbackInterval * 1000);
+        }, delaySeconds * 1000);
       }
 
       function findWord(wordId) {
@@ -2450,6 +2588,10 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           state.settings.playbackInterval = Number($("playbackInterval").value) || 2;
           save(false);
         });
+        $("usageReviewExtraSeconds").addEventListener("change", () => {
+          state.settings.usageReviewExtraSeconds = Number($("usageReviewExtraSeconds").value) || 0;
+          save(false);
+        });
         $("continuousStart").addEventListener("click", startContinuousPlayback);
         $("continuousStop").addEventListener("click", stopContinuousPlayback);
         $("playbackPause").addEventListener("click", toggleContinuousPause);
@@ -2462,6 +2604,9 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           const last = cards[cards.length - 1];
           last?.scrollIntoView({ behavior: "smooth", block: "end" });
         });
+        $("startUsageStudy").addEventListener("click", startUsageStudy);
+        $("startWordSpeed").addEventListener("click", startSpeedReview);
+        $("startUsageSpeed").addEventListener("click", startUsageSpeedReview);
         $("startSelectedMode").addEventListener("click", startSelectedLearningMode);
         $("testContent").addEventListener("click", event => {
           const session = state.activeTest;
@@ -2491,6 +2636,14 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           if (Date.now() < speedSwipeHandledUntil) return;
           const action = event.target.closest("[data-speed-action]")?.dataset.speedAction;
           if (action === "audio") return playTestAudio(speedReviewWord());
+          if (action === "meaning") {
+            state.speedMeaningVisible = !state.speedMeaningVisible;
+            return renderSpeedReview();
+          }
+          if (action === "usage") {
+            state.speedUsageVisible = !state.speedUsageVisible;
+            return renderSpeedReview();
+          }
           if (action === "abort") return showModal(`<h2>高速周回を終了しますか？</h2><p>ここまでの即答・怪しい・知らないの判定は保存済みです。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveSpeedReview);
           if (action === "return") return leaveSpeedReview();
           if (action === "repeat") return restartSpeedReview();
@@ -2547,9 +2700,23 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           if (action === "abort") return showModal(`<h2>スペル確認を終了しますか？</h2><p>回答済みの履歴は保存し、未回答は残します。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, finishPartialSpellingReview);
         });
         $("recallContent").addEventListener("click", event => {
+          const studyAction = event.target.closest("[data-study-action]")?.dataset.studyAction;
+          if (studyAction === "audio") {
+            const session = state.usageStudySession;
+            const range = state.ranges.find(item => item.id === session?.rangeId);
+            return playUsageLinkedWordAudio(range, currentUsageStudyItem());
+          }
+          if (studyAction === "repeat") return startUsageStudy();
+          if (studyAction === "return") return leaveUsageStudy();
+          if (studyAction === "abort") return showModal(`<h2>学習モードを終了しますか？</h2><p>このモードでは採点や定着履歴を記録していません。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveUsageStudy);
           const rating = event.target.closest("[data-recall-rating]")?.dataset.recallRating;
           if (rating) return rateCurrentRecall(rating);
           const action = event.target.closest("[data-recall-action]")?.dataset.recallAction;
+          if (action === "audio") {
+            const session = state.recallSession;
+            const range = state.ranges.find(item => item.id === session?.rangeId);
+            return playUsageLinkedWordAudio(range, currentRecallItem());
+          }
           if (action === "reveal") {
             state.recallSession.answerVisible = true;
             return renderRecall();
@@ -2560,6 +2727,37 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           }
           if (action === "return") return leaveRecall();
           if (action === "abort") return showModal(`<h2>全文暗唱を終了しますか？</h2><p>ここまでの○・△・×は保存されています。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
+        });
+        let usageStudyPointerStart = null;
+        $("recallContent").addEventListener("pointerdown", event => {
+          const card = event.target.closest("[data-study-card]");
+          if (!card || !state.usageStudySession) return;
+          usageStudyPointerStart = { x: event.clientX, y: event.clientY, card };
+        });
+        $("recallContent").addEventListener("pointermove", event => {
+          if (!usageStudyPointerStart) return;
+          const dx = Math.min(0, event.clientX - usageStudyPointerStart.x);
+          const dy = event.clientY - usageStudyPointerStart.y;
+          if (Math.abs(dx) <= Math.abs(dy)) return;
+          usageStudyPointerStart.card.style.transform = `translateX(${dx}px) rotate(${dx / 35}deg)`;
+          usageStudyPointerStart.card.style.opacity = String(Math.max(0.35, 1 + dx / 360));
+        });
+        $("recallContent").addEventListener("pointerup", event => {
+          if (!usageStudyPointerStart) return;
+          const { x, y, card } = usageStudyPointerStart;
+          usageStudyPointerStart = null;
+          const dx = event.clientX - x;
+          const dy = event.clientY - y;
+          card.style.transform = "";
+          card.style.opacity = "";
+          if (dx <= -60 && Math.abs(dx) > Math.abs(dy)) advanceUsageStudy();
+        });
+        $("recallContent").addEventListener("pointercancel", () => {
+          if (usageStudyPointerStart?.card) {
+            usageStudyPointerStart.card.style.transform = "";
+            usageStudyPointerStart.card.style.opacity = "";
+          }
+          usageStudyPointerStart = null;
         });
         document.addEventListener("keydown", event => {
           if (!state.speedSession || state.speedSession.finished || event.repeat) return;
@@ -2601,10 +2799,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
               confirmFetch(range, word.id, "collegiate");
             }
           }
-        });
-        $("usageList").addEventListener("click", event => {
-          const button = event.target.closest("[data-usage-action='edit-links']");
-          if (button) editUsageLinks(button.dataset.id);
         });
         $("exportJson").addEventListener("click", exportJson);
         $("exportCsv").addEventListener("click", exportCsv);
