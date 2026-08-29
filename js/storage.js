@@ -65,6 +65,7 @@
       definitionLimit: Number(source.definitionLimit) === 3 ? 3 : 2,
       studyFilter: ["all", "unrated", "hard", "known"].includes(source.studyFilter) ? source.studyFilter : "all",
       playbackInterval: [1, 2, 3].includes(Number(source.playbackInterval)) ? Number(source.playbackInterval) : 2,
+      usageReviewExtraSeconds: [0, 3, 5, 8, 10, 15].includes(Number(source.usageReviewExtraSeconds)) ? Number(source.usageReviewExtraSeconds) : 5,
       mondayEndTime: safeTime(source.mondayEndTime),
       wednesdayEndTime: safeTime(source.wednesdayEndTime),
       fridayEndTime: safeTime(source.fridayEndTime)
