@@ -338,6 +338,7 @@
       id: `recall_${now.toString(36)}`,
       source: options.source || "usage",
       mode: options.mode || "all",
+      purpose: options.purpose || "recall",
       type: options.type || "all",
       itemIds: selected.map(item => item.id),
       queue: selected.map(item => item.id),
@@ -366,8 +367,10 @@
     stats.lastRating = rating;
     stats.lastReviewedAt = new Date(now).toISOString();
     session.assessments.push({ itemId: item.id, rating, reviewedAt: stats.lastReviewedAt });
-    if (rating === "cross") session.queue.splice(Math.min(3, session.queue.length), 0, item.id);
-    else if (rating === "triangle") session.queue.push(item.id);
+    if (session.purpose !== "test") {
+      if (rating === "cross") session.queue.splice(Math.min(3, session.queue.length), 0, item.id);
+      else if (rating === "triangle") session.queue.push(item.id);
+    }
     session.index++;
     session.answerVisible = false;
     session.finished = session.queue.length === 0;

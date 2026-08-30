@@ -1,14 +1,14 @@
-const CACHE_NAME = "mw-pronunciation-pwa-v49";
+const CACHE_NAME = "mw-pronunciation-pwa-v50";
 const CACHE_PREFIX = "mw-pronunciation-pwa-";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./styles.css?v=49",
-  "./js/storage.js?v=49",
-  "./js/content.js?v=49",
-  "./js/app.js?v=49",
-  "./js/test.js?v=49",
-  "./js/ux-overrides.js?v=49",
+  "./styles.css?v=50",
+  "./js/storage.js?v=50",
+  "./js/content.js?v=50",
+  "./js/app.js?v=50",
+  "./js/test.js?v=50",
+  "./js/ux-overrides.js?v=50",
   "./manifest.webmanifest",
   "./icon.png"
 ];

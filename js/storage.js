@@ -164,6 +164,7 @@
         word.audioUrl = safeHttpUrl(word.audioUrl, "merriam-webster.com");
         word.audioId = clean(word.audioId).replace(/[^A-Za-z0-9_-]+/g, "").slice(0, 100);
         word.pronunciation = clean(word.pronunciation).slice(0, 300);
+        word.syllabifiedHeadword = clean(word.syllabifiedHeadword).slice(0, 150);
         word.partOfSpeech = clean(word.partOfSpeech).slice(0, 100);
         word.dictionarySource = ["learners", "collegiate"].includes(word.dictionarySource) ? word.dictionarySource : "";
         word.definitions = uniqueStrings(word.definitions).map(item => item.slice(0, 2000)).slice(0, 10);
@@ -176,6 +177,7 @@
             id: safeId(variant.id, `pron_${rangeIndex + 1}_${wordIndex + 1}`, usedVariantIds, variantIndex),
             dictionarySource: ["learners", "collegiate"].includes(variant.dictionarySource) ? variant.dictionarySource : "",
             headword: clean(variant.headword).slice(0, 100),
+            syllabifiedHeadword: clean(variant.syllabifiedHeadword).slice(0, 150),
             partOfSpeech: clean(variant.partOfSpeech).slice(0, 100),
             label: clean(variant.label).slice(0, 200),
             pronunciation: clean(variant.pronunciation).slice(0, 300),

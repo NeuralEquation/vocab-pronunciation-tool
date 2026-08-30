@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=49">
+  <link rel="stylesheet" href="styles.css?v=50">
 </head>
 <body>
   <div class="app">
@@ -21,11 +21,14 @@
           <h1>Merriam-Webster 発音確認</h1>
         </div>
       </div>
-      <div class="stats">
-        <div class="stat"><strong id="usageToday">0</strong>今日のAPI</div>
-        <div class="stat"><strong id="storageSize">0KB</strong>保存容量</div>
-        <div class="stat"><strong id="rangeCount">0</strong>範囲</div>
-      </div>
+      <div class="range-count-summary"><strong id="rangeCount">0</strong> 範囲</div>
+      <details class="app-data-summary">
+        <summary>データ情報</summary>
+        <div class="stats">
+          <div class="stat"><strong id="usageToday">0</strong>今日のAPI</div>
+          <div class="stat"><strong id="storageSize">0KB</strong>保存容量</div>
+        </div>
+      </details>
       <div id="storageWarning"></div>
     </header>
 
@@ -183,7 +186,7 @@
             <h2 id="openRangeTitle">単語確認</h2>
             <div class="meta" id="openRangeMeta"></div>
           </div>
-          <button class="soft" id="closeWords">閉じる</button>
+          <button class="session-close" id="closeWords" aria-label="教材を閉じる">×</button>
         </div>
         <div class="learning-toolbar" id="learningControls">
           <div class="primary-mode-grid" id="vocabPrimaryModes">
@@ -201,13 +204,32 @@
                 <button class="speed-start" id="startUsageSpeed">例文・熟語</button>
               </div>
             </section>
+            <section class="mode-card test-study-mode">
+              <div><strong>確認テスト</strong><span>覚えているかを一度ずつ確認</span></div>
+              <div class="mode-card-actions">
+                <button class="primary" id="startWordTestMenu">単語</button>
+                <button class="primary" id="startUsageTest">例文・熟語</button>
+              </div>
+            </section>
+            <section class="mode-card finish-study-mode">
+              <div><strong>仕上げ</strong><span>未定着だけを満点まで確認</span></div>
+              <div class="mode-card-actions finish-mode-actions">
+                <button class="warn" id="startWordFinishMenu">単語</button>
+                <button class="warn" id="startUsageFinish">例文・熟語</button>
+                <button class="soft" id="startSpellingFinish">スペル</button>
+              </div>
+            </section>
           </div>
-          <div id="confirmationModeControls">
-            <label for="testMode" id="testModeLabel">確認モード</label>
-            <div class="mode-start-row">
-              <select id="testMode" aria-label="確認モード"></select>
-              <button class="primary" id="startSelectedMode">開始</button>
-            </div>
+          <div class="primary-mode-grid hidden" id="memoryPrimaryModes">
+            <section class="mode-card">
+              <div><strong>暗記構文</strong><span>日本語から英語全文を暗唱</span></div>
+              <div class="mode-card-actions memory-mode-actions">
+                <button class="primary" data-memory-mode="unsettled">未定着のみ</button>
+                <button class="soft" data-memory-mode="all">全範囲</button>
+                <button class="soft" data-memory-mode="random5">ランダム5文</button>
+                <button class="soft" data-memory-mode="random10">ランダム10文</button>
+              </div>
+            </section>
           </div>
           <details class="learning-options" id="vocabLearningOptions">
             <summary>表示・連続再生</summary>
@@ -251,25 +273,25 @@
         <div id="usageList"></div>
       </section>
 
-      <section class="panel hidden test-panel" id="testPanel" style="grid-column:1/-1">
-        <div id="testContent"></div>
-      </section>
-
-      <section class="panel hidden speed-panel" id="speedPanel" style="grid-column:1/-1">
-        <div id="speedContent"></div>
-      </section>
-
-      <section class="panel hidden spelling-panel" id="spellingPanel" style="grid-column:1/-1">
-        <div id="spellingContent"></div>
-      </section>
-
-      <section class="panel hidden recall-panel" id="recallPanel" style="grid-column:1/-1">
-        <div id="recallContent"></div>
-      </section>
     </main>
     <div class="jump-fab" id="jumpFab">
       <button class="soft" id="jumpTop" aria-label="ページ上部へ">↑</button>
       <button class="soft" id="jumpBottom" aria-label="ページ下部へ">↓</button>
+    </div>
+  </div>
+
+  <div class="study-session-layer hidden" id="studySessionLayer" role="dialog" aria-modal="true" aria-label="学習セッション">
+    <div class="study-session-shell">
+      <div class="study-session-toolbar">
+        <strong id="studySessionTitle">学習中</strong>
+        <button class="session-close" id="studySessionClose" aria-label="学習を終了">×</button>
+      </div>
+      <div class="study-session-body">
+        <section class="session-panel hidden test-panel" id="testPanel"><div id="testContent"></div></section>
+        <section class="session-panel hidden speed-panel" id="speedPanel"><div id="speedContent"></div></section>
+        <section class="session-panel hidden spelling-panel" id="spellingPanel"><div id="spellingContent"></div></section>
+        <section class="session-panel hidden recall-panel" id="recallPanel"><div id="recallContent"></div></section>
+      </div>
     </div>
   </div>
 
@@ -284,10 +306,10 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=49"></script>
-  <script defer src="js/content.js?v=49"></script>
-  <script defer src="js/test.js?v=49"></script>
-  <script defer src="js/app.js?v=49"></script>
-  <script defer src="js/ux-overrides.js?v=49"></script>
+  <script defer src="js/storage.js?v=50"></script>
+  <script defer src="js/content.js?v=50"></script>
+  <script defer src="js/test.js?v=50"></script>
+  <script defer src="js/app.js?v=50"></script>
+  <script defer src="js/ux-overrides.js?v=50"></script>
 </body>
 </html>
