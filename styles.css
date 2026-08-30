@@ -405,8 +405,10 @@ body.playback-active .jump-fab { bottom:112px; }
       flex: 1 1 auto;
     }
     .word-meaning { margin-top:3px; color:var(--accent-2); font-size:1.02rem; font-weight:750; overflow-wrap:anywhere; }
-    .accent-word { letter-spacing:.01em; }
-    .accent-word .stress-primary { color:#fff; background:#2b72b5; border-radius:.28em; padding:0 .08em; box-shadow:0 .12em 0 rgba(67,214,160,.55); }
+    .accent-word { display:inline-block; padding-top:.08em; letter-spacing:.01em; }
+    .accent-word .stress-primary { color:#fff; font-weight:900; border-bottom:.12em solid rgba(67,214,160,.8); }
+    .stress-vowel { position:relative; display:inline-block; color:transparent; }
+    .stress-vowel::after { content:attr(data-accented); position:absolute; inset:0; color:var(--accent-2); font:inherit; line-height:inherit; pointer-events:none; }
     .accent-variant { margin-top:2px; font-size:1.05rem; font-weight:800; }
     .pron-line {
       display: flex;
