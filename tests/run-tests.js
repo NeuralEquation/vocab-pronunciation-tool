@@ -210,6 +210,26 @@ it("preserves recall lapse semantics across same-day retry and later-day recover
   assert.equal(content.isSettled(item), true);
 });
 
+it("uses existing recall history while keeping usage tests one-pass and finish reviews retryable", () => {
+  const testItems = [{ id: "example" }, { id: "phrase" }];
+  const testSession = content.createRecallSession(testItems, { mode: "test15", source: "usage", purpose: "test" }, seeded(1), day("2026-08-18"));
+  const firstTestItem = testItems.find(item => item.id === testSession.queue[0]);
+  content.rateRecallItem(testSession, firstTestItem, "cross", day("2026-08-18") + 1000);
+  assert.equal(testSession.queue.includes(firstTestItem.id), false, "a confirmation test asks each item once");
+  const secondTestItem = testItems.find(item => item.id === testSession.queue[0]);
+  content.rateRecallItem(testSession, secondTestItem, "triangle", day("2026-08-18") + 2000);
+  assert.equal(testSession.finished, true);
+  assert.equal(firstTestItem.recallStats.lastRating, "cross", "the existing recall history records test results");
+
+  const finishItem = { id: "finish" };
+  const finishSession = content.createRecallSession([finishItem], { mode: "unsettled", source: "usage", purpose: "finish" }, seeded(2), day("2026-08-19"));
+  content.rateRecallItem(finishSession, finishItem, "cross", day("2026-08-19") + 1000);
+  assert.equal(finishSession.finished, false);
+  assert.equal(finishSession.queue.includes(finishItem.id), true, "finish review requeues an item that was not recalled");
+  content.rateRecallItem(finishSession, finishItem, "circle", day("2026-08-19") + 2000);
+  assert.equal(finishSession.finished, true);
+});
+
 it("sanitizes malformed storage, future schemas, IDs and references, and round-trips allowed data only", () => {
   assert.equal(storage.parseBackup(null).ok, false);
   assert.equal(storage.parseBackup("{").ok, false);
@@ -220,7 +240,7 @@ it("sanitizes malformed storage, future schemas, IDs and references, and round-t
     studyLog: { "2026-08-20": { attempts: 4, correct: 9, enToJa: { attempts: 3, correct: 9 } }, bad: { attempts: 9 } },
     ui: { selectedRangeId: "bad range" },
     ranges: [{ id: "bad range", rangeName: "A", testDate: "2026-08-22", words: [
-      { id: "same id", word: "record", meaningsJa: ["記録"], mwUrl: "javascript:alert(1)", audioUrl: "data:audio/mp3,bad", pronunciationVariants: [{ id: "bad id", audioUrl: "javascript:alert(1)" }, { id: "bad id" }], testStats: { enToJa: { confusedWith: { "same id": 2, missing: 4 } } } },
+      { id: "same id", word: "record", syllabifiedHeadword: "rec*ord", meaningsJa: ["記録"], mwUrl: "javascript:alert(1)", audioUrl: "data:audio/mp3,bad", pronunciationVariants: [{ id: "bad id", syllabifiedHeadword: "rec*ord", audioUrl: "javascript:alert(1)" }, { id: "bad id" }], testStats: { enToJa: { confusedWith: { "same id": 2, missing: 4 } } } },
       { id: "same id", word: "expense", meaningsJa: ["費用"] }
     ], usageItems: [{ id: "usage id", type: "example", english: "Keep a record.", japanese: "記録をつける。", linkedWordIds: ["same id", "missing"] }], testHistory: [{ wrongWordIds: ["same id", "missing"], total: 2, correct: 9 }] }]
   };
@@ -236,6 +256,8 @@ it("sanitizes malformed storage, future schemas, IDs and references, and round-t
   assert.equal(range.words[0].mwUrl, "");
   assert.equal(range.words[0].audioUrl, "");
   assert.equal(range.words[0].pronunciationVariants[0].audioUrl, "");
+  assert.equal(range.words[0].syllabifiedHeadword, "rec*ord");
+  assert.equal(range.words[0].pronunciationVariants[0].syllabifiedHeadword, "rec*ord");
   assert.equal(migrated.data.ui.selectedRangeId, range.id, "renamed range references are migrated");
   assert.equal(migrated.data.studyLog["2026-08-20"].correct, 4);
   assert.equal(migrated.data.settings.usageReviewExtraSeconds, 10);

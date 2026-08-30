@@ -556,8 +556,7 @@ function renderTestQuestion(session, range) {
     <div class="test-progressbar"><span style="width:${(session.index / session.questions.length) * 100}%"></span></div>
     <div class="test-prompt">${escapeHtml(prompt)}</div>
     ${session.direction === "enToJa" ? `<button class="soft test-replay" data-test-action="replay">もう一度聞く</button>` : ""}
-    <div class="test-choices">${question.choices.map((choice, i) => `<button class="test-choice" data-test-choice="${i}">${escapeHtml(choice.label)}</button>`).join("")}</div>
-    <button class="soft test-abort" data-test-action="abort">テストを中止</button>`;
+    <div class="test-choices">${question.choices.map((choice, i) => `<button class="test-choice" data-test-choice="${i}">${escapeHtml(choice.label)}</button>`).join("")}</div>`;
 }
 
 function answerTestQuestion(session, range, selectedPosition, now = Date.now()) {

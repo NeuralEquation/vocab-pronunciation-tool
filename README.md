@@ -119,7 +119,9 @@ The parser also accepts a six-column TSV fallback. It previews counts and blocks
 
 For **金曜の暗記構文**, paste TSV containing English full text and its Japanese translation (an optional source ID and label may precede them). Examples, phrases, and memorization sentences are recalled Japanese → complete English. After revealing the answer, rate it `○`, `△`, or `×`: `×` is requeued after a few items and `△` returns near the end. An item is settled only after `○` on two different calendar days and, after a lapse, a later-day `○`; same-day retries do not erase that boundary. This recall progress is separate from vocabulary tests and Speed Review.
 
-Examples and phrases are always handled together. **学習モード（初見用）** is an unrated, tap-to-advance pass that does not create study history. **例文・熟語の高速周回** keeps the existing recall history and ratings, and automatically plays the official pronunciation of the linked word when that audio is available. Notifications are dismissed with a tap.
+Examples and phrases are always handled together. **学習モード（初見用）** offers separate word and example/phrase passes; both are unrated, tap-to-advance sessions that do not create study history. **高速周回** remains a separate mode for words or examples/phrases. Example/phrase Speed Review keeps the existing recall history and ratings, and automatically plays the official pronunciation of the linked word when that audio is available. Notifications are dismissed with a tap.
+
+The main vocabulary menu is grouped by purpose: **学習モード**, **高速周回**, **確認テスト**, and **仕上げ**. Example/phrase confirmation asks each selected item once, while example/phrase finish selects unsettled items and requeues misses in the same session. Both write to the existing `recallStats`; they do not create a second history system.
 
 ## Tests, spelling, and readiness / テスト・スペル・準備判定
 
@@ -130,7 +132,7 @@ Vocabulary tests are direction-specific: **English → Japanese** and **Japanese
 
 Readiness is stricter than one high score. For every word, both test directions need evidence, correct success on at least two different local calendar days, a latest correct and non-hesitant/non-slow answer, no unresolved repeated choice confusion, a successful check within the last 14 days, and a later-day recovery after any wrong answer. The spelling check is also required. It asks the user to type English from the Japanese meaning and accepts only the headword or an explicitly supplied accepted form (`acceptedSpellings`, `acceptedForms`, or `spellingForms`). Typography is normalized for common width, apostrophe, and hyphen variants, but there is no fuzzy matching or typo correction. A spelling lapse likewise needs a correct answer on a later day. Example, phrase, and memorization recall also expires from test readiness when its latest successful evidence is older than 14 days.
 
-The range checklist reports unverified items, missing cross-day success, latest mistakes, slow/hesitant answers, repeated choice confusion, and spelling risk. **満点準備完了 / ready** means every applicable risk count is zero; it is a study rule, not a guarantee of a real examination result.
+The range checklist reports unverified items, missing cross-day success, latest mistakes, slow/hesitant answers, repeated choice confusion, and spelling risk. The normal screen shows only a short **危険 N語** or **未確認あり** summary; tap it to inspect the detailed reasons. **満点準備完了 / ready** means every applicable risk count is zero; it is a study rule, not a guarantee of a real examination result.
 
 **Speed Review / 高速周回** records per-word `speedStats` and keeps `unknown` and `unsure` cards in the next round until they are rated `instant`. These ratings are persisted and directly feed readiness risk and normal-test question priority, without changing the user's manual `hard` flag. They do **not** write ordinary `testStats`, alter a 15-question test score, or replace the direction-specific cross-day test evidence.
 
@@ -138,7 +140,7 @@ During continuous word playback, linked examples and phrases are expanded for th
 
 ## Pronunciation and speech / 発音
 
-Official Merriam-Webster audio is preferred. In Speed Review and test-related playback, when official audio is unavailable, the app can use the device's English Web Speech voice instead; it does not fabricate an official audio URL. Playback actions are started from a user gesture for iOS compatibility, and leaving a learning mode stops queued speech and current preview playback to avoid overlap.
+Official Merriam-Webster audio is preferred. When dictionary data includes reliable syllable and primary-stress markers, the word spelling highlights the stressed syllable directly; otherwise it deliberately falls back to the ordinary spelling instead of guessing. In Speed Review and test-related playback, when official audio is unavailable, the app can use the device's English Web Speech voice instead; it does not fabricate an official audio URL. Playback actions are started from a user gesture for iOS compatibility, and leaving a learning mode stops queued speech and current preview playback to avoid overlap.
 
 Dictionary response-shape, network, and HTTP errors should be diagnosed without displaying the raw API key. If cached dictionary data no longer matches the current cache schema, use the app's re-fetch control after checking the range and selected dictionary type.
 

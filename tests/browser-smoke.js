@@ -55,8 +55,31 @@ async function answerTest(page, { firstWrong = false } = {}) {
 }
 
 async function startMode(page, value) {
-  await page.locator("#testMode").selectOption(value);
-  await page.locator("#startSelectedMode").click();
+  const wordTests = {
+    "word-enToJa-normal": "en-normal",
+    "word-jaToEn-normal": "ja-normal",
+    "word-enToJa-wrong": "en-wrong",
+    "word-jaToEn-wrong": "ja-wrong"
+  };
+  const readyTests = {
+    "ready-enToJa": "en-ready",
+    "ready-jaToEn": "ja-ready"
+  };
+  if (wordTests[value]) {
+    await page.locator("#startWordTestMenu").click();
+    await page.locator(`[data-learning-choice='${wordTests[value]}']`).click();
+    return;
+  }
+  if (readyTests[value]) {
+    await page.locator("#startWordFinishMenu").click();
+    await page.locator(`[data-learning-choice='${readyTests[value]}']`).click();
+    return;
+  }
+  if (value === "spelling") {
+    await page.locator("#startSpellingFinish").click();
+    return;
+  }
+  throw new Error(`unknown study mode: ${value}`);
 }
 
 async function returnFromTest(page) {
@@ -100,7 +123,13 @@ async function main() {
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).locator("[data-action='open']").click();
     await page.locator("#wordPanel:not(.hidden)").waitFor();
-    assert.match(await page.locator(".readiness-state").first().textContent(), /未検証|危険/);
+    assert.match(await page.locator(".readiness-state").first().textContent(), /未確認|危険/);
+    assert.equal(await page.locator(".readiness-detail-grid").count(), 0, "risk reasons stay collapsed until requested");
+    await page.locator(".readiness-state").first().click();
+    await page.locator("#modalRoot .readiness-detail-grid").waitFor();
+    await page.locator("#modalRoot [data-modal-cancel]").click();
+    assert.match(await page.locator(".word-card .word-meaning").first().textContent(), /意味\d+/);
+    assert.equal(await page.locator(".word-card details.technical-details").first().getAttribute("open"), null);
     const mobileScreenshotPath = path.join(os.tmpdir(), "mw-browser-smoke-mobile.png");
     await page.screenshot({ path: mobileScreenshotPath });
 
@@ -121,6 +150,15 @@ async function main() {
 
     const studyStatusBeforeSpeed = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words.map(word => word.studyStatus));
     await page.locator("#startWordSpeed").click();
+    await page.locator("#studySessionLayer:not(.hidden)").waitFor();
+    const sessionLayout = await page.locator("#studySessionLayer").evaluate(element => ({
+      position: getComputedStyle(element).position,
+      top: element.getBoundingClientRect().top,
+      closeVisible: Boolean(document.querySelector("#studySessionClose")?.offsetParent)
+    }));
+    assert.equal(sessionLayout.position, "fixed");
+    assert.ok(Math.abs(sessionLayout.top) <= 1);
+    assert.equal(sessionLayout.closeVisible, true);
     assert.equal(await page.locator("[data-speed-action='meaning']").count(), 1);
     await page.locator("[data-speed-action='meaning']").click();
     assert.equal(await page.locator(".speed-meaning").count(), 1);
@@ -160,13 +198,11 @@ async function main() {
     assert.match(await page.locator("#spellingContent .result-score").textContent(), /14\s*\/\s*15/);
     await page.locator("[data-spelling-action='return']").click();
 
-    const usageModeOptions = await page.locator("#testMode option").evaluateAll(options =>
-      options.map(option => ({ value: option.value, label: option.textContent.trim() }))
-    );
-    assert.equal(usageModeOptions.some(option => option.value.startsWith("usage-")), false);
     assert.equal(await page.locator("#startUsageStudy").count(), 1);
     assert.equal(await page.locator("#startWordStudy").count(), 1);
     assert.equal(await page.locator("#startUsageSpeed").count(), 1);
+    assert.equal(await page.locator("#startUsageTest").count(), 1);
+    assert.equal(await page.locator("#startUsageFinish").count(), 1);
     assert.equal(await page.getByText("関連単語を編集", { exact: true }).count(), 0);
 
     const usageHistoryBeforeStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
@@ -183,6 +219,25 @@ async function main() {
     await page.locator("[data-study-action='return']").click();
     const usageHistoryAfterStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
     assert.deepEqual(usageHistoryAfterStudy, usageHistoryBeforeStudy);
+
+    await page.locator("#startUsageTest").click();
+    assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・確認テスト/);
+    for (const rating of ["cross", "triangle"]) {
+      await page.locator("[data-recall-action='reveal']").click();
+      await page.locator(`[data-recall-rating='${rating}']`).click();
+    }
+    await page.locator("#recallContent .test-result").waitFor();
+    assert.match(await page.locator("#recallContent").textContent(), /各項目を一度ずつ確認/);
+    await page.locator("[data-recall-action='return']").click();
+
+    await page.locator("#startUsageFinish").click();
+    assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・仕上げ/);
+    await page.locator("[data-recall-action='reveal']").click();
+    await page.locator("[data-recall-rating='cross']").click();
+    assert.equal(await page.locator("#recallContent .test-result").count(), 0, "finish mode requeues missed items");
+    await page.locator("#studySessionClose").click();
+    await page.locator("#modalRoot [data-modal-confirm]").click();
+    await page.locator("#wordPanel:not(.hidden)").waitFor();
 
     await page.locator("#startUsageSpeed").click();
     assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・高速周回[\s\S]*初回2件/);
@@ -231,7 +286,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v49"));
+    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v50"));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();

@@ -27,13 +27,14 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
       const demoData = {
-        example: { prs: "ɪgˈzæmpəl", sound: "exampl01", fl: "noun", defs: ["something chosen to show what a group is like", "a person or way of behaving that should be copied"] },
-        audio: { prs: "ˈɑːdiˌoʊ", sound: "audio001", fl: "adjective", defs: ["relating to sound that is heard or recorded"] },
-        pronunciation: { prs: "prəˌnʌnsiˈeɪʃən", sound: "pronun02", fl: "noun", defs: ["the way in which a word or name is pronounced"] },
-        apple: { prs: "ˈæpəl", sound: "apple001", fl: "noun", defs: ["a round fruit with red, yellow, or green skin and firm white flesh"] },
-        science: { prs: "ˈsaɪəns", sound: "scienc02", fl: "noun", defs: ["knowledge about or study of the natural world based on facts learned through experiments"] },
-        diligent: { prs: "ˈdɪlɪdʒənt", sound: "dilige01", fl: "adjective", defs: ["showing care and effort in your work or duties"] },
+        example: { hw: "ex*am*ple", prs: "ɪgˈzæmpəl", sound: "exampl01", fl: "noun", defs: ["something chosen to show what a group is like", "a person or way of behaving that should be copied"] },
+        audio: { hw: "au*dio", prs: "ˈɑːdiˌoʊ", sound: "audio001", fl: "adjective", defs: ["relating to sound that is heard or recorded"] },
+        pronunciation: { hw: "pro*nun*ci*a*tion", prs: "prəˌnʌnsiˈeɪʃən", sound: "pronun02", fl: "noun", defs: ["the way in which a word or name is pronounced"] },
+        apple: { hw: "ap*ple", prs: "ˈæpəl", sound: "apple001", fl: "noun", defs: ["a round fruit with red, yellow, or green skin and firm white flesh"] },
+        science: { hw: "sci*ence", prs: "ˈsaɪəns", sound: "scienc02", fl: "noun", defs: ["knowledge about or study of the natural world based on facts learned through experiments"] },
+        diligent: { hw: "dil*i*gent", prs: "ˈdɪlɪdʒənt", sound: "dilige01", fl: "adjective", defs: ["showing care and effort in your work or duties"] },
         record: {
+          hw: "rec*ord",
           defs: ["a written account of something", "to write down information for future use"],
           variants: [
             { prs: "ˈrekərd", sound: "record01", fl: "noun", label: "" },
@@ -79,6 +80,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       let lastAutoSpokenSpeedKey = "";
       let lastAutoSpokenUsageKey = "";
       let lastAutoSpokenStudyWordKey = "";
+      let sessionReturnFocus = null;
 
       const $ = (id) => document.getElementById(id);
 
@@ -165,6 +167,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           pronunciation: "",
           audioId: "",
           audioUrl: "",
+          syllabifiedHeadword: "",
           pronunciationVariants: [],
           mwUrl: dictionaryUrl(normalized),
           dictionarySource: "",
@@ -213,6 +216,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           id: variant?.id || uid("pron"),
           dictionarySource: variant?.dictionarySource || fallback.dictionarySource || "",
           headword: cleanHeadword(variant?.headword || fallback.headword || ""),
+          syllabifiedHeadword: String(variant?.syllabifiedHeadword || fallback.syllabifiedHeadword || variant?.headword || fallback.headword || "").trim(),
           partOfSpeech: variant?.partOfSpeech || fallback.partOfSpeech || "",
           label: String(variant?.label || fallback.label || ""),
           pronunciation: String(variant?.pronunciation || ""),
@@ -248,6 +252,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         word.pronunciationVariants = dedupePronunciationVariants(word.pronunciationVariants || []);
         const preferred = preferredPronunciationVariant(word, reference);
         word.pronunciation = preferred?.pronunciation || "";
+        word.syllabifiedHeadword = preferred?.syllabifiedHeadword || word.syllabifiedHeadword || "";
         word.audioId = preferred?.audioId || "";
         word.audioUrl = preferred?.audioUrl || "";
         word.partOfSpeech = preferred?.partOfSpeech || "";
@@ -353,12 +358,14 @@ window.runStorageSelfCheck = runStorageSelfCheck;
             }
             word.dictionarySource = word.dictionarySource || "";
             word.partOfSpeech = word.partOfSpeech || "";
+            word.syllabifiedHeadword = String(word.syllabifiedHeadword || "");
             word.pronunciationVariants = Array.isArray(word.pronunciationVariants) ? word.pronunciationVariants : [];
             if (!word.pronunciationVariants.length && (word.pronunciation || word.audioUrl || word.partOfSpeech)) {
               word.pronunciationVariants.push({
                 id: uid("pron"),
                 dictionarySource: word.dictionarySource || "",
                 headword: word.word || "",
+                syllabifiedHeadword: word.syllabifiedHeadword || word.word || "",
                 partOfSpeech: word.partOfSpeech || "",
                 label: "",
                 pronunciation: word.pronunciation || "",
@@ -568,10 +575,16 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const s = statsForRange(range);
         const readiness = readinessForRange(range);
         const days = Math.max(0, Math.ceil((new Date(`${range.testDate}T00:00:00`) - new Date(`${localDateString(now)}T00:00:00`)) / 86400000));
-        return `<div class="plan-card"><strong>${label}: ${escapeHtml(range.rangeName || "無題の範囲")}</strong><div class="meta">${escapeHtml(range.testDate || "日付未設定")} / あと${days}日 / ${s.total}語</div><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div>`;
+        return `<div class="plan-card"><strong>${label}: ${escapeHtml(range.rangeName || "無題の範囲")}</strong><div class="meta">${escapeHtml(range.testDate || "日付未設定")} / あと${days}日 / ${s.total}語</div>${readinessSummaryHtml(readiness, range.id)}</div>`;
       }
       function renderTodayStudy() {
         const now = new Date(), plan = learningPlan(now);
+        if (!plan.primary && !plan.memory) {
+          $("todayStudyPanel").classList.add("hidden");
+          $("todayStudyPanel").innerHTML = "";
+          return;
+        }
+        $("todayStudyPanel").classList.remove("hidden");
         const memoryStats = plan.memory ? contentStats(plan.memory) : null;
         $("todayStudyPanel").innerHTML = `<h3>次の小テストを満点まで仕上げる</h3><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">今日落とした項目は、次の範囲より先に確認します。</div>` : ""}${plan.memory ? `<div class="caution">暗記構文「${escapeHtml(plan.memory.rangeName)}」: 未定着 ${memoryStats.memoryUnsettled}/${memoryStats.memoryTotal}件</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "今日の取りこぼし" : "最優先", plan.primary, now)}${rangePlanHtml("次の範囲", plan.preview, now)}</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>危険単語を満点確認</button><button class="soft" id="startTodayNormal" ${plan.primary ? "" : "disabled"}>通常15問</button>${plan.memory ? `<button class="primary" id="startTodayMemory">暗記構文を始める</button>` : ""}</div>`;
         $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTestReadyReview($("todayDirection").value); });
@@ -602,14 +615,27 @@ window.runStorageSelfCheck = runStorageSelfCheck;
 
       function readinessLabel(readiness) {
         if (readiness.status === "safe") return "✓ 満点準備OK";
-        if (readiness.status === "risk") return `⚠ 危険 ${readiness.riskItems?.length || 0}語`;
-        return "未検証項目あり";
+        if (readiness.riskItems?.length) return `⚠ 危険 ${readiness.riskItems.length}語`;
+        return "未確認あり";
       }
 
       function readinessChecksHtml(readiness) {
         const checks = (readiness.checks || []).filter(check => check.count > 0);
         if (!checks.length) return "";
-        return `<div class="readiness-checks">${checks.map(check => `<span class="open">${escapeHtml(check.label)} ${check.count}</span>`).join("")}</div>`;
+        return `<div class="readiness-detail-grid">${checks.map(check => `<div class="readiness-detail-row"><span>${escapeHtml(check.label)}</span><strong>${check.count}</strong></div>`).join("")}</div>`;
+      }
+
+      function readinessSummaryHtml(readiness, rangeId = "") {
+        const label = readinessLabel(readiness);
+        if (readiness.status === "safe" || !rangeId) return `<div class="readiness-summary"><div class="readiness-state ${readiness.status}">${label}</div></div>`;
+        return `<div class="readiness-summary"><button type="button" class="readiness-state ${readiness.status}" data-readiness-open="${escapeHtml(rangeId)}">${label}</button></div>`;
+      }
+
+      function showReadinessDetails(rangeId) {
+        const range = state.ranges.find(item => item.id === rangeId);
+        if (!range) return;
+        const readiness = readinessForRange(range);
+        showModal(`<h2>${escapeHtml(readinessLabel(readiness))}</h2><p class="meta">${escapeHtml(range.rangeName || "無題の範囲")}の内訳です。学習判定は表示を閉じても維持されます。</p>${readinessChecksHtml(readiness) || `<div class="empty">未確認項目はありません。</div>`}<div class="actions"><button class="primary" data-modal-cancel>閉じる</button></div>`);
       }
 
       function renderRanges() {
@@ -637,26 +663,51 @@ window.runStorageSelfCheck = runStorageSelfCheck;
                 </div>
                 <span class="badge ${badgeClass}">${range.status}</span>
               </div>
-              <div class="meta">${isMemory ? `未定着 ${s.memoryUnsettled}/${s.memoryTotal}件` : `学習定着率 ${s.learningPct}% / API取得率 ${s.pct}%`}</div>${isMemory ? "" : `<div class="progress" aria-label="API取得率"><span style="width:${s.pct}%"></span></div>`}
-              <div class="readiness-summary">
-                <div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>
-                ${readinessChecksHtml(readiness)}
-              </div>
+              <div class="meta">${isMemory ? `未定着 ${s.memoryUnsettled}/${s.memoryTotal}件` : `学習定着率 ${s.learningPct}%`}</div>
+              ${readinessSummaryHtml(readiness, range.id)}
               <div class="mini-grid">
                 ${isMemory ? `<div class="mini"><strong>${s.memoryTotal}</strong>構文</div><div class="mini"><strong>${s.memoryUnsettled}</strong>未定着</div>` : `<div class="mini"><strong>${s.total}</strong>単語</div><div class="mini"><strong>${s.examples}</strong>例文</div><div class="mini"><strong>${s.phrases}</strong>熟語</div><div class="mini"><strong>${s.hard}</strong>苦手</div><div class="mini"><strong>${s.usageUnsettled}</strong>例文等未定着</div>`}
               </div>
               <div class="actions" style="margin-top:10px">
                 <button class="primary" data-action="open" data-id="${escapeHtml(range.id)}">開く</button>
                 ${isMemory ? "" : `<button class="warn" data-action="ready" data-id="${escapeHtml(range.id)}">満点確認</button>`}
-                ${isMemory ? "" : `<button class="soft" data-action="fetch" data-id="${escapeHtml(range.id)}" ${s.total ? "" : "disabled"}>APIで取得</button>`}
                 ${range.testDate === todayKey() ? (isRangeEnded(range) ? `<button class="soft" data-action="test-before" data-id="${escapeHtml(range.id)}">テスト前</button>` : `<button class="soft" data-action="test-ended" data-id="${escapeHtml(range.id)}">テスト終了</button>`) : ""}
               </div>
-              <div class="danger-actions">
-                <button class="compact refetch" data-action="clear-cache" data-id="${escapeHtml(range.id)}">キャッシュ削除</button>
-                <button class="compact collegiate" data-action="delete-range" data-id="${escapeHtml(range.id)}">範囲削除</button>
-              </div>
+              <details class="technical-details"><summary>管理・発音データ</summary><div class="technical-details-body">
+                ${isMemory ? "" : `<div class="meta">発音データ ${s.fetched}/${s.total}語</div><button class="soft" data-action="fetch" data-id="${escapeHtml(range.id)}" ${s.total ? "" : "disabled"}>発音データを取得</button>`}
+                <div class="danger-actions"><button class="compact refetch" data-action="clear-cache" data-id="${escapeHtml(range.id)}">キャッシュ削除</button><button class="compact collegiate" data-action="delete-range" data-id="${escapeHtml(range.id)}">範囲削除</button></div>
+              </div></details>
             </article>`;
         }).join("");
+      }
+
+      function primaryStressSyllableIndex(pronunciation, syllableCount) {
+        const text = String(pronunciation || "");
+        const markerIndex = text.indexOf("ˈ");
+        if (markerIndex < 0 || syllableCount < 1) return -1;
+        const parts = text.split(/[-·.]/).filter(Boolean);
+        if (parts.length === syllableCount) {
+          const index = parts.findIndex(part => part.includes("ˈ"));
+          if (index >= 0) return index;
+        }
+        if (markerIndex === 0) return 0;
+        if (syllableCount === 2) return 1;
+        return -1;
+      }
+
+      function renderAccentedWord(word, variant = null) {
+        if (!word) return "";
+        const selected = variant || preferredPronunciationVariant(word);
+        const raw = String(selected?.syllabifiedHeadword || word.syllabifiedHeadword || "");
+        const syllables = raw.split("*").map(part => part.trim()).filter(Boolean);
+        const displayed = syllables.join("");
+        if (syllables.length < 2 || normalizeLookupText(displayed) !== normalizeLookupText(word.word)) {
+          return `<span class="accent-word">${escapeHtml(word.word)}</span>`;
+        }
+        const stressIndex = primaryStressSyllableIndex(selected?.pronunciation || word.pronunciation, syllables.length);
+        if (stressIndex < 0) return `<span class="accent-word">${escapeHtml(word.word)}</span>`;
+        if (/^[A-Z]/.test(word.word)) syllables[0] = syllables[0].charAt(0).toUpperCase() + syllables[0].slice(1);
+        return `<span class="accent-word">${syllables.map((part, index) => `<span class="${index === stressIndex ? "stress-primary" : "stress-normal"}">${escapeHtml(part)}</span>`).join("")}</span>`;
       }
 
       function renderSpellingRisk(word) {
@@ -699,42 +750,35 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       }
 
       function configureLearningModes(isMemory) {
-        const select = $("testMode");
-        const previous = select.value;
-        select.innerHTML = isMemory
-          ? `<optgroup label="暗記構文">
-              <option value="memory-unsettled">未定着のみ</option>
-              <option value="memory-all">全範囲</option>
-              <option value="memory-random5">ランダム5文</option>
-              <option value="memory-random10">ランダム10文</option>
-            </optgroup>`
-          : `<optgroup label="単語テスト">
-              <option value="word-enToJa-normal">英語→日本語・通常</option>
-              <option value="word-jaToEn-normal">日本語→英語・通常</option>
-              <option value="word-enToJa-wrong">英語→日本語・間違い集中</option>
-              <option value="word-jaToEn-wrong">日本語→英語・間違い集中</option>
-            </optgroup>
-            <optgroup label="仕上げ">
-              <option value="ready-enToJa">満点確認・英語→日本語</option>
-              <option value="ready-jaToEn">満点確認・日本語→英語</option>
-              <option value="spelling">スペル確認</option>
-            </optgroup>`;
-        if ([...select.options].some(option => option.value === previous)) select.value = previous;
         $("vocabPrimaryModes").classList.toggle("hidden", isMemory);
-        $("testModeLabel").textContent = isMemory ? "学習モード" : "確認モード";
-        select.setAttribute("aria-label", isMemory ? "学習モード" : "確認モード");
+        $("memoryPrimaryModes").classList.toggle("hidden", !isMemory);
         $("vocabLearningOptions").classList.toggle("hidden", isMemory);
       }
 
-      function startSelectedLearningMode() {
-        const value = $("testMode").value;
-        if (value === "spelling") return startSpellingReview();
-        if (value.startsWith("ready-")) return startTestReadyReview(value.slice(6));
-        if (value.startsWith("word-")) {
-          const [, direction, mode] = value.split("-");
-          return startTest(direction, mode);
-        }
-        if (value.startsWith("memory-")) return startRecall("memory", value.slice(7));
+      function showLearningChoiceModal(title, choices) {
+        showModal(`<h2>${escapeHtml(title)}</h2><div class="learning-choice-list">${choices.map(choice => `<button class="${choice.className || "soft"}" data-learning-choice="${escapeHtml(choice.id)}">${escapeHtml(choice.label)}</button>`).join("")}</div><button class="soft" data-modal-cancel>キャンセル</button>`);
+        const actions = new Map(choices.map(choice => [choice.id, choice.action]));
+        $("modalRoot").querySelectorAll("[data-learning-choice]").forEach(button => button.addEventListener("click", () => {
+          const action = actions.get(button.dataset.learningChoice);
+          closeModal();
+          action?.();
+        }));
+      }
+
+      function showWordTestMenu() {
+        showLearningChoiceModal("単語テスト", [
+          { id: "en-normal", label: "英語 → 日本語・通常", className: "primary", action: () => startTest("enToJa", "normal") },
+          { id: "ja-normal", label: "日本語 → 英語・通常", className: "primary", action: () => startTest("jaToEn", "normal") },
+          { id: "en-wrong", label: "英語 → 日本語・間違い集中", action: () => startTest("enToJa", "wrong") },
+          { id: "ja-wrong", label: "日本語 → 英語・間違い集中", action: () => startTest("jaToEn", "wrong") }
+        ]);
+      }
+
+      function showWordFinishMenu() {
+        showLearningChoiceModal("単語の仕上げ", [
+          { id: "en-ready", label: "満点確認・英語 → 日本語", className: "warn", action: () => startTestReadyReview("enToJa") },
+          { id: "ja-ready", label: "満点確認・日本語 → 英語", className: "warn", action: () => startTestReadyReview("jaToEn") }
+        ]);
       }
 
       function renderWords() {
@@ -754,8 +798,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("playbackInterval").value = String(state.settings.playbackInterval);
         updatePlaybackControls();
         const readiness = readinessForRange(range);
-        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.fetched}/${s.total} API取得済み / 例文${s.examples}・熟語${s.phrases} / 危険${readiness.riskItems?.length || 0}`;
-        const readinessOverview = `<div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div>`;
+        $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.total}語 / 例文${s.examples}・熟語${s.phrases}`;
+        const readinessOverview = readinessSummaryHtml(readiness, range.id);
         const words = filteredWords(range);
         if (!words.length) {
           $("wordList").innerHTML = `${readinessOverview}<div class="empty">この条件に一致する単語はありません。</div>`;
@@ -772,19 +816,17 @@ window.runStorageSelfCheck = runStorageSelfCheck;
               <div style="min-width:0;flex:1 1 auto">
                 <div class="word-main-line">
                   <span class="word-index">${index + 1}/${words.length}</span>
-                  <div class="word-title">${escapeHtml(word.word)}</div>
+                  <div class="word-title">${renderAccentedWord(word)}</div>
                 </div>
+                <div class="word-meaning">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div>
                 <div class="pron-line">
                   <span class="pron-text">発音1 : ${escapeHtml(word.pronunciation || "未取得")}</span>
-                  <span class="pos-text">候補 : ${(word.pronunciationVariants || []).length}件</span>
                 </div>
                 ${renderSpellingRisk(word)}
                 ${renderLinkedUsage(range, word.id)}
               </div>
               ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
             </div>
-            ${renderPronunciationVariants(word)}
-            ${word.definitions?.length ? `<div class="mini" style="margin-top:10px"><strong>定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
             <div class="study-actions">
               <button class="primary" data-word-action="play" data-id="${escapeHtml(word.id)}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
               <button class="primary" data-word-action="next" data-id="${escapeHtml(word.id)}">次へ</button>
@@ -794,11 +836,12 @@ window.runStorageSelfCheck = runStorageSelfCheck;
               <button class="soft study-toggle hard" data-word-action="hard" data-id="${escapeHtml(word.id)}" aria-pressed="${word.studyStatus === "hard"}">苦手</button>
               <button class="soft study-toggle known" data-word-action="known" data-id="${escapeHtml(word.id)}" aria-pressed="${word.studyStatus === "known"}">覚えた</button>
             </div>
-            <div class="danger-actions">
-              <button class="soft mw-small" data-word-action="mw" data-id="${escapeHtml(word.id)}">MWで開く</button>
-              <button class="compact refetch" data-word-action="refetch" data-id="${escapeHtml(word.id)}">再取得</button>
-              <button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${escapeHtml(word.id)}">Collegiate</button>
-            </div>
+            <details class="technical-details"><summary>発音・辞書の詳細</summary><div class="technical-details-body">
+              <div class="meta">発音候補 ${(word.pronunciationVariants || []).length}件</div>
+              ${renderPronunciationVariants(word)}
+              ${word.definitions?.length ? `<div class="mini"><strong>英語定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
+              <div class="danger-actions"><button class="soft mw-small" data-word-action="mw" data-id="${escapeHtml(word.id)}">MWで開く</button><button class="compact refetch" data-word-action="refetch" data-id="${escapeHtml(word.id)}">再取得</button><button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${escapeHtml(word.id)}">Collegiate</button></div>
+            </div></details>
           </article>`).join("");
         renderUsageOverview(range);
         if (state.pendingWordScroll) {
@@ -886,16 +929,26 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         return `<div class="usage-word-audio"><span>${status}</span>${info.playableWords.length ? `<button class="soft" data-${actionName}-action="audio">単語音声を再生</button>` : ""}</div>`;
       }
 
+      function setSessionView(panelId, title, active) {
+        const layer = $("studySessionLayer");
+        ["testPanel", "speedPanel", "spellingPanel", "recallPanel"].forEach(id => $(id).classList.toggle("hidden", !active || id !== panelId));
+        if (active) {
+          if (layer.classList.contains("hidden")) sessionReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          $("studySessionTitle").textContent = title || "学習中";
+          layer.classList.remove("hidden");
+          document.body.classList.add("session-active");
+          layer.scrollTop = 0;
+          requestAnimationFrame(() => { layer.scrollTop = 0; });
+          return;
+        }
+        layer.classList.add("hidden");
+        document.body.classList.remove("session-active");
+        sessionReturnFocus?.focus?.();
+        sessionReturnFocus = null;
+      }
+
       function hideForSpeed(active) {
-        document.querySelector("header")?.classList.toggle("hidden", active);
-        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
-        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
-        $("wordPanel").classList.toggle("hidden", active);
-        $("jumpFab").classList.toggle("hidden", active);
-        $("testPanel").classList.add("hidden");
-        $("spellingPanel").classList.add("hidden");
-        $("recallPanel").classList.add("hidden");
-        $("speedPanel").classList.toggle("hidden", !active);
+        setSessionView("speedPanel", "高速周回", active);
       }
 
       function startSpeedReview() {
@@ -949,7 +1002,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           const counts = { unknown: 0, unsure: 0, instant: 0 };
           session.assessments.forEach(item => { counts[item.rating]++; });
           const readiness = readinessForRange(range);
-          $("speedContent").innerHTML = `<div class="test-result"><h2>高速周回 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">全体 ${session.round}周目 完了</div><div class="result-grid"><div><strong>${session.assessments.length}</strong>確認回数</div><div><strong>${counts.instant}</strong>即答</div><div><strong>${counts.unsure}</strong>怪しい</div><div><strong>${counts.unknown}</strong>知らない</div></div><div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div><p class="meta">所要時間 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒。判定履歴は危険項目の選定に使いますが、15問テストの正答数は変更しません。</p><div class="test-result-actions"><button class="primary" data-speed-action="repeat">全範囲を次の周へ</button><button class="soft" data-speed-action="return">範囲へ戻る</button></div></div>`;
+          $("speedContent").innerHTML = `<div class="test-result"><h2>高速周回 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">全体 ${session.round}周目 完了</div><div class="result-grid"><div><strong>${session.assessments.length}</strong>確認回数</div><div><strong>${counts.instant}</strong>即答</div><div><strong>${counts.unsure}</strong>怪しい</div><div><strong>${counts.unknown}</strong>知らない</div></div>${readinessSummaryHtml(readiness, range.id)}<p class="meta">所要時間 ${Math.floor(elapsedSeconds / 60)}分${elapsedSeconds % 60}秒。判定履歴は危険項目の選定に使いますが、15問テストの正答数は変更しません。</p><div class="test-result-actions"><button class="primary" data-speed-action="repeat">全範囲を次の周へ</button><button class="soft" data-speed-action="return">範囲へ戻る</button></div></div>`;
           return;
         }
         const word = speedReviewWord();
@@ -970,7 +1023,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const usageReview = usageItems.length
           ? `<div class="speed-usage-review"><button class="soft speed-usage-toggle" data-speed-action="usage" aria-expanded="${state.speedUsageVisible}">例文・熟語を確認（${usageItems.length}件）</button>${state.speedUsageVisible ? `<div class="speed-usage-list">${usageItems.map(item => `<article><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><strong>${escapeHtml(item.english)}</strong><span>${escapeHtml(item.japanese)}</span></article>`).join("")}</div>` : ""}</div>`
           : "";
-        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="単語カード"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">下の大きなボタンで意味を確認</div>`}</div></div><button class="primary speed-meaning-toggle" data-speed-action="meaning" aria-expanded="${state.speedMeaningVisible}">${state.speedMeaningVisible ? "意味を隠す" : "意味を確認"}</button>${usageReview}<div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">← 知らない</button><button class="speed-unsure" data-speed-rating="unsure">↑ 怪しい</button><button class="speed-instant" data-speed-rating="instant">即答 →</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span><button class="soft" data-speed-action="abort">終了</button></div>`;
+        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="単語カード"><div class="speed-word">${renderAccentedWord(word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">下の大きなボタンで意味を確認</div>`}</div></div><button class="primary speed-meaning-toggle" data-speed-action="meaning" aria-expanded="${state.speedMeaningVisible}">${state.speedMeaningVisible ? "意味を隠す" : "意味を確認"}</button>${usageReview}<div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">知らない</button><button class="speed-unsure" data-speed-rating="unsure">怪しい</button><button class="speed-instant" data-speed-rating="instant">即答</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span></div>`;
         autoPlaySpeedReviewWord(word);
       }
 
@@ -1015,19 +1068,10 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         hideForSpeed(false);
         switchTab("ranges");
         renderWords();
-        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function hideForSpelling(active) {
-        document.querySelector("header")?.classList.toggle("hidden", active);
-        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
-        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
-        $("wordPanel").classList.toggle("hidden", active);
-        $("jumpFab").classList.toggle("hidden", active);
-        $("testPanel").classList.add("hidden");
-        $("speedPanel").classList.add("hidden");
-        $("recallPanel").classList.add("hidden");
-        $("spellingPanel").classList.toggle("hidden", !active);
+        setSessionView("spellingPanel", "仕上げ・スペル", active);
       }
 
       function startSpellingReview() {
@@ -1061,7 +1105,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         if (state.spellingResult) {
           const result = state.spellingResult;
           const readiness = readinessForRange(range);
-          $("spellingContent").innerHTML = `<div class="test-result"><h2>スペル確認 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">${result.correct} / ${result.answered}</div><div class="result-grid"><div><strong>${result.correct}</strong>正解</div><div><strong>${result.incorrect}</strong>不正解</div><div><strong>${Math.max(0, result.total - result.answered)}</strong>未回答</div></div><div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div><div class="test-result-actions"><button class="primary" data-spelling-action="repeat">残っている危険スペルを確認</button><button class="soft" data-spelling-action="return">範囲へ戻る</button></div></div>`;
+          $("spellingContent").innerHTML = `<div class="test-result"><h2>スペル確認 完了</h2><p>${escapeHtml(range.rangeName || "無題の範囲")}</p><div class="result-score">${result.correct} / ${result.answered}</div><div class="result-grid"><div><strong>${result.correct}</strong>正解</div><div><strong>${result.incorrect}</strong>不正解</div><div><strong>${Math.max(0, result.total - result.answered)}</strong>未回答</div></div>${readinessSummaryHtml(readiness, range.id)}<div class="test-result-actions"><button class="primary" data-spelling-action="repeat">残っている危険スペルを確認</button><button class="soft" data-spelling-action="return">範囲へ戻る</button></div></div>`;
           return;
         }
         if (state.spellingFeedback) {
@@ -1074,7 +1118,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const word = testWord(range, wordId);
         if (!word) return;
         const progress = session.wordIds.length ? session.index / session.wordIds.length * 100 : 0;
-        $("spellingContent").innerHTML = `<div class="spelling-card"><div class="test-progress"><span>${session.index + 1} / ${session.wordIds.length}</span><span>厳密採点</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="meta">日本語から英単語を入力</div><div class="spelling-meaning">${escapeHtml(word.meaningsJa.join("／") || "日本語訳未登録")}</div><form class="spelling-form" id="spellingForm"><label for="spellingAnswer">spelling</label><input id="spellingAnswer" name="answer" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" required><button class="primary" type="submit">答える</button></form><button class="soft" data-spelling-action="abort">終了</button></div>`;
+        $("spellingContent").innerHTML = `<div class="spelling-card"><div class="test-progress"><span>${session.index + 1} / ${session.wordIds.length}</span><span>厳密採点</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="meta">日本語から英単語を入力</div><div class="spelling-meaning">${escapeHtml(word.meaningsJa.join("／") || "日本語訳未登録")}</div><form class="spelling-form" id="spellingForm"><label for="spellingAnswer">spelling</label><input id="spellingAnswer" name="answer" autocomplete="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" required><button class="primary" type="submit">答える</button></form></div>`;
         requestAnimationFrame(() => $("spellingAnswer")?.focus());
       }
 
@@ -1109,7 +1153,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         hideForSpelling(false);
         switchTab("ranges");
         renderWords();
-        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function recallItems(range, source) {
@@ -1169,7 +1212,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
         const audio = hasOfficial ? "公式音声を自動再生" : canSpeak ? "端末音声を自動再生" : "利用できる音声なし";
         const replay = hasOfficial || canSpeak ? `<button class="soft" data-study-action="audio">発音をもう一度聞く</button>` : "";
-        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${escapeHtml(word.word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="tap-next-hint">タップして次へ</div></article><button class="soft" data-study-action="abort">終了</button>`;
+        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${renderAccentedWord(word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="tap-next-hint">タップして次へ</div></article>`;
         const key = `study-word:${session.rangeId}:${session.index}:${word.id}`;
         if (key !== lastAutoSpokenStudyWordKey) {
           lastAutoSpokenStudyWordKey = key;
@@ -1207,7 +1250,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const item = currentUsageStudyItem();
         if (!item) return;
         const progress = session.itemIds.length ? session.index / session.itemIds.length * 100 : 0;
-          $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・例文・熟語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${usageAudioHtml(range, item, "study")}<div class="usage-study-english">${escapeHtml(item.english)}</div><div class="usage-study-japanese">${escapeHtml(item.japanese)}</div><div class="tap-next-hint">タップして次へ</div></article><button class="soft" data-study-action="abort">終了</button>`;
+          $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・例文・熟語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${usageAudioHtml(range, item, "study")}<div class="usage-study-english">${escapeHtml(item.english)}</div><div class="usage-study-japanese">${escapeHtml(item.japanese)}</div><div class="tap-next-hint">タップして次へ</div></article>`;
         autoPlayUsageLinkedWord(range, item, `study:${session.rangeId}:${session.index}:${item.id}`);
       }
 
@@ -1233,7 +1276,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         hideForRecall(false);
         switchTab("ranges");
         renderWords();
-        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function leaveWordStudy() {
@@ -1243,14 +1285,21 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         hideForRecall(false);
         switchTab("ranges");
         renderWords();
-        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function startUsageSpeedReview() {
         state.usageStudySession = null;
         state.wordStudySession = null;
         lastAutoSpokenUsageKey = "";
-        startRecall("usage", "speed", "all");
+        startRecall("usage", "speed", "all", "speed");
+      }
+
+      function startUsageTestReview() {
+        startRecall("usage", "test15", "all", "test");
+      }
+
+      function startUsageFinishReview() {
+        startRecall("usage", "unsettled", "all", "finish");
       }
 
       function currentRecallItem() {
@@ -1260,24 +1309,23 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       }
 
       function hideForRecall(active) {
-        document.querySelector("header")?.classList.toggle("hidden", active);
-        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
-        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
-        $("wordPanel").classList.toggle("hidden", active);
-        $("jumpFab").classList.toggle("hidden", active);
-        $("testPanel").classList.add("hidden");
-        $("speedPanel").classList.add("hidden");
-        $("spellingPanel").classList.add("hidden");
-        $("recallPanel").classList.toggle("hidden", !active);
+        const session = state.recallSession;
+        const title = state.wordStudySession ? "学習モード・単語"
+          : state.usageStudySession ? "学習モード・例文・熟語"
+            : session?.mode === "speed" ? "高速周回・例文・熟語"
+              : session?.purpose === "finish" ? "仕上げ・例文・熟語"
+                : session?.source === "memory" ? "暗記構文" : "確認テスト・例文・熟語";
+        setSessionView("recallPanel", title, active);
       }
 
-      function startRecall(source, mode, type = "all") {
+      function startRecall(source, mode, type = "all", purpose = source === "usage" ? "test" : "recall") {
         stopContinuousPlayback();
         const range = state.ranges.find(item => item.id === state.selectedRangeId);
         if (!range) return;
-        const session = createRecallSession(recallItems(range, source), { source, mode, type });
+        const session = createRecallSession(recallItems(range, source), { source, mode, type, purpose });
         if (session.error) return toast(session.error, true);
         session.rangeId = range.id;
+        session.purpose = purpose;
         state.recallSession = session;
         state.usageStudySession = null;
         state.wordStudySession = null;
@@ -1292,20 +1340,31 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         if (!session || !range) return;
         if (session.finished) {
           const isUsageSpeed = session.source === "usage" && session.mode === "speed";
+          const isUsageTest = session.source === "usage" && session.purpose === "test";
+          const isUsageFinish = session.source === "usage" && session.purpose === "finish";
           const counts = { circle: 0, triangle: 0, cross: 0 };
           session.assessments.forEach(entry => counts[entry.rating]++);
-          $("recallContent").innerHTML = `<div class="test-result"><h2>${isUsageSpeed ? "例文・熟語 高速周回 完了" : "全文暗唱 完了"}</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-grid"><div><strong>${counts.circle}</strong>${isUsageSpeed ? "即答" : "○"}</div><div><strong>${counts.triangle}</strong>${isUsageSpeed ? "怪しい" : "△"}</div><div><strong>${counts.cross}</strong>${isUsageSpeed ? "知らない" : "×"}</div></div><p class="meta">${isUsageSpeed ? "「知らない」「怪しい」は同じ周回内で再出題しました。" : "△・×は同じ周回内で○になるまで再出題しました。別の周回でもう一度○になると定着です。"}</p><div class="actions"><button class="primary" data-recall-action="repeat">もう一周</button><button class="soft" data-recall-action="return">教材へ戻る</button></div></div>`;
+          const title = isUsageSpeed ? "例文・熟語 高速周回 完了" : isUsageTest ? "例文・熟語テスト 完了" : isUsageFinish ? "例文・熟語の仕上げ 完了" : "全文暗唱 完了";
+          const meta = isUsageSpeed ? "「知らない」「怪しい」は同じ周回内で再出題しました。"
+            : isUsageTest ? "各項目を一度ずつ確認しました。判定は既存の例文・熟語履歴へ反映されています。"
+              : "惜しい・できなかった項目は、できるまで同じ回の中で再出題しました。";
+          $("recallContent").innerHTML = `<div class="test-result"><h2>${title}</h2><p>${escapeHtml(range.rangeName)}</p><div class="result-grid"><div><strong>${counts.circle}</strong>${isUsageSpeed ? "即答" : "できた"}</div><div><strong>${counts.triangle}</strong>${isUsageSpeed ? "怪しい" : "惜しい"}</div><div><strong>${counts.cross}</strong>${isUsageSpeed ? "知らない" : "できなかった"}</div></div><p class="meta">${meta}</p><div class="actions"><button class="primary" data-recall-action="repeat">もう一周</button><button class="soft" data-recall-action="return">教材へ戻る</button></div></div>`;
           return;
         }
         const item = currentRecallItem();
         if (!item) return;
         const isUsageSpeed = session.source === "usage" && session.mode === "speed";
+        const isUsageTest = session.source === "usage" && session.purpose === "test";
+        const isUsageFinish = session.source === "usage" && session.purpose === "finish";
         const total = session.itemIds.length;
         const completed = Math.max(0, total - new Set(session.queue).size);
         const ratings = isUsageSpeed
           ? `<div class="recall-ratings speed-recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="知らない">知らない</button><button class="rating triangle" data-recall-rating="triangle" aria-label="怪しい">怪しい</button><button class="rating circle" data-recall-rating="circle" aria-label="即答">即答</button></div>`
-          : `<div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="言えなかった">×</button><button class="rating triangle" data-recall-rating="triangle" aria-label="一部ミス">△</button><button class="rating circle" data-recall-rating="circle" aria-label="完全に言えた">○</button></div>`;
-        $("recallContent").innerHTML = `<div class="recall-head"><span>${isUsageSpeed ? "例文・熟語・高速周回" : session.source === "memory" ? "暗記構文" : item.type === "phrase" ? "熟語" : "例文"}</span><span>未完了 ${session.queue.length} / 初回${total}件</span></div><div class="test-progressbar"><span style="width:${total ? completed / total * 100 : 0}%"></span></div><article class="recall-card"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${isUsageSpeed ? usageAudioHtml(range, item, "recall") : ""}<div class="recall-prompt-label">${isUsageSpeed ? "日本語を見て英文を即答" : "日本語から英語全文を暗唱"}</div><div class="recall-japanese">${escapeHtml(item.japanese)}</div>${session.answerVisible ? `<div class="recall-answer">${escapeHtml(item.english)}</div>${ratings}` : `<button class="primary reveal-answer" data-recall-action="reveal">${isUsageSpeed ? "英文を表示" : "答えを表示"}</button>`}</article><button class="soft" data-recall-action="abort">終了</button>`;
+          : session.source === "usage"
+            ? `<div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="できなかった">できなかった</button><button class="rating triangle" data-recall-rating="triangle" aria-label="惜しい">惜しい</button><button class="rating circle" data-recall-rating="circle" aria-label="できた">できた</button></div>`
+            : `<div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="言えなかった">×</button><button class="rating triangle" data-recall-rating="triangle" aria-label="一部ミス">△</button><button class="rating circle" data-recall-rating="circle" aria-label="完全に言えた">○</button></div>`;
+        const sessionLabel = isUsageSpeed ? "例文・熟語・高速周回" : isUsageTest ? "例文・熟語・確認テスト" : isUsageFinish ? "例文・熟語・仕上げ" : session.source === "memory" ? "暗記構文" : item.type === "phrase" ? "熟語" : "例文";
+        $("recallContent").innerHTML = `<div class="recall-head"><span>${sessionLabel}</span><span>未完了 ${session.queue.length} / 初回${total}件</span></div><div class="test-progressbar"><span style="width:${total ? completed / total * 100 : 0}%"></span></div><article class="recall-card"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${isUsageSpeed ? usageAudioHtml(range, item, "recall") : ""}<div class="recall-prompt-label">${isUsageSpeed ? "日本語を見て英文を即答" : "日本語から英語全文を暗唱"}</div><div class="recall-japanese">${escapeHtml(item.japanese)}</div>${session.answerVisible ? `<div class="recall-answer">${escapeHtml(item.english)}</div>${ratings}` : `<button class="primary reveal-answer" data-recall-action="reveal">${isUsageSpeed ? "英文を表示" : "答えを表示"}</button>`}</article>`;
         if (isUsageSpeed) autoPlayUsageLinkedWord(range, item, `usage-speed:${session.id}:${session.index}:${item.id}`);
       }
 
@@ -1325,7 +1384,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         hideForRecall(false);
         switchTab("ranges");
         renderWords();
-        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
       }
 
       function pronunciationFeedback(word) {
@@ -1334,15 +1392,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       }
 
       function hideForTest(active) {
-        document.querySelector("header")?.classList.toggle("hidden", active);
-        document.querySelector("nav.tabs")?.classList.toggle("hidden", active);
-        document.querySelectorAll(".tab-page").forEach(page => page.classList.toggle("hidden", active || page.id !== `page-${currentTab()}`));
-        $("wordPanel").classList.toggle("hidden", active);
-        $("jumpFab").classList.toggle("hidden", active);
-        $("testPanel").classList.toggle("hidden", !active);
-        $("speedPanel").classList.add("hidden");
-        $("spellingPanel").classList.add("hidden");
-        $("recallPanel").classList.add("hidden");
+        const mode = state.activeTest?.mode === "ready" ? "仕上げ・単語" : "確認テスト・単語";
+        setSessionView("testPanel", mode, active);
       }
 
       function startTest(direction, mode = "normal") {
@@ -1377,6 +1428,11 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const range = state.ranges.find(item => item.id === session?.rangeId);
         if (!session || !range) return;
         $("testContent").innerHTML = renderTestQuestion(session, range);
+        if (session.direction === "enToJa") {
+          const word = testWord(range, session.questions[session.index].wordId);
+          const prompt = $("testContent").querySelector(".test-prompt");
+          if (prompt && word) prompt.innerHTML = renderAccentedWord(word);
+        }
         session.questionStartedAt = Date.now();
         if (session.direction === "enToJa") setTimeout(() => playTestAudio(testWord(range, session.questions[session.index].wordId)), 120);
       }
@@ -1439,7 +1495,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const slow = session.answers.filter(answer => answer.slow || answer.hesitant).length;
         const readiness = readinessForRange(range);
         const modeLabel = { normal: "通常", wrong: "間違い集中", ready: "満点確認" }[result.mode] || "通常";
-        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><p>${session.direction === "enToJa" ? "英語 → 日本語" : "日本語 → 英語"} / ${modeLabel}モード</p><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${wrong.length}</strong>間違い</div><div><strong>${slow}</strong>遅い・迷い</div></div><div class="readiness-summary"><div class="readiness-state ${readiness.status}">${readinessLabel(readiness)}</div>${readinessChecksHtml(readiness)}</div><h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${escapeHtml((item.finishedAt || "").slice(0, 10))} ${Number(item.correct) || 0}/${Number(item.total) || 0}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${escapeHtml(word.id)}">公式音声</button><button class="soft" data-test-hard="${escapeHtml(word.id)}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
+        $("testContent").innerHTML = `<div class="test-result"><h2>テスト結果</h2><p>${session.direction === "enToJa" ? "英語 → 日本語" : "日本語 → 英語"} / ${modeLabel}モード</p><div class="result-score">${result.correct} / ${result.total}</div><div class="result-grid"><div><strong>${result.accuracy}%</strong>正答率</div><div><strong>${(result.averageResponseMs / 1000).toFixed(1)}秒</strong>平均回答</div><div><strong>${wrong.length}</strong>間違い</div><div><strong>${slow}</strong>遅い・迷い</div></div>${readinessSummaryHtml(readiness, range.id)}<h3>累積分析</h3><p>${cumulativeTestSummary(range, session.direction)}</p>${histories.length ? `<div class="history-list">${histories.map(item => `<span>${escapeHtml((item.finishedAt || "").slice(0, 10))} ${Number(item.correct) || 0}/${Number(item.total) || 0}</span>`).join("")}</div>` : ""}<h3>間違えた単語</h3>${wrong.length ? wrong.map(word => `<article class="wrong-word"><strong>${escapeHtml(word.word)}</strong><span>${escapeHtml(word.meaningsJa.join("／"))}</span><span>${pronunciationFeedback(word)}</span><button class="soft" data-test-audio="${escapeHtml(word.id)}">公式音声</button><button class="soft" data-test-hard="${escapeHtml(word.id)}">苦手</button></article>`).join("") : `<div class="empty">全問正解です。</div>`}<div class="test-result-actions">${wrong.length ? `<button class="soft" data-test-action="open-wrong">間違いを発音画面で確認</button><button class="soft" data-test-action="hard-all">間違いを一括で苦手</button>` : ""}<button class="primary" data-test-action="repeat">同じ方向でもう一度</button><button class="soft" data-test-action="return">範囲へ戻る</button></div></div>`;
       }
 
       function leaveTest(openWrong = false) {
@@ -1453,7 +1509,28 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         hideForTest(false);
         switchTab("ranges");
         renderWords();
-        $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function requestCloseActiveSession() {
+        if (state.wordStudySession) return leaveWordStudy();
+        if (state.usageStudySession) return leaveUsageStudy();
+        if (state.activeTest) {
+          if (state.activeTest.finished) return leaveTest();
+          return showModal(`<h2>テストを中止しますか？</h2><p>回答済みの成績は残りますが、テスト履歴には追加されません。</p><div class="actions"><button class="danger" data-modal-confirm>中止する</button><button class="soft" data-modal-cancel>続ける</button></div>`, () => { abortTest(state.activeTest); leaveTest(); });
+        }
+        if (state.speedSession) {
+          if (state.speedSession.finished) return leaveSpeedReview();
+          return showModal(`<h2>高速周回を終了しますか？</h2><p>ここまでの即答・怪しい・知らないの判定は保存済みです。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveSpeedReview);
+        }
+        if (state.spellingSession) {
+          if (state.spellingResult) return leaveSpellingReview();
+          return showModal(`<h2>スペル確認を終了しますか？</h2><p>回答済みの履歴は保存し、未回答は残します。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, () => { finishPartialSpellingReview(); leaveSpellingReview(); });
+        }
+        if (state.recallSession) {
+          if (state.recallSession.finished) return leaveRecall();
+          return showModal(`<h2>この確認を終了しますか？</h2><p>ここまでの判定は例文・熟語の既存履歴へ保存されています。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
+        }
+        setSessionView("", "", false);
       }
 
       function renderPronunciationVariants(word) {
@@ -1471,8 +1548,9 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           const number = partTotals[part] > 1 ? ` 発音${partIndexes[part]}` : "";
           const meta = [part, variant.label].filter(Boolean).join(" / ");
           return `<div class="pronunciation-variant">
-            <div style="min-width:0">
+            <div class="variant-copy">
               ${meta || number ? `<div class="variant-meta">${escapeHtml(meta)}${number}</div>` : ""}
+              <div class="accent-variant">${renderAccentedWord(word, variant)}</div>
               <div class="variant-pronunciation">${escapeHtml(variant.pronunciation || "発音表記なし")}</div>
             </div>
             <button class="soft variant-audio" data-word-action="variant-play" data-id="${escapeHtml(word.id)}" data-variant-id="${escapeHtml(variant.id)}" ${variant.audioUrl ? "" : "disabled"}>公式音声</button>
@@ -1775,6 +1853,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const pronunciationVariants = dedupePronunciationVariants(rawVariants.map(item => normalizePronunciationVariant({
           dictionarySource: reference,
           headword: word,
+          syllabifiedHeadword: found.hw || word,
           partOfSpeech: item.fl || found.fl || "",
           label: item.label || "",
           pronunciation: item.prs || "",
@@ -1938,7 +2017,8 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       }
 
       function collectEntryPronunciationVariants(entry, word, reference) {
-        const headword = cleanHeadword(entry.hwi?.hw || String(entry.meta?.id || "").split(":")[0] || word);
+        const syllabifiedHeadword = String(entry.hwi?.hw || String(entry.meta?.id || "").split(":")[0] || word);
+        const headword = cleanHeadword(syllabifiedHeadword);
         const partOfSpeech = entry.fl || "";
         const variants = [];
         const add = (pronunciations, label = "") => {
@@ -1946,6 +2026,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
             variants.push(normalizePronunciationVariant({
               dictionarySource: reference,
               headword,
+              syllabifiedHeadword,
               partOfSpeech,
               label,
               pronunciation: pronunciationText(pron, reference),
@@ -1964,6 +2045,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         return collectObjectPronunciations(source).map(pron => normalizePronunciationVariant({
           dictionarySource: reference,
           headword: cleanHeadword(entry.hwi?.hw || word),
+          syllabifiedHeadword: String(entry.hwi?.hw || word),
           partOfSpeech: source.fl || entry.fl || "",
           label,
           pronunciation: pronunciationText(pron, reference),
@@ -2686,7 +2768,16 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("startWordStudy").addEventListener("click", startWordStudy);
         $("startWordSpeed").addEventListener("click", startSpeedReview);
         $("startUsageSpeed").addEventListener("click", startUsageSpeedReview);
-        $("startSelectedMode").addEventListener("click", startSelectedLearningMode);
+        $("startWordTestMenu").addEventListener("click", showWordTestMenu);
+        $("startUsageTest").addEventListener("click", startUsageTestReview);
+        $("startWordFinishMenu").addEventListener("click", showWordFinishMenu);
+        $("startUsageFinish").addEventListener("click", startUsageFinishReview);
+        $("startSpellingFinish").addEventListener("click", startSpellingReview);
+        $("memoryPrimaryModes").addEventListener("click", event => {
+          const mode = event.target.closest("[data-memory-mode]")?.dataset.memoryMode;
+          if (mode) startRecall("memory", mode, "all", "recall");
+        });
+        $("studySessionClose").addEventListener("click", requestCloseActiveSession);
         $("testContent").addEventListener("click", event => {
           const session = state.activeTest;
           if (!session) return;
@@ -2779,7 +2870,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           }
           if (action === "repeat") {
             const previous = state.recallSession;
-            return startRecall(previous.source, previous.mode, previous.type);
+            return startRecall(previous.source, previous.mode, previous.type, previous.purpose);
           }
           if (action === "return") return leaveRecall();
           if (action === "abort") return showModal(`<h2>全文暗唱を終了しますか？</h2><p>ここまでの○・△・×は保存されています。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
@@ -2841,6 +2932,10 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         $("replaceJson").addEventListener("click", () => importJson(true));
         $("wipeAll").addEventListener("click", wipeAll);
         $("toast").addEventListener("click", dismissToast);
+        document.addEventListener("click", event => {
+          const trigger = event.target.closest?.("[data-readiness-open]");
+          if (trigger) showReadinessDetails(trigger.dataset.readinessOpen);
+        });
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) stopContinuousPlayback();
           else render();
