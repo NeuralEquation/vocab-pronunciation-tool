@@ -695,6 +695,16 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         return -1;
       }
 
+      function renderStressMarkedSyllable(value) {
+        const syllable = String(value || "");
+        let vowelIndex = syllable.search(/[aeiou]/i);
+        if (vowelIndex < 0) vowelIndex = syllable.search(/y/i);
+        if (vowelIndex < 0) return escapeHtml(syllable);
+        const accentedVowels = { a: "á", e: "é", i: "í", o: "ó", u: "ú", y: "ý", A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú", Y: "Ý" };
+        const vowel = syllable[vowelIndex];
+        return `${escapeHtml(syllable.slice(0, vowelIndex))}<span class="stress-vowel" data-accented="${accentedVowels[vowel] || vowel}">${escapeHtml(vowel)}</span>${escapeHtml(syllable.slice(vowelIndex + 1))}`;
+      }
+
       function renderAccentedWord(word, variant = null) {
         if (!word) return "";
         const selected = variant || preferredPronunciationVariant(word);
@@ -707,7 +717,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const stressIndex = primaryStressSyllableIndex(selected?.pronunciation || word.pronunciation, syllables.length);
         if (stressIndex < 0) return `<span class="accent-word">${escapeHtml(word.word)}</span>`;
         if (/^[A-Z]/.test(word.word)) syllables[0] = syllables[0].charAt(0).toUpperCase() + syllables[0].slice(1);
-        return `<span class="accent-word">${syllables.map((part, index) => `<span class="${index === stressIndex ? "stress-primary" : "stress-normal"}">${escapeHtml(part)}</span>`).join("")}</span>`;
+        return `<span class="accent-word" aria-label="${escapeHtml(word.word)}"><span aria-hidden="true">${syllables.map((part, index) => `<span class="${index === stressIndex ? "stress-primary" : "stress-normal"}">${index === stressIndex ? renderStressMarkedSyllable(part) : escapeHtml(part)}</span>`).join("")}</span></span>`;
       }
 
       function renderSpellingRisk(word) {

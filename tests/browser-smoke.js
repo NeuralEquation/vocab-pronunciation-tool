@@ -130,6 +130,23 @@ async function main() {
     await page.locator("#modalRoot [data-modal-cancel]").click();
     assert.match(await page.locator(".word-card .word-meaning").first().textContent(), /意味\d+/);
     assert.equal(await page.locator(".word-card details.technical-details").first().getAttribute("open"), null);
+    const recordCard = page.locator(".word-card").first();
+    await recordCard.locator("details.technical-details summary").click();
+    await recordCard.locator("[data-word-action='refetch']").click();
+    await page.locator("#modalRoot [data-modal-confirm]").click();
+    await page.locator("[data-progress-close]").waitFor();
+    await page.locator("[data-progress-close]").click();
+    await page.locator("#modalRoot").waitFor({ state: "hidden" });
+    assert.equal((await recordCard.locator(".word-title").textContent()).trim(), "record", "the stored/displayed spelling remains the original headword");
+    assert.equal((await recordCard.locator(".word-title .stress-primary").textContent()).trim(), "rec");
+    assert.equal((await recordCard.locator(".word-title .stress-vowel").textContent()).trim(), "e");
+    const visualAccent = await recordCard.locator(".word-title .stress-vowel").evaluate(element => getComputedStyle(element, "::after").content);
+    assert.match(visualAccent, /é/);
+    const variantAccents = await recordCard.locator(".accent-variant .stress-vowel").evaluateAll(elements => elements.map(element => element.dataset.accented));
+    assert.deepEqual(variantAccents, ["é", "ó"], "noun and verb variants show récord and recórd without changing the headword");
+    const storedRecord = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words[0].word);
+    assert.equal(storedRecord, "record", "visual stress marks must not alter lookup or spelling-test data");
+    await recordCard.locator("details.technical-details summary").click();
     const mobileScreenshotPath = path.join(os.tmpdir(), "mw-browser-smoke-mobile.png");
     await page.screenshot({ path: mobileScreenshotPath });
 
@@ -208,7 +225,7 @@ async function main() {
     const usageHistoryBeforeStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
     await page.locator("#startUsageStudy").click();
     assert.equal(await page.locator("[data-recall-rating]").count(), 0);
-    assert.match(await page.locator("#recallContent").textContent(), /学習モード[\s\S]*公式音声未取得[\s\S]*タップして次へ/);
+    assert.match(await page.locator("#recallContent").textContent(), /学習モード[\s\S]*公式音声(?:未取得|\s+\d+語)[\s\S]*タップして次へ/);
     const studyCard = page.locator("[data-study-card]");
     await studyCard.click();
     await page.waitForFunction(() => document.querySelector(".recall-head")?.textContent.includes("2 / 2"));
@@ -286,7 +303,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v50"));
+    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v52"));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
