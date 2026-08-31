@@ -140,7 +140,7 @@ During continuous word playback, linked examples and phrases are expanded for th
 
 ## Pronunciation and speech / 発音
 
-Official Merriam-Webster audio is preferred. When dictionary data includes reliable syllable and primary-stress markers, the displayed spelling places a visible accent mark above the stressed syllable's vowel and underlines that syllable. The stored headword, lookup text, copied source data, and spelling-test answer remain unchanged; if stress placement is not reliable, the app deliberately falls back to the ordinary spelling instead of guessing. In Speed Review and test-related playback, when official audio is unavailable, the app can use the device's English Web Speech voice instead; it does not fabricate an official audio URL. Playback actions are started from a user gesture for iOS compatibility, and leaving a learning mode stops queued speech and current preview playback to avoid overlap.
+Official Merriam-Webster audio is preferred. Pronunciation notation such as `ˈrekərd` remains visible in the pronunciation field, while the word spelling itself is always shown unchanged. In Speed Review and test-related playback, when official audio is unavailable, the app can use the device's English Web Speech voice instead; it does not fabricate an official audio URL. Playback actions are started from a user gesture for iOS compatibility, and leaving a learning mode stops queued speech and current preview playback to avoid overlap.
 
 Dictionary response-shape, network, and HTTP errors should be diagnosed without displaying the raw API key. If cached dictionary data no longer matches the current cache schema, use the app's re-fetch control after checking the range and selected dictionary type.
 

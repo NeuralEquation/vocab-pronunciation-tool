@@ -138,12 +138,9 @@ async function main() {
     await page.locator("[data-progress-close]").click();
     await page.locator("#modalRoot").waitFor({ state: "hidden" });
     assert.equal((await recordCard.locator(".word-title").textContent()).trim(), "record", "the stored/displayed spelling remains the original headword");
-    assert.equal((await recordCard.locator(".word-title .stress-primary").textContent()).trim(), "rec");
-    assert.equal((await recordCard.locator(".word-title .stress-vowel").textContent()).trim(), "e");
-    const visualAccent = await recordCard.locator(".word-title .stress-vowel").evaluate(element => getComputedStyle(element, "::after").content);
-    assert.match(visualAccent, /é/);
-    const variantAccents = await recordCard.locator(".accent-variant .stress-vowel").evaluateAll(elements => elements.map(element => element.dataset.accented));
-    assert.deepEqual(variantAccents, ["é", "ó"], "noun and verb variants show récord and recórd without changing the headword");
+    assert.equal(await recordCard.locator(".word-title .stress-vowel").count(), 0, "word spelling has no visual accent overlay");
+    assert.match(await recordCard.locator(".pron-line").textContent(), /ˈrekərd/, "pronunciation notation keeps its stress marker");
+    assert.equal(await recordCard.locator(".variant-headword").count(), 2, "pronunciation variants remain available as ordinary headwords");
     const storedRecord = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words[0].word);
     assert.equal(storedRecord, "record", "visual stress marks must not alter lookup or spelling-test data");
     await recordCard.locator("details.technical-details summary").click();
@@ -303,7 +300,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v52"));
+    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v53"));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
