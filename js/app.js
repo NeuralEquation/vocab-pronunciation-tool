@@ -681,45 +681,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         }).join("");
       }
 
-      function primaryStressSyllableIndex(pronunciation, syllableCount) {
-        const text = String(pronunciation || "");
-        const markerIndex = text.indexOf("ˈ");
-        if (markerIndex < 0 || syllableCount < 1) return -1;
-        const parts = text.split(/[-·.]/).filter(Boolean);
-        if (parts.length === syllableCount) {
-          const index = parts.findIndex(part => part.includes("ˈ"));
-          if (index >= 0) return index;
-        }
-        if (markerIndex === 0) return 0;
-        if (syllableCount === 2) return 1;
-        return -1;
-      }
-
-      function renderStressMarkedSyllable(value) {
-        const syllable = String(value || "");
-        let vowelIndex = syllable.search(/[aeiou]/i);
-        if (vowelIndex < 0) vowelIndex = syllable.search(/y/i);
-        if (vowelIndex < 0) return escapeHtml(syllable);
-        const accentedVowels = { a: "á", e: "é", i: "í", o: "ó", u: "ú", y: "ý", A: "Á", E: "É", I: "Í", O: "Ó", U: "Ú", Y: "Ý" };
-        const vowel = syllable[vowelIndex];
-        return `${escapeHtml(syllable.slice(0, vowelIndex))}<span class="stress-vowel" data-accented="${accentedVowels[vowel] || vowel}">${escapeHtml(vowel)}</span>${escapeHtml(syllable.slice(vowelIndex + 1))}`;
-      }
-
-      function renderAccentedWord(word, variant = null) {
-        if (!word) return "";
-        const selected = variant || preferredPronunciationVariant(word);
-        const raw = String(selected?.syllabifiedHeadword || word.syllabifiedHeadword || "");
-        const syllables = raw.split("*").map(part => part.trim()).filter(Boolean);
-        const displayed = syllables.join("");
-        if (syllables.length < 2 || normalizeLookupText(displayed) !== normalizeLookupText(word.word)) {
-          return `<span class="accent-word">${escapeHtml(word.word)}</span>`;
-        }
-        const stressIndex = primaryStressSyllableIndex(selected?.pronunciation || word.pronunciation, syllables.length);
-        if (stressIndex < 0) return `<span class="accent-word">${escapeHtml(word.word)}</span>`;
-        if (/^[A-Z]/.test(word.word)) syllables[0] = syllables[0].charAt(0).toUpperCase() + syllables[0].slice(1);
-        return `<span class="accent-word" aria-label="${escapeHtml(word.word)}"><span aria-hidden="true">${syllables.map((part, index) => `<span class="${index === stressIndex ? "stress-primary" : "stress-normal"}">${index === stressIndex ? renderStressMarkedSyllable(part) : escapeHtml(part)}</span>`).join("")}</span></span>`;
-      }
-
       function renderSpellingRisk(word) {
         const risk = analyzeSpellingRisk(word.word);
         if (risk.level !== "high" || !risk.reasons.length) return "";
@@ -826,7 +787,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
               <div style="min-width:0;flex:1 1 auto">
                 <div class="word-main-line">
                   <span class="word-index">${index + 1}/${words.length}</span>
-                  <div class="word-title">${renderAccentedWord(word)}</div>
+                  <div class="word-title">${escapeHtml(word.word)}</div>
                 </div>
                 <div class="word-meaning">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div>
                 <div class="pron-line">
@@ -1033,7 +994,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const usageReview = usageItems.length
           ? `<div class="speed-usage-review"><button class="soft speed-usage-toggle" data-speed-action="usage" aria-expanded="${state.speedUsageVisible}">例文・熟語を確認（${usageItems.length}件）</button>${state.speedUsageVisible ? `<div class="speed-usage-list">${usageItems.map(item => `<article><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span><strong>${escapeHtml(item.english)}</strong><span>${escapeHtml(item.japanese)}</span></article>`).join("")}</div>` : ""}</div>`
           : "";
-        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="単語カード"><div class="speed-word">${renderAccentedWord(word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">下の大きなボタンで意味を確認</div>`}</div></div><button class="primary speed-meaning-toggle" data-speed-action="meaning" aria-expanded="${state.speedMeaningVisible}">${state.speedMeaningVisible ? "意味を隠す" : "意味を確認"}</button>${usageReview}<div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">知らない</button><button class="speed-unsure" data-speed-rating="unsure">怪しい</button><button class="speed-instant" data-speed-rating="instant">即答</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span></div>`;
+        $("speedContent").innerHTML = `<div class="speed-head"><span>全体 ${session.round}周目</span><span>${session.index + 1} / ${session.roundWordIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><div class="speed-metrics"><div><strong>${remaining}</strong>この周の残り</div><div><strong>${wordsPerMinute ? wordsPerMinute.toFixed(1) : "—"}</strong>語/分</div><div><strong>${etaMinutes ? `約${etaMinutes}分` : "計測中"}</strong>終了目安</div></div><div class="speed-audio-status meta">${audioLabel}</div><div class="speed-card-wrap">${fallbackReplay}<div class="speed-card" data-speed-card tabindex="0" role="button" aria-label="単語カード"><div class="speed-word">${escapeHtml(word.word)}</div>${state.speedMeaningVisible ? `<div class="speed-meaning">${escapeHtml(meaning)}</div>${renderSpellingRisk(word)}` : `<div class="speed-hint">下の大きなボタンで意味を確認</div>`}</div></div><button class="primary speed-meaning-toggle" data-speed-action="meaning" aria-expanded="${state.speedMeaningVisible}">${state.speedMeaningVisible ? "意味を隠す" : "意味を確認"}</button>${usageReview}<div class="speed-actions"><button class="speed-unknown" data-speed-rating="unknown">知らない</button><button class="speed-unsure" data-speed-rating="unsure">怪しい</button><button class="speed-instant" data-speed-rating="instant">即答</button></div><div class="speed-footer"><span class="meta">履歴は危険項目へ反映・15問成績とは独立</span></div>`;
         autoPlaySpeedReviewWord(word);
       }
 
@@ -1222,7 +1183,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
         const audio = hasOfficial ? "公式音声を自動再生" : canSpeak ? "端末音声を自動再生" : "利用できる音声なし";
         const replay = hasOfficial || canSpeak ? `<button class="soft" data-study-action="audio">発音をもう一度聞く</button>` : "";
-        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${renderAccentedWord(word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="tap-next-hint">タップして次へ</div></article>`;
+        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${escapeHtml(word.word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="tap-next-hint">タップして次へ</div></article>`;
         const key = `study-word:${session.rangeId}:${session.index}:${word.id}`;
         if (key !== lastAutoSpokenStudyWordKey) {
           lastAutoSpokenStudyWordKey = key;
@@ -1438,11 +1399,6 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         const range = state.ranges.find(item => item.id === session?.rangeId);
         if (!session || !range) return;
         $("testContent").innerHTML = renderTestQuestion(session, range);
-        if (session.direction === "enToJa") {
-          const word = testWord(range, session.questions[session.index].wordId);
-          const prompt = $("testContent").querySelector(".test-prompt");
-          if (prompt && word) prompt.innerHTML = renderAccentedWord(word);
-        }
         session.questionStartedAt = Date.now();
         if (session.direction === "enToJa") setTimeout(() => playTestAudio(testWord(range, session.questions[session.index].wordId)), 120);
       }
@@ -1560,7 +1516,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           return `<div class="pronunciation-variant">
             <div class="variant-copy">
               ${meta || number ? `<div class="variant-meta">${escapeHtml(meta)}${number}</div>` : ""}
-              <div class="accent-variant">${renderAccentedWord(word, variant)}</div>
+              <div class="variant-headword">${escapeHtml(variant.headword || word.word)}</div>
               <div class="variant-pronunciation">${escapeHtml(variant.pronunciation || "発音表記なし")}</div>
             </div>
             <button class="soft variant-audio" data-word-action="variant-play" data-id="${escapeHtml(word.id)}" data-variant-id="${escapeHtml(variant.id)}" ${variant.audioUrl ? "" : "disabled"}>公式音声</button>
