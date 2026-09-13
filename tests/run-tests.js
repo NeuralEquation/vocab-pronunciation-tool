@@ -21,10 +21,10 @@ const sandbox = {
 };
 sandbox.window = sandbox;
 const context = vm.createContext(sandbox);
-["js/storage.js", "js/content.js", "js/test.js"].forEach(file => {
+["js/storage.js", "js/content.js", "js/test.js", "js/playback.js"].forEach(file => {
   vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), context, { filename: file });
 });
-const { MWStorage: storage, MWContent: content, MWTest: test } = sandbox;
+const { MWStorage: storage, MWContent: content, MWTest: test, MWPlayback: playback } = sandbox;
 const tests = [];
 const it = (name, fn) => tests.push({ name, fn });
 const day = value => new Date(`${value}T12:00:00.000Z`).getTime();
@@ -56,6 +56,21 @@ it("runs all browser-module self-checks", () => {
   assert.equal(storage.runStorageSelfCheck().passed, true);
   assert.equal(content.runContentSelfCheck().passed, true);
   assert.equal(test.runTestFeatureSelfCheck().passed, true);
+});
+
+it("calculates adaptive usage review timing by type, length, count, and clamp", () => {
+  const phrase = (english, japanese = "訳") => ({ type: "phrase", english, japanese });
+  const example = (english, japanese = "訳") => ({ type: "example", english, japanese });
+  const shortPhrase = playback.calculateUsageReviewDelayMs([phrase("take care")]);
+  const longPhrase = playback.calculateUsageReviewDelayMs([phrase("take very good care of yourself", "自分自身を十分に大切にする")]);
+  const shortExample = playback.calculateUsageReviewDelayMs([example("I agree.")]);
+  const longExample = playback.calculateUsageReviewDelayMs([example("I completely agree with the careful conclusion in this long example.", "私はこの長い例文の慎重な結論に全面的に同意します。")]);
+  assert.equal(playback.calculateUsageReviewDelayMs([]), 0);
+  assert.ok(shortPhrase < longPhrase, `${shortPhrase} should be shorter than ${longPhrase}`);
+  assert.ok(shortExample < longExample, `${shortExample} should be shorter than ${longExample}`);
+  assert.ok(shortPhrase < playback.calculateUsageReviewDelayMs([phrase("take care"), phrase("look after")]));
+  assert.equal(playback.calculateUsageReviewDelayMs(Array.from({ length: 20 }, () => example("This is an intentionally long example with many words.", "これは上限確認用の長い日本語訳です。"))), 12000);
+  assert.equal(playback.calculateUsageReviewDelayMs([phrase("take care")], { mode: "fixed", fixedSeconds: 8 }), 8000);
 });
 
 it("balances answer positions for empty through uneven small and normal sets", () => {
@@ -261,12 +276,14 @@ it("sanitizes malformed storage, future schemas, IDs and references, and round-t
   assert.equal(migrated.data.ui.selectedRangeId, range.id, "renamed range references are migrated");
   assert.equal(migrated.data.studyLog["2026-08-20"].correct, 4);
   assert.equal(migrated.data.settings.usageReviewExtraSeconds, 10);
+  assert.equal(migrated.data.settings.usageReviewMode, "auto", "old backups retain their fixed value while defaulting to automatic timing");
   const backup = storage.createBackup({ ...migrated.data, ui: { selectedRangeId: range.id }, settings: { ...migrated.data.settings, saveKey: true, apiKeySession: "secret" } }, "2026-08-20T00:00:00.000Z");
   assert.equal(JSON.stringify(backup).includes("secret"), false);
   const imported = storage.planImport(JSON.stringify(backup), [], "append");
   assert.equal(imported.ok, true);
   assert.equal(imported.data.settings.saveKey, false);
   assert.equal(imported.data.settings.usageReviewExtraSeconds, 10);
+  assert.equal(imported.data.settings.usageReviewMode, "auto");
   assert.equal(JSON.stringify(imported.data.studyLog), JSON.stringify(backup.studyLog));
   assert.equal(storage.migrateBackup({ ranges: [{ id: "broken", words: [], usageItems: [{ id: "u", english: "", japanese: "欠落" }] }] }).ok, false);
   assert.equal(JSON.stringify(imported.data.ui), JSON.stringify(backup.ui));

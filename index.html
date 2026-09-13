@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=53">
+  <link rel="stylesheet" href="styles.css?v=54">
 </head>
 <body>
   <div class="app">
@@ -251,17 +251,30 @@
                   <option value="3">3秒</option>
                 </select>
               </div>
-              <div class="toolbar-field">
-                <label for="usageReviewExtraSeconds">例文・熟語の追加確認時間</label>
-                <select id="usageReviewExtraSeconds">
-                  <option value="0">追加なし</option>
-                  <option value="3">+3秒</option>
-                  <option value="5">+5秒</option>
-                  <option value="8">+8秒</option>
-                  <option value="10">+10秒</option>
-                  <option value="15">+15秒</option>
-                </select>
-              </div>
+              <details class="playback-advanced">
+                <summary>例文・熟語の確認時間</summary>
+                <div class="playback-advanced-body">
+                  <div class="toolbar-field">
+                    <label for="usageReviewMode">時間の決め方</label>
+                    <select id="usageReviewMode">
+                      <option value="auto">自動</option>
+                      <option value="fixed">固定</option>
+                    </select>
+                  </div>
+                  <div class="toolbar-field" id="usageReviewFixedField">
+                    <label for="usageReviewExtraSeconds">固定の追加確認時間</label>
+                    <select id="usageReviewExtraSeconds">
+                      <option value="0">追加なし</option>
+                      <option value="3">+3秒</option>
+                      <option value="5">+5秒</option>
+                      <option value="8">+8秒</option>
+                      <option value="10">+10秒</option>
+                      <option value="15">+15秒</option>
+                    </select>
+                  </div>
+                  <p class="note">自動では、熟語・例文の数と英語・日本語の長さから最大12秒まで調整します。</p>
+                </div>
+              </details>
               <div class="playback-actions">
                 <button class="primary" id="continuousStart" aria-pressed="false">連続再生開始</button>
                 <button class="soft" id="continuousStop" disabled>停止</button>
@@ -302,14 +315,18 @@
       <strong id="playbackDockWord">連続再生</strong>
       <span id="playbackDockProgress">0 / 0</span>
     </div>
+    <button class="soft" id="playbackPrevious">‹ 前</button>
+    <button class="soft" id="playbackReplay">↻ もう一度</button>
     <button class="soft" id="playbackPause">一時停止</button>
+    <button class="soft" id="playbackNext">次 ›</button>
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=53"></script>
-  <script defer src="js/content.js?v=53"></script>
-  <script defer src="js/test.js?v=53"></script>
-  <script defer src="js/app.js?v=53"></script>
-  <script defer src="js/ux-overrides.js?v=53"></script>
+  <script defer src="js/storage.js?v=54"></script>
+  <script defer src="js/content.js?v=54"></script>
+  <script defer src="js/test.js?v=54"></script>
+  <script defer src="js/playback.js?v=54"></script>
+  <script defer src="js/app.js?v=54"></script>
+  <script defer src="js/ux-overrides.js?v=54"></script>
 </body>
 </html>

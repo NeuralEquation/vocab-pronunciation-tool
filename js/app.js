@@ -11,6 +11,7 @@ var { parseUnifiedRows, parseMemoryRows, makeUsageItems, makeMemoryItems, normal
 window.runContentFeatureSelfCheck = runContentSelfCheck;
 var { SCHEMA_VERSION: STORAGE_SCHEMA_VERSION, APP_VERSION, migrateBackup, parseBackup, planImport, createBackup, runStorageSelfCheck } = window.MWStorage;
 window.runStorageSelfCheck = runStorageSelfCheck;
+var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
     (() => {
       "use strict";
@@ -45,7 +46,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
 
       const state = {
         ranges: [],
-        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2, usageReviewExtraSeconds: 5, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2, usageReviewMode: "auto", usageReviewExtraSeconds: 5, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
         studyLog: {},
         fetchingRangeId: "",
         selectedRangeId: null,
@@ -68,13 +69,20 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       const playbackState = {
         active: false,
         currentAudio: null,
+        currentUtterance: null,
         timerId: null,
+        timerStartedAt: 0,
+        timerDueAt: 0,
+        remainingDelayMs: 0,
         rangeId: "",
         wordIds: [],
-        currentIndex: 0,
+        currentIndex: -1,
         currentWordId: "",
         paused: false,
-        phase: "idle"
+        phase: "idle",
+        transport: "none",
+        resumeAction: "none",
+        operationToken: 0
       };
       let previewAudio = null;
       let lastAutoSpokenSpeedKey = "";
@@ -83,6 +91,11 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       let sessionReturnFocus = null;
 
       const $ = (id) => document.getElementById(id);
+      const playbackClock = window.__MWPlaybackTestClock || {
+        now: () => performance.now(),
+        setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+        clearTimeout: timerId => window.clearTimeout(timerId)
+      };
 
       function uid(prefix) {
         return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -314,7 +327,9 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           $("definitionLimit").value = String(state.settings.definitionLimit);
           $("wordFilter").value = state.settings.studyFilter;
           $("playbackInterval").value = String(state.settings.playbackInterval);
+          $("usageReviewMode").value = state.settings.usageReviewMode;
           $("usageReviewExtraSeconds").value = String(state.settings.usageReviewExtraSeconds);
+          updateUsageTimingSettings();
           $("mondayEndTime").value = state.settings.mondayEndTime;
           $("wednesdayEndTime").value = state.settings.wednesdayEndTime;
           $("fridayEndTime").value = state.settings.fridayEndTime;
@@ -767,6 +782,9 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         }
         $("wordFilter").value = state.settings.studyFilter;
         $("playbackInterval").value = String(state.settings.playbackInterval);
+        $("usageReviewMode").value = state.settings.usageReviewMode;
+        $("usageReviewExtraSeconds").value = String(state.settings.usageReviewExtraSeconds);
+        updateUsageTimingSettings();
         updatePlaybackControls();
         const readiness = readinessForRange(range);
         $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.total}語 / 例文${s.examples}・熟語${s.phrases}`;
@@ -801,6 +819,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
             <div class="study-actions">
               <button class="primary" data-word-action="play" data-id="${escapeHtml(word.id)}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
               <button class="primary" data-word-action="next" data-id="${escapeHtml(word.id)}">次へ</button>
+              <button class="soft play-from-here" data-word-action="play-from" data-id="${escapeHtml(word.id)}">▶ ここから再生</button>
             </div>
             <div class="secondary-actions">
               <button class="soft" data-word-action="speak" data-id="${escapeHtml(word.id)}">読み上げ</button>
@@ -2199,6 +2218,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
       }
 
       function speakWord(wordId) {
+        stopContinuousPlayback();
         const word = findWord(wordId);
         if (!word || !speakWordText(word.word)) {
           toast("このブラウザでは読み上げに対応していません。", true);
@@ -2263,6 +2283,35 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         save();
       }
 
+      function updateUsageTimingSettings() {
+        const mode = state.settings.usageReviewMode === "fixed" ? "fixed" : "auto";
+        const fixedField = $("usageReviewFixedField");
+        if (fixedField) fixedField.classList.toggle("hidden", mode !== "fixed");
+      }
+
+      function canUseContinuousSpeech() {
+        return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      }
+
+      function isContinuousWordPlayable(word) {
+        return Boolean(word && (officialAudioUrlForWord(word) || (word.word && canUseContinuousSpeech())));
+      }
+
+      function continuousUsageDelayMs(wordId = playbackState.currentWordId) {
+        const range = state.ranges.find(item => item.id === playbackState.rangeId);
+        return calculateUsageReviewDelayMs(linkedUsageItemsForWord(range, wordId), {
+          mode: state.settings.usageReviewMode,
+          fixedSeconds: state.settings.usageReviewExtraSeconds
+        });
+      }
+
+      function playableIndexFrom(startIndex, direction) {
+        for (let index = startIndex; index >= 0 && index < playbackState.wordIds.length; index += direction) {
+          if (isContinuousWordPlayable(findWord(playbackState.wordIds[index]))) return index;
+        }
+        return -1;
+      }
+
       function updatePlaybackControls() {
         const start = $("continuousStart");
         const stop = $("continuousStop");
@@ -2277,9 +2326,13 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         pause.textContent = playbackState.paused ? "再開" : "一時停止";
         pause.disabled = !playbackState.active;
         const word = findWord(playbackState.currentWordId);
-        const extra = playbackState.phase === "reviewing" ? Number(state.settings.usageReviewExtraSeconds) || 0 : 0;
-        $("playbackDockWord").textContent = word ? `${word.word}${extra ? `・例文熟語 +${extra}秒` : ""}` : "連続再生";
+        const reviewMs = playbackState.phase === "reviewing" ? playbackState.remainingDelayMs : 0;
+        const timingLabel = reviewMs ? `・例文熟語 ${Math.ceil(reviewMs / 100) / 10}秒` : "";
+        $("playbackDockWord").textContent = word ? `${word.word}${timingLabel}` : "連続再生";
         $("playbackDockProgress").textContent = playbackState.active ? `${Math.min(playbackState.currentIndex + 1, playbackState.wordIds.length)} / ${playbackState.wordIds.length}` : "0 / 0";
+        $("playbackReplay").disabled = !playbackState.active || playbackState.currentIndex < 0;
+        $("playbackPrevious").disabled = !playbackState.active || playableIndexFrom(playbackState.currentIndex - 1, -1) < 0;
+        $("playbackNext").disabled = !playbackState.active || playableIndexFrom(playbackState.currentIndex + 1, 1) < 0;
       }
 
       function setContinuousUsageOpen(wordId = "") {
@@ -2288,123 +2341,290 @@ window.runStorageSelfCheck = runStorageSelfCheck;
         });
       }
 
-      function stopContinuousPlayback() {
-        if (playbackState.timerId) clearTimeout(playbackState.timerId);
+      function clearContinuousTimer(preserveRemaining = false) {
+        if (preserveRemaining && playbackState.timerId !== null) {
+          playbackState.remainingDelayMs = Math.max(0, playbackState.timerDueAt - playbackClock.now());
+        }
+        if (playbackState.timerId !== null) playbackClock.clearTimeout(playbackState.timerId);
         playbackState.timerId = null;
+        playbackState.timerStartedAt = 0;
+        playbackState.timerDueAt = 0;
+      }
+
+      function detachContinuousMediaCallbacks() {
         if (playbackState.currentAudio) {
           playbackState.currentAudio.onended = null;
           playbackState.currentAudio.onerror = null;
-          playbackState.currentAudio.pause();
-          playbackState.currentAudio.removeAttribute("src");
         }
+        if (playbackState.currentUtterance) {
+          playbackState.currentUtterance.onend = null;
+          playbackState.currentUtterance.onerror = null;
+        }
+      }
+
+      function invalidateContinuousOperation() {
+        playbackState.operationToken++;
+        clearContinuousTimer(false);
+        detachContinuousMediaCallbacks();
+        if (playbackState.currentAudio) {
+          playbackState.currentAudio.pause();
+          try { playbackState.currentAudio.currentTime = 0; } catch {}
+        }
+        if (playbackState.currentUtterance && canUseContinuousSpeech()) {
+          window.speechSynthesis.cancel();
+        }
+        playbackState.currentUtterance = null;
+      }
+
+      function callbackMatches(token, index, wordId) {
+        return playbackState.active
+          && !playbackState.paused
+          && playbackState.operationToken === token
+          && playbackState.currentIndex === index
+          && playbackState.currentWordId === wordId;
+      }
+
+      function stopContinuousPlayback() {
+        invalidateContinuousOperation();
+        if (playbackState.currentAudio) playbackState.currentAudio.removeAttribute("src");
         playbackState.active = false;
         playbackState.currentAudio = null;
+        playbackState.currentUtterance = null;
         playbackState.rangeId = "";
         playbackState.wordIds = [];
-        playbackState.currentIndex = 0;
+        playbackState.currentIndex = -1;
         playbackState.currentWordId = "";
         playbackState.paused = false;
         playbackState.phase = "idle";
+        playbackState.transport = "none";
+        playbackState.resumeAction = "none";
+        playbackState.remainingDelayMs = 0;
         setContinuousUsageOpen();
         stopPreviewAudio();
         updatePlaybackControls();
       }
 
-      function toggleContinuousPause() {
-        if (!playbackState.active) return;
-        if (!playbackState.paused) {
-          playbackState.paused = true;
-          if (playbackState.timerId) clearTimeout(playbackState.timerId);
-          playbackState.timerId = null;
-          if (playbackState.phase === "playing") playbackState.currentAudio?.pause();
+      function attachOfficialAudioCallbacks(token, index, wordId) {
+        const audio = playbackState.currentAudio;
+        if (!audio) return;
+        audio.onended = () => finishContinuousWord(token, index, wordId);
+        audio.onerror = () => fallbackToContinuousSpeech(token, index, wordId);
+      }
+
+      function attachSpeechCallbacks(utterance, token, index, wordId) {
+        utterance.onend = () => finishContinuousWord(token, index, wordId);
+        utterance.onerror = () => skipUnplayableContinuousWord(token, index, wordId);
+      }
+
+      function startContinuousSpeech(word, token, index, wordId) {
+        if (!canUseContinuousSpeech()) return false;
+        const utterance = new SpeechSynthesisUtterance(word.word);
+        utterance.lang = "en-US";
+        const voices = window.speechSynthesis.getVoices?.() || [];
+        utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang)) || voices.find(voice => /^en\b/i.test(voice.lang)) || null;
+        attachSpeechCallbacks(utterance, token, index, wordId);
+        playbackState.currentUtterance = utterance;
+        playbackState.transport = "speech-synthesis";
+        playbackState.resumeAction = "speech-synthesis";
+        try {
+          window.speechSynthesis.speak(utterance);
+          return true;
+        } catch {
+          playbackState.currentUtterance = null;
+          playbackState.transport = "none";
+          return false;
+        }
+      }
+
+      function fallbackToContinuousSpeech(token, index, wordId) {
+        if (!callbackMatches(token, index, wordId)) return;
+        detachContinuousMediaCallbacks();
+        playbackState.currentAudio?.pause();
+        const word = findWord(wordId);
+        if (word && startContinuousSpeech(word, token, index, wordId)) {
           updatePlaybackControls();
           return;
         }
-        playbackState.paused = false;
-        updatePlaybackControls();
-        if (playbackState.phase === "playing" && playbackState.currentAudio?.src) {
-          playbackState.currentAudio.play().catch(() => scheduleNextContinuousWord());
-        } else {
-          scheduleNextContinuousWord();
-        }
+        skipUnplayableContinuousWord(token, index, wordId);
       }
 
-      function startContinuousPlayback() {
-        stopContinuousPlayback();
-        const range = state.ranges.find(item => item.id === state.selectedRangeId);
-        if (!range) return;
-        const words = filteredWords(range);
-        if (!words.length) return toast("連続再生できる単語がありません。", true);
-        const currentIndex = Math.max(0, words.findIndex(word => word.id === range.currentWordId));
-        playbackState.active = true;
-        playbackState.currentAudio = new Audio();
-        playbackState.rangeId = range.id;
-        playbackState.wordIds = words.map(word => word.id);
-        playbackState.currentIndex = currentIndex;
-        playbackState.paused = false;
-        playbackState.phase = "idle";
-        updatePlaybackControls();
-        playContinuousWord(true);
+      function skipUnplayableContinuousWord(token, index, wordId) {
+        if (!callbackMatches(token, index, wordId)) return;
+        invalidateContinuousOperation();
+        playbackState.currentIndex = index + 1;
+        playbackState.transport = "none";
+        playbackState.resumeAction = "play-current";
+        playContinuousWord();
       }
 
-      function playContinuousWord(isFirst = false) {
-        if (!playbackState.active || playbackState.paused) return;
-        while (playbackState.currentIndex < playbackState.wordIds.length) {
-          const word = findWord(playbackState.wordIds[playbackState.currentIndex]);
-          const officialAudioUrl = word ? officialAudioUrlForWord(word) : "";
-          if (word && officialAudioUrl) {
-            setContinuousUsageOpen(word.id);
-            playbackState.currentWordId = word.id;
-            playbackState.phase = "playing";
-            rememberWord(word.id);
-            document.querySelector(`[data-word-id="${CSS.escape(word.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-            const audio = playbackState.currentAudio;
-            audio.onended = scheduleNextContinuousWord;
-            audio.onerror = scheduleNextContinuousWord;
-            audio.src = officialAudioUrl;
-            audio.currentTime = 0;
-            audio.play().catch(() => {
-              if (isFirst) {
-                stopContinuousPlayback();
-                toast("連続再生を開始できませんでした。もう一度開始を押してください。", true);
-                return;
-              }
-              scheduleNextContinuousWord();
-            });
-            updatePlaybackControls();
-            return;
-          }
-          playbackState.currentIndex++;
-        }
-        stopContinuousPlayback();
-        toast("連続再生が完了しました。");
+      function finishContinuousWord(token, index, wordId) {
+        if (!callbackMatches(token, index, wordId)) return;
+        detachContinuousMediaCallbacks();
+        playbackState.currentUtterance = null;
+        scheduleNextContinuousWord();
       }
 
-      function scheduleNextContinuousWord() {
-        if (!playbackState.active) return;
-        if (playbackState.timerId) return;
-        if (playbackState.currentAudio) {
-          playbackState.currentAudio.onended = null;
-          playbackState.currentAudio.onerror = null;
-        }
-        const range = state.ranges.find(item => item.id === playbackState.rangeId);
-        const usageCount = linkedUsageItemsForWord(range, playbackState.currentWordId).length;
-        const extraSeconds = usageCount ? Number(state.settings.usageReviewExtraSeconds) || 0 : 0;
-        const delaySeconds = (Number(state.settings.playbackInterval) || 2) + extraSeconds;
-        const nextIndex = playbackState.currentIndex + 1;
-        playbackState.phase = extraSeconds ? "reviewing" : "waiting";
-        updatePlaybackControls();
-        if (playbackState.paused) return;
-        playbackState.timerId = setTimeout(() => {
+      function armContinuousTimer(delayMs) {
+        const token = playbackState.operationToken;
+        const index = playbackState.currentIndex;
+        const wordId = playbackState.currentWordId;
+        const safeDelayMs = Math.max(0, Math.round(delayMs));
+        playbackState.remainingDelayMs = safeDelayMs;
+        playbackState.timerStartedAt = playbackClock.now();
+        playbackState.timerDueAt = playbackState.timerStartedAt + safeDelayMs;
+        playbackState.timerId = playbackClock.setTimeout(() => {
+          if (!callbackMatches(token, index, wordId) || playbackState.timerId === null) return;
           playbackState.timerId = null;
-          if (nextIndex >= playbackState.wordIds.length) {
+          playbackState.timerStartedAt = 0;
+          playbackState.timerDueAt = 0;
+          playbackState.remainingDelayMs = 0;
+          const nextIndex = playableIndexFrom(index + 1, 1);
+          if (nextIndex < 0) {
             stopContinuousPlayback();
             toast("連続再生が完了しました。");
             return;
           }
           playbackState.currentIndex = nextIndex;
+          playbackState.transport = "none";
+          playbackState.resumeAction = "play-current";
           playContinuousWord();
-        }, delaySeconds * 1000);
+        }, safeDelayMs);
+      }
+
+      function toggleContinuousPause() {
+        if (!playbackState.active) return;
+        if (!playbackState.paused) {
+          const resumeAction = playbackState.transport === "timer"
+            ? "timer"
+            : playbackState.transport === "official-audio"
+              ? "official-audio"
+              : playbackState.transport === "speech-synthesis"
+                ? "speech-synthesis"
+                : "play-current";
+          if (resumeAction === "timer") clearContinuousTimer(true);
+          playbackState.operationToken++;
+          detachContinuousMediaCallbacks();
+          if (resumeAction === "official-audio") playbackState.currentAudio?.pause();
+          if (resumeAction === "speech-synthesis" && canUseContinuousSpeech()) {
+            try { window.speechSynthesis.pause(); } catch {}
+          }
+          playbackState.paused = true;
+          playbackState.resumeAction = resumeAction;
+          updatePlaybackControls();
+          return;
+        }
+        playbackState.paused = false;
+        const token = ++playbackState.operationToken;
+        const index = playbackState.currentIndex;
+        const wordId = playbackState.currentWordId;
+        const resumeAction = playbackState.resumeAction;
+        if (resumeAction === "official-audio" && playbackState.currentAudio) {
+          attachOfficialAudioCallbacks(token, index, wordId);
+          playbackState.currentAudio.play().catch(() => fallbackToContinuousSpeech(token, index, wordId));
+        } else if (resumeAction === "speech-synthesis" && playbackState.currentUtterance && canUseContinuousSpeech()) {
+          attachSpeechCallbacks(playbackState.currentUtterance, token, index, wordId);
+          try { window.speechSynthesis.resume(); }
+          catch { skipUnplayableContinuousWord(token, index, wordId); }
+        } else if (resumeAction === "timer") {
+          armContinuousTimer(playbackState.remainingDelayMs);
+        } else {
+          playContinuousWord();
+        }
+        updatePlaybackControls();
+      }
+
+      function startContinuousPlayback(startWordId = "") {
+        stopContinuousPlayback();
+        const range = state.ranges.find(item => item.id === state.selectedRangeId);
+        if (!range) return;
+        const words = filteredWords(range);
+        if (!words.length) return toast("連続再生できる単語がありません。", true);
+        const requestedWordId = typeof startWordId === "string" && startWordId ? startWordId : range.currentWordId;
+        const requestedIndex = words.findIndex(word => word.id === requestedWordId);
+        if (startWordId && requestedIndex < 0) return toast("現在の表示条件では、その単語から再生できません。", true);
+        playbackState.active = true;
+        playbackState.rangeId = range.id;
+        playbackState.wordIds = words.map(word => word.id);
+        playbackState.currentIndex = Math.max(0, requestedIndex);
+        playbackState.paused = false;
+        playbackState.phase = "idle";
+        playbackState.transport = "none";
+        playbackState.resumeAction = "play-current";
+        updatePlaybackControls();
+        playContinuousWord();
+      }
+
+      function playContinuousWord() {
+        if (!playbackState.active || playbackState.paused) return;
+        const nextPlayableIndex = playableIndexFrom(playbackState.currentIndex, 1);
+        if (nextPlayableIndex < 0) {
+          stopContinuousPlayback();
+          toast("連続再生できる音声がありません。", true);
+          return;
+        }
+        playbackState.currentIndex = nextPlayableIndex;
+        const word = findWord(playbackState.wordIds[nextPlayableIndex]);
+        playbackState.currentWordId = word.id;
+        playbackState.phase = "playing";
+        playbackState.remainingDelayMs = 0;
+        setContinuousUsageOpen(word.id);
+        rememberWord(word.id);
+        document.querySelector(`[data-word-id="${CSS.escape(word.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        const token = ++playbackState.operationToken;
+        const officialAudioUrl = officialAudioUrlForWord(word);
+        if (officialAudioUrl) {
+          const audio = playbackState.currentAudio || new Audio();
+          playbackState.currentAudio = audio;
+          playbackState.currentUtterance = null;
+          playbackState.transport = "official-audio";
+          playbackState.resumeAction = "official-audio";
+          attachOfficialAudioCallbacks(token, nextPlayableIndex, word.id);
+          audio.src = officialAudioUrl;
+          audio.currentTime = 0;
+          audio.play().catch(() => fallbackToContinuousSpeech(token, nextPlayableIndex, word.id));
+        } else {
+          if (!startContinuousSpeech(word, token, nextPlayableIndex, word.id)) {
+            skipUnplayableContinuousWord(token, nextPlayableIndex, word.id);
+          }
+        }
+        updatePlaybackControls();
+      }
+
+      function scheduleNextContinuousWord() {
+        if (!playbackState.active || playbackState.paused || playbackState.timerId !== null) return;
+        invalidateContinuousOperation();
+        const usageDelayMs = continuousUsageDelayMs();
+        const baseDelayMs = (Number(state.settings.playbackInterval) || 2) * 1000;
+        playbackState.phase = usageDelayMs ? "reviewing" : "waiting";
+        playbackState.transport = "timer";
+        playbackState.resumeAction = "timer";
+        armContinuousTimer(baseDelayMs + usageDelayMs);
+        updatePlaybackControls();
+      }
+
+      function replayCurrentContinuousWord() {
+        if (!playbackState.active || playbackState.currentIndex < 0) return;
+        invalidateContinuousOperation();
+        playbackState.paused = false;
+        playbackState.phase = "idle";
+        playbackState.transport = "none";
+        playbackState.resumeAction = "play-current";
+        playbackState.remainingDelayMs = 0;
+        playContinuousWord();
+      }
+
+      function moveContinuousPlayback(direction) {
+        if (!playbackState.active || ![-1, 1].includes(direction)) return;
+        const targetIndex = playableIndexFrom(playbackState.currentIndex + direction, direction);
+        if (targetIndex < 0) return;
+        invalidateContinuousOperation();
+        playbackState.currentIndex = targetIndex;
+        playbackState.paused = false;
+        playbackState.phase = "idle";
+        playbackState.transport = "none";
+        playbackState.resumeAction = "play-current";
+        playbackState.remainingDelayMs = 0;
+        playContinuousWord();
       }
 
       function findWord(wordId) {
@@ -2714,13 +2934,21 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           state.settings.playbackInterval = Number($("playbackInterval").value) || 2;
           save(false);
         });
+        $("usageReviewMode").addEventListener("change", () => {
+          state.settings.usageReviewMode = $("usageReviewMode").value === "fixed" ? "fixed" : "auto";
+          updateUsageTimingSettings();
+          save(false);
+        });
         $("usageReviewExtraSeconds").addEventListener("change", () => {
           state.settings.usageReviewExtraSeconds = Number($("usageReviewExtraSeconds").value) || 0;
           save(false);
         });
-        $("continuousStart").addEventListener("click", startContinuousPlayback);
+        $("continuousStart").addEventListener("click", () => startContinuousPlayback());
         $("continuousStop").addEventListener("click", stopContinuousPlayback);
         $("playbackPause").addEventListener("click", toggleContinuousPause);
+        $("playbackReplay").addEventListener("click", replayCurrentContinuousWord);
+        $("playbackPrevious").addEventListener("click", () => moveContinuousPlayback(-1));
+        $("playbackNext").addEventListener("click", () => moveContinuousPlayback(1));
         $("playbackDockStop").addEventListener("click", stopContinuousPlayback);
         $("jumpTop").addEventListener("click", () => {
           $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -2867,6 +3095,12 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           }
           const word = findWord(btn.dataset.id);
           if (!word) return;
+          if (btn.dataset.wordAction === "play-from") {
+            event.preventDefault();
+            event.stopPropagation();
+            startContinuousPlayback(word.id);
+            return;
+          }
           if (btn.dataset.wordAction === "play") playOfficial(word.id);
           if (btn.dataset.wordAction === "variant-play") playPronunciationVariant(word.id, btn.dataset.variantId);
           if (btn.dataset.wordAction === "next") goToNextWord(word.id);
@@ -2903,7 +3137,7 @@ window.runStorageSelfCheck = runStorageSelfCheck;
           if (trigger) showReadinessDetails(trigger.dataset.readinessOpen);
         });
         document.addEventListener("visibilitychange", () => {
-          if (document.hidden) stopContinuousPlayback();
+          if (document.hidden && playbackState.active && !playbackState.paused) toggleContinuousPause();
           else render();
         });
         window.addEventListener("focus", render);

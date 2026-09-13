@@ -99,6 +99,96 @@ async function main() {
   const browser = await chromium.launch({ headless: true, executablePath });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, acceptDownloads: true });
   const page = await context.newPage();
+  await page.addInitScript(() => {
+    window.__unhandledRejections = [];
+    window.addEventListener("unhandledrejection", event => {
+      window.__unhandledRejections.push(String(event.reason?.stack || event.reason || "unknown rejection"));
+    });
+    let now = 0;
+    let nextTimerId = 1;
+    const activeTimers = new Map();
+    const timerHistory = new Map();
+    window.__MWPlaybackTestClock = {
+      now: () => now,
+      setTimeout(callback, delay) {
+        const id = nextTimerId++;
+        const timer = { id, callback, dueAt: now + Number(delay || 0), delay: Number(delay || 0) };
+        activeTimers.set(id, timer);
+        timerHistory.set(id, timer);
+        return id;
+      },
+      clearTimeout(id) { activeTimers.delete(id); },
+      advance(milliseconds) {
+        now += milliseconds;
+        while (true) {
+          const due = [...activeTimers.values()].filter(timer => timer.dueAt <= now).sort((a, b) => a.dueAt - b.dueAt || a.id - b.id)[0];
+          if (!due) break;
+          activeTimers.delete(due.id);
+          due.callback();
+        }
+      },
+      pending: () => [...activeTimers.values()].map(timer => ({ id: timer.id, delay: timer.delay, dueAt: timer.dueAt })),
+      lastId: () => nextTimerId - 1,
+      fireStale(id) { timerHistory.get(id)?.callback(); }
+    };
+
+    const audioHarness = { instances: [], capturedEnds: [], capturedErrors: [] };
+    class FakeAudio {
+      constructor(src = "") {
+        this.src = src;
+        this.currentTime = 0;
+        this.paused = true;
+        this.playCalls = 0;
+        this.onended = null;
+        this.onerror = null;
+        audioHarness.instances.push(this);
+      }
+      play() {
+        this.paused = false;
+        this.playCalls++;
+        audioHarness.capturedEnds.push(this.onended);
+        audioHarness.capturedErrors.push(this.onerror);
+        return Promise.resolve();
+      }
+      pause() { this.paused = true; }
+      removeAttribute(name) { if (name === "src") this.src = ""; }
+    }
+    audioHarness.fireLatestEnd = () => audioHarness.capturedEnds.at(-1)?.();
+    audioHarness.fireLatestError = () => audioHarness.capturedErrors.at(-1)?.();
+    audioHarness.fireCapturedEnd = index => audioHarness.capturedEnds[index]?.();
+    window.__audioHarness = audioHarness;
+    window.Audio = FakeAudio;
+
+    class FakeUtterance {
+      constructor(text) {
+        this.text = text;
+        this.lang = "";
+        this.voice = null;
+        this.onend = null;
+        this.onerror = null;
+      }
+    }
+    const speechHarness = {
+      utterances: [],
+      capturedEnds: [],
+      paused: false,
+      cancelled: 0,
+      speak(utterance) {
+        this.utterances.push(utterance);
+        this.capturedEnds.push(utterance.onend);
+        this.paused = false;
+      },
+      pause() { this.paused = true; },
+      resume() { this.paused = false; },
+      cancel() { this.cancelled++; this.paused = false; },
+      getVoices() { return [{ lang: "en-US", name: "Test English" }]; },
+      fireLatestEnd() { this.utterances.at(-1)?.onend?.(); },
+      fireCapturedEnd(index) { this.capturedEnds[index]?.(); }
+    };
+    window.SpeechSynthesisUtterance = FakeUtterance;
+    Object.defineProperty(window, "speechSynthesis", { configurable: true, value: speechHarness });
+    window.__speechHarness = speechHarness;
+  });
   const browserErrors = [];
   page.on("pageerror", error => browserErrors.push(`pageerror: ${error.message}`));
   page.on("console", message => { if (message.type() === "error") browserErrors.push(`console: ${message.text()}`); });
@@ -144,6 +234,126 @@ async function main() {
     const storedRecord = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words[0].word);
     assert.equal(storedRecord, "record", "visual stress marks must not alter lookup or spelling-test data");
     await recordCard.locator("details.technical-details summary").click();
+
+    await page.evaluate(() => {
+      const setSelect = (id, value) => {
+        const select = document.getElementById(id);
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+      setSelect("playbackInterval", "1");
+      setSelect("usageReviewMode", "fixed");
+      setSelect("usageReviewExtraSeconds", "0");
+    });
+
+    const dockWord = page.locator("#playbackDockWord");
+    const dockProgress = page.locator("#playbackDockProgress");
+    const playbackPause = page.locator("#playbackPause");
+    const startFrom = index => page.locator(".word-card").nth(index).locator("[data-word-action='play-from']").click();
+    const stopPlayback = () => page.locator("#playbackDockStop").click();
+
+    const speechCountBeforeOfficial = await page.evaluate(() => window.__speechHarness.utterances.length);
+    await startFrom(0);
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.length), speechCountBeforeOfficial, "official audio is attempted before TTS");
+    await page.evaluate(() => window.__audioHarness.fireLatestError());
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "record", "failed official audio falls back to English TTS for the same word");
+    await stopPlayback();
+
+    await startFrom(0);
+    await page.evaluate(() => window.__audioHarness.fireLatestEnd());
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending()))[0].delay, 1000);
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(700));
+    await playbackPause.click();
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending())).length, 0);
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(5000));
+    assert.equal((await dockProgress.textContent()).trim(), "1 / 20", "paused review time does not advance");
+    await playbackPause.click();
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending()))[0].delay, 300, "resume keeps the exact remaining milliseconds");
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(299));
+    assert.equal((await dockProgress.textContent()).trim(), "1 / 20");
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(1));
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20");
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "expense", "TTS fallback plays the no-official-audio word instead of skipping it");
+    await stopPlayback();
+
+    await startFrom(0);
+    await page.evaluate(() => window.__audioHarness.fireLatestEnd());
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(300));
+    await playbackPause.click();
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(4000));
+    await playbackPause.click();
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(400));
+    await playbackPause.click();
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(4000));
+    await playbackPause.click();
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending()))[0].delay, 300, "repeated pauses preserve only the unelapsed remainder");
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(299));
+    assert.equal((await dockProgress.textContent()).trim(), "1 / 20");
+    await page.evaluate(() => window.__MWPlaybackTestClock.advance(1));
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20");
+    await stopPlayback();
+
+    await startFrom(0);
+    await page.evaluate(() => { window.__audioHarness.instances.at(-1).currentTime = 1.25; });
+    await playbackPause.click();
+    assert.deepEqual(await page.evaluate(() => {
+      const audio = window.__audioHarness.instances.at(-1);
+      return { currentTime: audio.currentTime, paused: audio.paused };
+    }), { currentTime: 1.25, paused: true });
+    assert.equal((await dockProgress.textContent()).trim(), "1 / 20", "pausing audio preserves the current index");
+    await playbackPause.click();
+    assert.deepEqual(await page.evaluate(() => {
+      const audio = window.__audioHarness.instances.at(-1);
+      return { currentTime: audio.currentTime, paused: audio.paused, playCalls: audio.playCalls };
+    }), { currentTime: 1.25, paused: false, playCalls: 2 }, "audio resumes from the same position");
+    const staleAudioEndIndex = await page.evaluate(() => window.__audioHarness.capturedEnds.length - 1);
+    await page.locator("#playbackReplay").click();
+    await page.evaluate(index => window.__audioHarness.fireCapturedEnd(index), staleAudioEndIndex);
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending())).length, 0, "stale audio completion cannot schedule a timer after Replay");
+    const navigationStaleAudioEndIndex = await page.evaluate(() => window.__audioHarness.capturedEnds.length - 1);
+    await page.locator("#playbackNext").click();
+    await page.evaluate(index => window.__audioHarness.fireCapturedEnd(index), navigationStaleAudioEndIndex);
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20", "stale audio completion cannot undo Next navigation");
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending())).length, 0);
+    const stoppedSpeechEndIndex = await page.evaluate(() => window.__speechHarness.capturedEnds.length - 1);
+    await stopPlayback();
+    await page.evaluate(index => window.__speechHarness.fireCapturedEnd(index), stoppedSpeechEndIndex);
+    assert.equal(await page.locator("#playbackDock").getAttribute("class"), "playback-dock hidden", "stale media completion cannot revive playback after Stop");
+
+    await startFrom(1);
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20", "play from here starts at the selected middle word");
+    assert.match((await dockWord.textContent()).trim(), /^expense/);
+    const oldSpeechEndIndex = await page.evaluate(() => window.__speechHarness.capturedEnds.length - 1);
+    const speechCountBeforeReplay = await page.evaluate(() => window.__speechHarness.utterances.length);
+    await page.locator("#playbackReplay").click();
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20", "Replay keeps the same current index");
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.length), speechCountBeforeReplay + 1, "Replay restarts current speech");
+    await page.evaluate(index => window.__speechHarness.fireCapturedEnd(index), oldSpeechEndIndex);
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending())).length, 0, "stale TTS completion cannot advance after Replay");
+    await page.evaluate(() => window.__speechHarness.fireLatestEnd());
+    const staleTimerId = await page.evaluate(() => window.__MWPlaybackTestClock.lastId());
+    await page.locator("#playbackReplay").click();
+    await page.evaluate(id => window.__MWPlaybackTestClock.fireStale(id), staleTimerId);
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20", "stale review timer cannot advance after Replay");
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    assert.equal((await playbackPause.textContent()).trim(), "再開");
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20", "hiding the page preserves the session and index");
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    assert.equal((await playbackPause.textContent()).trim(), "再開", "returning to the page stays paused until explicit Resume");
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20");
+    const playbackMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    assert.ok(playbackMobileOverflow <= 1, `playback dock mobile horizontal overflow: ${playbackMobileOverflow}`);
+    const playbackMobileScreenshotPath = path.join(os.tmpdir(), "mw-playback-mobile.png");
+    await page.screenshot({ path: playbackMobileScreenshotPath });
+    await stopPlayback();
+
     const mobileScreenshotPath = path.join(os.tmpdir(), "mw-browser-smoke-mobile.png");
     await page.screenshot({ path: mobileScreenshotPath });
 
@@ -300,7 +510,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v53"));
+    assert.ok(cacheState.keys.includes("mw-pronunciation-pwa-v54"));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
@@ -320,6 +530,7 @@ async function main() {
     const screenshotPath = path.join(os.tmpdir(), "mw-browser-smoke.png");
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
+    assert.deepEqual(await page.evaluate(() => window.__unhandledRejections), []);
     assert.deepEqual(browserErrors, []);
     console.log(JSON.stringify({
       passed: true,
@@ -331,6 +542,8 @@ async function main() {
       serviceWorker: cacheState,
       offlineReloadAndSave: true,
       backupReplaceRestore: true,
+      playbackMobileOverflow,
+      playbackMobileScreenshotPath,
       mobileScreenshotPath,
       screenshotPath
     }, null, 2));
