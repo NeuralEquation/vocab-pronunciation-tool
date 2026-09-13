@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = 3;
-  const APP_VERSION = "2026.08.20";
+  const APP_VERSION = "2026.09.13";
   const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
   const MAX_RANGES = 500;
   const MAX_WORDS_PER_RANGE = 5000;
@@ -65,6 +65,7 @@
       definitionLimit: Number(source.definitionLimit) === 3 ? 3 : 2,
       studyFilter: ["all", "unrated", "hard", "known"].includes(source.studyFilter) ? source.studyFilter : "all",
       playbackInterval: [1, 2, 3].includes(Number(source.playbackInterval)) ? Number(source.playbackInterval) : 2,
+      usageReviewMode: source.usageReviewMode === "fixed" ? "fixed" : "auto",
       usageReviewExtraSeconds: [0, 3, 5, 8, 10, 15].includes(Number(source.usageReviewExtraSeconds)) ? Number(source.usageReviewExtraSeconds) : 5,
       mondayEndTime: safeTime(source.mondayEndTime),
       wednesdayEndTime: safeTime(source.wednesdayEndTime),
