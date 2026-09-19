@@ -11,10 +11,15 @@ function authorize_() {
 function syncRequest(request) {
   try {
     var properties = authorize_();
-    MWSyncProtocol.request(request);
     var folderId = properties.getProperty('SYNC_FOLDER_ID');
     if (!folderId) throw new Error('NOT_CONFIGURED');
     var store = {
+      storageId: folderId,
+      id: function () { return Utilities.getUuid().replace(/-/g, '').toLowerCase(); },
+      getHead: function () { var raw = properties.getProperty('SYNC_HEAD_V2'); return raw ? JSON.parse(raw) : null; },
+      setHead: function (head) { properties.setProperty('SYNC_HEAD_V2', JSON.stringify(head)); },
+      getRejected: function (datasetId, requestId) { var raw = properties.getProperty('SYNC_REJECT_' + datasetId + '_' + requestId); return raw ? JSON.parse(raw) : null; },
+      setRejected: function (datasetId, requestId, entry) { properties.setProperty('SYNC_REJECT_' + datasetId + '_' + requestId, JSON.stringify(entry)); },
       hash: function (text) {
         return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8)
           .map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
@@ -24,25 +29,29 @@ function syncRequest(request) {
         if (!lock.tryLock(10000)) throw new Error('BUSY');
         try { return operation(); } finally { lock.releaseLock(); }
       },
-      list: function () {
-        var files = DriveApp.getFolderById(folderId).getFiles(), rows = [];
+      hasGenerations: function () {
+        var files = DriveApp.getFolderById(folderId).getFiles();
         while (files.hasNext()) {
           var file = files.next();
-          if (file.getName().indexOf('mw-sync-generation-') !== 0) continue;
-          if (rows.length >= 1001 || file.getSize() > 12 * 1024 * 1024) throw new Error('RECOVERY');
-          rows.push(JSON.parse(file.getBlob().getDataAsString('UTF-8')));
+          if (file.getName().indexOf('mw-sync-generation-') === 0) return true;
         }
-        return rows;
+        return false;
+      },
+      read: function (id) {
+        var file = DriveApp.getFileById(id), parents = file.getParents(), member = false;
+        while (parents.hasNext()) if (parents.next().getId() === folderId) member = true;
+        if (!member || file.isTrashed() || file.getSize() > 12 * 1024 * 1024) throw new Error('RECOVERY_REQUIRED');
+        return JSON.parse(file.getBlob().getDataAsString('UTF-8'));
       },
       append: function (generation) {
-        DriveApp.getFolderById(folderId).createFile('mw-sync-generation-' + generation.serverRevision + '.json', JSON.stringify(generation), MimeType.PLAIN_TEXT);
+        return DriveApp.getFolderById(folderId).createFile('mw-sync-generation-' + generation.serverRevision + '.json', JSON.stringify(generation), MimeType.PLAIN_TEXT).getId();
       }
     };
     return MWSyncServer.createServer(store).handle(request);
   } catch (error) {
     // Never log or echo request bodies, Google service exceptions or credentials.
-    var safe = ['ACCESS_DENIED', 'NOT_CONFIGURED', 'BUSY', 'CAPACITY', 'RECOVERY', 'REQUEST_REUSED', 'MALFORMED', 'SECRET', 'SIZE'];
-    return { status: 'error', code: safe.indexOf(error.message) >= 0 ? error.message : 'RECOVERY' };
+    var safe = ['ACCESS_DENIED', 'NOT_CONFIGURED', 'BUSY', 'RECOVERY_REQUIRED', 'DATASET_MISMATCH', 'REQUEST_REUSED', 'MALFORMED', 'SECRET', 'SIZE'];
+    return { status: 'error', code: safe.indexOf(error.message) >= 0 ? error.message : 'RECOVERY_REQUIRED' };
   }
 }
 

@@ -6,8 +6,9 @@ const root = path.resolve(__dirname, ".."), MAIN = "mwPronunciationTool.v1", end
 const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.executablePath(), "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"].find(p => p && fs.existsSync(p));
 const fixture = word => ({ schemaVersion: 3, settings: { demoMode: true }, ranges: [{ id: "range", rangeName: "Sync fixture", words: [{ id: "word", word, meaningsJa: ["記録"] }] }] });
 const ctx = {}; vm.createContext(ctx);
-for (const file of ["js/sync-protocol.js", "gas/SyncServer.js"]) vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), ctx);
-const rows = [], store = { hash: text => crypto.createHash("sha256").update(text).digest("hex"), list: () => structuredClone(rows), append: row => rows.push(structuredClone(row)), lock: fn => fn() };
+for (const file of ["js/storage.js", "js/sync-protocol.js", "gas/SyncServer.js"]) vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), ctx);
+let head = null; const refusals = {};
+const rows = [], store = { storageId: "fixture", id: () => crypto.randomUUID().replace(/-/g, ""), getHead: () => structuredClone(head), setHead: value => { head = structuredClone(value); }, hasGenerations: () => rows.length > 0, read: id => structuredClone(rows[Number(id.slice(1))]), getRejected: (d, id) => refusals[d + id], setRejected: (d, id, value) => { refusals[d + id] = structuredClone(value); }, hash: text => crypto.createHash("sha256").update(text).digest("hex"), list: () => structuredClone(rows), append: row => { rows.push(structuredClone(row)); return "f" + (rows.length - 1); }, lock: fn => fn() };
 const remote = ctx.MWSyncServer.createServer(store);
 (async () => {
   const browser = await playwright.chromium.launch({ headless: true, executablePath });
@@ -19,7 +20,7 @@ const remote = ctx.MWSyncServer.createServer(store);
       const request = route.request().postDataJSON();
       const response = remote.handle(request);
       if (hold) await new Promise(resolve => { release = resolve; });
-      if (loseResponse) { loseResponse = false; await route.abort(); return; }
+      if (loseResponse && request.op === "push") { loseResponse = false; await route.abort(); return; }
       await route.fulfill({ status: 200, headers: { "Access-Control-Allow-Origin": new URL(baseUrl).origin, "Access-Control-Allow-Credentials": "true" }, contentType: "application/json", body: JSON.stringify(response) });
     });
     await context.addInitScript(({ data, MAIN }) => { if (localStorage.getItem(MAIN) == null) localStorage.setItem(MAIN, JSON.stringify(data)); }, { data: fixture(word), MAIN });
@@ -35,21 +36,25 @@ const remote = ctx.MWSyncServer.createServer(store);
     await page.waitForFunction(() => document.documentElement.dataset.appReady === "true");
     await page.locator("[data-tab='backup']").click();
     if (!native) await page.locator("#syncEndpoint").fill(endpoint);
+    await page.locator("#syncConnect").click();
+    await page.waitForFunction(key => Boolean(JSON.parse(localStorage.getItem(key)).sync?.datasetId), MAIN);
     return page;
   }
   const stored = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), MAIN);
   const ready = page => page.waitForFunction(() => document.documentElement.dataset.appReady === "true");
   try {
     const a = await open("record");
-    await a.locator("#syncPush").click(); await a.locator('#syncStatus[data-state="error"]').waitFor();
+    await a.locator("#syncPush").click(); await a.locator('#syncStatus[data-state="SYNC_FAILED"]').waitFor();
     const pendingId = (await stored(a)).sync.requestId; assert.ok(pendingId); assert.equal(rows.length, 1);
     await a.reload(); await ready(a); await a.locator("[data-tab='backup']").click();
-    await a.locator("#syncPush").click(); await a.locator('#syncStatus[data-state="synced"]').waitFor();
+    await a.locator("#syncCheck").click(); await a.locator('#syncStatus[data-state="verified"]').waitFor();
     assert.equal(rows.length, 1); assert.equal(rows[0].request.requestId, pendingId);
 
     const b = await open("local alternative");
-    await b.locator("#syncPush").click(); await b.locator('#syncStatus[data-state="conflict"]').waitFor();
+    await b.locator("#syncPush").click(); await b.locator('#syncStatus[data-state="rejected"]').waitFor();
     assert.equal((await stored(b)).ranges[0].words[0].word, "local alternative");
+    await b.locator("#syncClear").click(); await b.locator("[data-modal-confirm]").click();
+    await b.waitForFunction(key => !JSON.parse(localStorage.getItem(key)).sync.pending, MAIN);
     await b.locator("#syncUseRemote").click(); await b.locator("[data-modal-confirm]").click();
     await b.waitForFunction(key => JSON.parse(localStorage.getItem(key)).ranges[0].words[0].word === "record", MAIN);
     await b.waitForLoadState("networkidle"); await ready(b); await b.locator("[data-tab='backup']").click();

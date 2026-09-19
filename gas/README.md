@@ -10,58 +10,53 @@
 - 本番採用前に両方の実端末で試験してください。直接POSTが拒否される場合は、認証付き中継など別の通信方式の追加設計が必要です。匿名公開・`no-cors`・トークンのURL埋め込みで回避しません。
 - GitHubとGASは別originです。学習データ・APIキー・設定は自動共有されません。APIキーは各端末の各originで入力します。同期対象は教材と学習履歴だけで、設定・UI選択状態・APIキーは送りません。
 
-## 状態と保存契約
+## 状態と保存契約（protocol 2 / sync metadata v2）
 
-端末の既存schema v3データに、ローカル専用の`sync`領域を追加します。JSON exportには含めません。
+学習データはschema v3を維持し、端末専用`sync`領域に以下を保存します。設定・同期情報は同期payloadに含めません。JSON exportにsyncは含めません。
 
 | 項目 | 意味 |
 | --- | --- |
-| `serverRevision` | 端末が応答で確認したサーバー版。重複要求の応答では、その要求が保存された版 |
-| `baseRevision` | 端末版の基準となるサーバー版。push時に一致しなければ競合 |
-| `localRevision` | 端末の保存・import・restoreごとに増える番号 |
-| `dirty` | 端末の変更が未同期。既存の「端末への保存失敗」とは別 |
-| `requestId` | 未確定pushの一意な識別子。同じ要求の再試行では変更しない |
-| `pending` | 同期開始時のpayload、baseRevision、localRevisionを固定した送信待ちsnapshot |
-| `conflict` | 競合が確認され、利用者の判断が必要な状態 |
+| `datasetId` | サーバーが初期作成するUUID v4のハイフンなし表現。別datasetにはrevisionが同じでも書き込めない |
+| `serverRevision / serverHash` | 直近の応答で確認したHEAD。過去要求の回収でも現在のHEADを返す |
+| `baseRevision / baseHash` | 端末版の基準となるcommit。両方の一致がpush条件 |
+| `localRevision / dirty` | 学習・import・restoreの追加変更。通信開始後の変更も保持 |
+| `requestId / pending` | 厳格なUUID v4（32桁小文字hex）、固定request全体とSHA-256、開始時localRevision |
+| `pending.state` | `unknown`（通信結果不明）、`rejected`（確定拒否）、`committed`（受領済み・端末確定途中） |
+| `conflict` | 両側の変更を自動統合せず選択を待つ |
+| `verified / state` | dirty=falseだけでは同期済みとしない。未接続・端末変更なし・直近のクラウド確認済み・復旧必要を表示 |
 
-1. `createBackup`の許可フィールドから、さらに`schemaVersion/ranges/studyLog`だけを抽出し、型・サイズ・秘密情報を検証。
-2. 現在データとpendingを**同じlocalStorage本体に1回のsetItem**で保存。失敗したら送信しません。
-3. サーバーはLockService内で履歴を検証し、requestIdの重複を確認してからbaseRevisionを照合。
-4. 成功応答を受けても、現在のlocalRevisionがsnapshotより進んでいればdirtyを残します。現在の教材をsnapshotで書き戻しません。
-5. 応答消失・タイムアウト・端末のack保存失敗ではpendingを残します。次回も同じ要求を送信します。サーバーが既に保存していれば世代を増やしません。
-6. 受信中の追加変更、学習セッション、API取得があればクラウド版を適用しません。受信置換の前には端末の同期直前コピーを保存します。
-7. import/restoreは過去のsync情報を取り込まず、現在のbaseRevisionとpendingを維持してlocalRevisionを増やしdirtyにします。
+初回は「接続先を確認」でdatasetを取得します。ローカル変更は自動送信しません。最初のbaseはgenesisです。既存クラウドと競合する場合は、拒否要求を退避・解除した後に端末版／クラウド版を明示的に選びます。
 
-同期UIは保存タブにあります。未接続、未同期、同期中、同期済み、結果未確定、競合、エラー、秘密情報検出、復旧必要を区別します。通常の学習中に自動送信はしません。
+送信前に学習データと固定snapshotを同じlocalStorage本体へ保存します。書込み失敗時は送信しません。応答後に追加変更があればdirtyを残します。pullは通信中の変更・実行中学習を確認し、置換前にコピーを保存します。受信payloadは共有canonical schemaで検証し、実際の端末保存・起動時normalizationでも変化しない場合だけverified=trueにします。
 
-## 競合時
+タイムアウト・応答消失は「結果照会」または同じrequestIdの再試行で回収します。`not_committed`は照会時点の結果であり、遅延中のpushがあり得るため解除しません。「取消を照会」はロック内で保存済み結果を回収するか、未保存要求の拒否記録を作成します。CAPACITY・schema・secret・stale等の確定拒否はsnapshotを端末へ退避してから解除できます。時間経過ではpendingを削除しません。
 
-- 自動マージ・時刻による勝者決定・強制pushはしません。
-- 「端末版を残す」は最新サーバー版を読み直してbaseRevisionを更新するだけです。続けて「送信」を押す必要があります。その間に別端末が更新すれば再び競合します。
-- 「クラウド版を使う」は確認後、端末版の復旧コピーを保存してから置き換えます。
-- 不明なpushがpendingに残っている間は、どちらの選択もできません。まず再試行で結果を確定させます。
-- 「同期直前に戻す」は新たなローカル変更です。巻き戻した学習内容を送信する場合もCASが必要です。
+不正なsync metadataは原文を`mwPronunciationTool.syncArchive.*`に隔離し、通常保存・backup・import・restoreを続行します。容量不足で隔離自体ができない場合は元データを上書きしません。同期だけをrecovery-requiredで止めます。「再接続・復旧」は原状態を退避し、端末データをdirtyに戻して別datasetとの競合を確認する明示操作です。旧protocol 1のsyncも自動移行せず、この経路を使います。古い要求が旧接続先で完了した可能性は消せません。
 
-## GAS側の世代保存
+## authoritative HEADとGASの保存順序
 
-`SyncServer.js`はサービス非依存の保存ロジック、`Code.gs`はGoogleサービスのアダプターです。
+Script Propertiesの`SYNC_HEAD_V2`だけを確定状態とします。HEADは`datasetId / committedRevision / committedHash / generationFileId / storageId`を持ちます。Drive一覧の最大revisionからHEADを推測しません。HEAD欠落＋既存世代あり、参照ファイル欠落、hash不一致、親フォルダー相違、鎖破損ではRECOVERY_REQUIREDにして書込みを止めます。空フォルダーへの明示connectのみ初期化できます。
 
-- 設定済みの専用フォルダーに`mw-sync-generation-N.json`を追記します。既存ファイルを更新・削除しません。直前世代がそのままバックアップになります。
-- 各ファイルは完全なpayload、requestId、baseRevision、serverRevision、要求のSHA-256、前世代のhash、自身のchecksumを持ちます。認証情報やHTTP本文のログは持ちません。
-- 読み取りも書き込みも`getScriptLock()`内で実行。同じフォルダーを複数のGASプロジェクトから操作しないでください（script lockの範囲外になります）。
-- 新しい完全なファイルの作成がcommitです。mutableなHEADファイルを別途更新する二段階保存はしません。作成後は読み直して連続性・checksumを確認します。
-- サーバー保存後に通信が切れた場合は、世代ファイル内のrequestIdから保存済み結果を返します。同じrequestIdで内容やbaseRevisionが異なる要求は拒否します。
-- 壊れたJSON、欠落世代、同番号の複数ファイル、hash不一致では停止し、古い世代を最新として勝手に採用しません。Driveにはトランザクション保証がないため、作成中断が残す不完全ファイルを自動修復できたとは主張しません。
-- 読み取りコストを抑えるため手動同期の小規模運用を対象とし、最大1000世代で新規保存を停止します。全世代を検証するため、実データ量でGAS時間・メモリ・Drive割当の試験が必要です。世代削除は冪等性台帳とhash鎖を破壊するため行いません。長期運用には別途アーカイブ設計が必要です。
-- 正常な過去世代へ戻したい場合は、その`request.payload`を端末へimportし、新しい変更として送信します。鎖自体が壊れた場合は原本を保全して手動診断し、修復計画を立てます。自動の履歴削除・巻き戻しはありません。
+1. Script Lock取得。
+2. HEADとHEADから参照される全世代のSHA-256・previousHash・requestHash・datasetを検証。
+3. requestIdのcommit／拒否記録を照会。同一IDの異なるrequestHashは拒否。
+4. datasetId、baseRevision、baseHash、canonical payloadを照合。
+5. 新generationをDriveへ作成（古い世代は変更しない）。
+6. generationを読み戻し、生成した内容・hashとの完全一致を検証。
+7. **最後にHEADを更新する（commit point）**。読み戻して確認。
+8. finallyでLock解除。
+
+HEAD更新前に失敗したファイルはorphanです。最新版として採用せず、自動削除もしません。HEAD更新後に応答だけ失われても、同一requestIdまたはstatus照会で確定commitを回収できます。commit台帳はHEADから辿る世代に含まれ、世代と別台帳を二重commitしません。拒否台帳`SYNC_REJECT_<datasetId>_<requestId>`は遅延retryを防ぐ小さなtombstoneです。原requestやpayloadは拒否台帳へ保存しません。
+
+Drive・Script Propertiesを跨ぐトランザクションを仮定しません。HEADの保存・読戻しが不明ならpendingを残します。世代は最大1000、毎回鎖を検証するため時間・容量制限を実環境で評価する必要があります。拒否台帳・隔離コピーも自動削除しません。台帳の容量不足はfail-closedとなり、長期運用前にアーカイブ／dataset移行設計が必要です。HEADを手動で消して初期化したり、世代一覧から再構築したりしないでください。破損時はHEAD・全世代・端末JSONを保全して手動診断します。
 
 ## 秘密情報の境界
 
-クライアントのallowlist生成とGAS側の厳格なフィールド検証を両方実施します。MWキーは専用localStorageまたはセッションメモリだけに保持し、GASのPropertiesServiceやDriveには保存しません。Google認証はプラットフォームに任せ、OAuth tokenやパスワードをJavaScriptの同期payloadへ入れません。
+MWキーは各originの専用localStorage／入力中メモリだけで扱います。Google認証はプラットフォームに任せ、アプリはOAuth tokenやパスワードを保存しません。今後認証値を保存する場合は送信前の既知秘密値集合への登録が必須です。
 
-送信前に既知の端末キー（URL/JSONエスケープを含む）、MWキー形式のUUID、一般的な秘密情報形式を検査します。再試行snapshotも検査し直します。検出した場合は送信しません。UUIDが教材に含まれる場合も保守的に停止することがあります。未知の秘密文字列が普通の自由記述と区別できる、という保証はできません。秘密情報を教材欄へ貼り付けないでください。
+allowlistで教材・学習履歴だけを生成し、送信直前にはpayloadだけでなくrequestId等を含む**request全体**を検査します。既知の保存済みMWキー・入力中キー・保存済み／入力中endpoint（URL/JSONエスケープも含む）、明確なBearer/JWT/認証ラベル等の形式を検査します。pendingの再読込時はID形式を、再送時は現在の秘密値を改めて検査します。サーバーもID・schema・秘密形式を検査し、未知フィールドを拒否します。exportや通常保存にも既知秘密値とcredential形式の検査を適用します。
 
-通常のAPI設定、同期先URL、端末状態はpayloadに含めません。ログは本文・秘密情報・Googleサービスの生エラーを記録せず、UIには固定文を返します。既存のexport安全性、単一書き込みタブ、容量不足時の保全も維持します。
+**保証対象は、アプリが保持する秘密を自動混入させず、既知秘密値を自由文字列経由でも送らないことです。人間が手入力した未知の任意文字列を100%秘密として識別できるとは保証しません。** 認証に見える教材を保守的に拒否する場合があります。ログにrequest本文・秘密・サービスの生エラーを出しません。復旧用の原文隔離は端末内だけに保存し、export・同期対象から除外します。
 
 ## ローカルでの作成と検証
 
@@ -79,6 +74,7 @@ npm run test:browser
 
 ## 検証の区分
 
+- 修正前反例：`MW_AUDIT_REF=887e269`で`node tests/sync-audit-contracts.js`を実行するとH1〜H5/M1/M2/L1の8件が失敗し、現行コードでは8件が成功します（checkoutは変更しません）。
 - 自動テスト：正常push/pull、stale revision、2端末変更、重複requestId、応答消失、同期中の追加変更、malformed、secret、競合、network/timeout、retry、端末/サーバー保存失敗と復旧、履歴破損を合成データで確認。
 - GASアダプターテスト：Googleサービスをmock化し、本人照合・LockService・世代保存・doPost・非ログ出力を確認。
 - ブラウザーテスト：実Chromium + ローカルHTTP + 模擬サーバーでUI、再読込後のretry、競合解決、restore、GAS用bundleを確認。

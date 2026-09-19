@@ -5,6 +5,8 @@
   const fail = code => { throw new Error(code); };
   const object = value => value && typeof value === "object" && !Array.isArray(value);
   const integer = value => Number.isSafeInteger(value) && value >= 0;
+  const id = value => typeof value === "string" && /^[0-9a-f]{12}4[0-9a-f]{3}[89ab][0-9a-f]{15}$/.test(value);
+  const hash = value => typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
   const fields = (names, type) => Object.fromEntries(names.split(" ").map(name => [name, type]));
   const numberMap = { $map: "number" };
   const stats = {
@@ -45,15 +47,16 @@
   }
   function noSecrets(value, secrets = []) {
     const text = JSON.stringify(value);
-    if (!text || text.length > MAX_CHARS) fail("SIZE");
+    if (!text || text.length > MAX_CHARS + 2048) fail("SIZE");
     // Conservative: UUID-shaped MW keys and common credential/token forms are not study data.
-    if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:gh[pousr]_|github_pat_|ya29\.)[A-Za-z0-9_.-]{10,}|-----BEGIN .*PRIVATE KEY|(?:api[_ -]?key|password|authorization|access[_ -]?token|refresh[_ -]?token)\s*["']?\s*[:=]/i.test(text)) fail("SECRET");
+    if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|(?:gh[pousr]_|github_pat_|ya29\.)[A-Za-z0-9_.-]{10,}|-----BEGIN .*PRIVATE KEY|\bBearer\s+[A-Za-z0-9_.~+\/-]{8,}|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|https?:\/\/script\.google\.com\/macros\/|(?:api[_ -]?key|password|authorization|access[_ -]?token|refresh[_ -]?token)\s*["']?\s*[:=]/i.test(text)) fail("SECRET");
     for (const secret of secrets.filter(v => typeof v === "string" && v)) {
       if ([secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1)].some(v => text.includes(v))) fail("SECRET");
     }
     return value;
   }
   function validate(payload, secrets = []) {
+    if (JSON.stringify(payload).length > MAX_CHARS) fail("SIZE");
     noSecrets(payload, secrets); check(payload, schema);
     if (payload.schemaVersion !== 3 || !Array.isArray(payload.ranges) || payload.ranges.length > 500 || !object(payload.studyLog)) fail("MALFORMED");
     const rangeIds = new Set(), wordIds = new Set();
@@ -63,22 +66,38 @@
       r.words.forEach(w => { if (!w.id || wordIds.has(w.id) || !w.word || w.word.length > 100) fail("MALFORMED"); wordIds.add(w.id); });
       [...r.usageItems, ...r.memoryItems].forEach(i => { if (!i.id || !i.english || !i.japanese) fail("MALFORMED"); });
     });
+    // Reuse the SAME storage canonicalizer on both sides, including field limits,
+    // date/ID normalization, references and portable allowlists. Never silently truncate.
+    let normalized;
+    try { normalized = normalize(payload); } catch { fail("MALFORMED"); }
+    if (canonical(normalized) !== canonical(payload)) fail("NON_CANONICAL");
     return payload;
+  }
+  function normalize(data) {
+    const backup = root.MWStorage.createBackup(data, "2000-01-01T00:00:00.000Z");
+    return { schemaVersion: 3, ranges: backup.ranges, studyLog: backup.studyLog };
   }
   function canonical(value) {
     if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
     if (object(value)) return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
     return JSON.stringify(value);
   }
-  function request(value) {
-    if (!object(value) || value.protocol !== 1 || !["push", "pull"].includes(value.op)) fail("MALFORMED");
-    const allowed = value.op === "push" ? ["protocol", "op", "requestId", "baseRevision", "payload"] : ["protocol", "op"];
+  function request(value, secrets = [], envelopeOnly = false) {
+    if (!object(value) || value.protocol !== 2 || !["connect", "push", "pull", "status", "cancel"].includes(value.op)) fail("MALFORMED");
+    const allowed = value.op === "connect" ? ["protocol", "op"] : value.op === "push" ? ["protocol", "op", "datasetId", "requestId", "baseRevision", "baseHash", "payload"] : value.op === "pull" ? ["protocol", "op", "datasetId"] : ["protocol", "op", "datasetId", "requestId", "requestHash"];
     if (Object.keys(value).some(k => !allowed.includes(k))) fail("MALFORMED");
-    if (value.op === "push") {
-      if (typeof value.requestId !== "string" || !/^[A-Za-z0-9_-]{16,100}$/.test(value.requestId) || !integer(value.baseRevision)) fail("MALFORMED");
-      validate(value.payload);
-    }
+    if (value.op !== "connect" && !id(value.datasetId)) fail("MALFORMED");
+    if (["push", "status", "cancel"].includes(value.op) && !id(value.requestId)) fail("MALFORMED");
+    if (value.op === "push" && (!integer(value.baseRevision) || !hash(value.baseHash))) fail("MALFORMED");
+    if (["status", "cancel"].includes(value.op) && !hash(value.requestHash)) fail("MALFORMED");
+    if (envelopeOnly) return value;
+    noSecrets(value, secrets); // Complete packet, not just payload.
+    if (value.op === "push") validate(value.payload, secrets);
     return value;
   }
-  root.MWSyncProtocol = Object.freeze({ validate, noSecrets, canonical, request, integer, MAX_CHARS });
+  async function digest(value) {
+    const bytes = await root.crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(value)));
+    return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("");
+  }
+  root.MWSyncProtocol = Object.freeze({ validate, normalize, noSecrets, canonical, request, integer, id, hash, digest, MAX_CHARS });
 })(typeof window !== "undefined" ? window : globalThis);

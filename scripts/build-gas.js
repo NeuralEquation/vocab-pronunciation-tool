@@ -13,5 +13,6 @@ fs.writeFileSync(path.join(out, "Index.html"), html);
 for (const file of ["Code.gs", "appsscript.json"]) fs.copyFileSync(path.join(root, "gas", file), path.join(out, file));
 // Prefixes make the shared protocol initialize before server logic in the GAS project.
 fs.copyFileSync(path.join(root, "js/sync-protocol.js"), path.join(out, "00_Protocol.gs"));
+fs.copyFileSync(path.join(root, "js/storage.js"), path.join(out, "00_Storage.gs"));
 fs.copyFileSync(path.join(root, "gas/SyncServer.js"), path.join(out, "01_Server.gs"));
 console.log("GAS package written locally to .gas-build; nothing uploaded or deployed.");
