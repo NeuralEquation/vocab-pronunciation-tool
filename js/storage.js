@@ -1,4 +1,4 @@
-(() => {
+((root) => {
   "use strict";
 
   const SCHEMA_VERSION = 3;
@@ -33,11 +33,12 @@
     const text = clean(value);
     if (!text) return "";
     try {
-      const url = new URL(text);
-      if (url.protocol !== "https:") return "";
-      if (url.username || url.password || url.search || url.hash) return "";
-      if (allowedHost && url.hostname !== allowedHost && !url.hostname.endsWith(`.${allowedHost}`)) return "";
-      return url.href.slice(0, 2000);
+      // Same deterministic URL rules in browsers and GAS (which has no URL global).
+      const match = /^https:\/\/([a-zA-Z0-9.-]+)(\/[^\s?#\\]*)?$/.exec(text);
+      if (!match || /(?:^|\/)\.{1,2}(?:\/|$)/.test(match[2] || "")) return "";
+      const host = match[1].toLowerCase();
+      if (allowedHost && host !== allowedHost && !host.endsWith(`.${allowedHost}`)) return "";
+      return (`https://${host}${match[2] || "/"}`).slice(0, 2000);
     } catch {
       return "";
     }
@@ -409,6 +410,7 @@
 
   function assertNoSecrets(value, secrets = []) {
     const text = typeof value === "string" ? value : JSON.stringify(value);
+    if (/(?:gh[pousr]_|github_pat_|ya29\.)[A-Za-z0-9_.-]{10,}|-----BEGIN .*PRIVATE KEY|\bBearer\s+[A-Za-z0-9_.~+\/-]{8,}|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|https?:\/\/script\.google\.com\/macros\/|(?:api[_ -]?key|password|authorization|access[_ -]?token|refresh[_ -]?token)\s*["']?\s*[:=]/i.test(text)) throw new Error("秘密情報の混入を検出したため、保存・出力を中止しました。");
     for (const secret of secrets.map(clean).filter(Boolean)) {
       const forms = [secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1)];
       if (forms.some(form => text.includes(form))) throw new Error("秘密情報の混入を検出したため、保存・出力を中止しました。");
@@ -470,7 +472,7 @@
     };
   }
 
-  window.MWStorage = Object.freeze({
+  root.MWStorage = Object.freeze({
     SCHEMA_VERSION,
     APP_VERSION,
     safeSettings,
@@ -486,5 +488,5 @@
     csvCell,
     runStorageSelfCheck
   });
-})();
+})(typeof window !== "undefined" ? window : globalThis);
 

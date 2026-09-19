@@ -18,7 +18,7 @@ function harness(raw = JSON.stringify(fixture())) {
     classList: { add() {}, remove() {}, toggle() {}, contains() { return true; } },
     setAttribute() {}, addEventListener() {}, querySelector() { return null; }, focus() {}, click() {}, remove() {} });
   class TestURL extends URL { static createObjectURL(blob) { blobs.push(blob); return "blob:audit"; } static revokeObjectURL() {} }
-  const ctx = { Blob, URL: TestURL, Date, JSON, Map, Math, Number, Object, Set, String, TextEncoder, console, performance, AbortController, DOMException, TypeError,
+  const ctx = { crypto: require("node:crypto").webcrypto, Blob, URL: TestURL, Date, JSON, Map, Math, Number, Object, Set, String, TextEncoder, queueMicrotask, console, performance, AbortController, DOMException, TypeError,
     setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); },
     CSS: { escape: value => value }, navigator: {}, location: { reload() {} },
     document: { getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
@@ -27,17 +27,64 @@ function harness(raw = JSON.stringify(fixture())) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  for (const file of ["storage", "content", "test", "playback", "dictionary"]) vm.runInContext(fs.readFileSync(path.join(root, `js/${file}.js`), "utf8"), ctx);
+  for (const file of ["storage", "sync-protocol", "sync", "content", "test", "playback", "dictionary"]) vm.runInContext(fs.readFileSync(path.join(root, `js/${file}.js`), "utf8"), ctx);
   const source = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
   assert.ok(source.includes("      initializeStorage();"));
   // Expose only inside this isolated VM, without production hooks or DOM boot.
-  vm.runInContext(source.replace("      initializeStorage();", "window.audit = { state, persistence, load, save, canWrite, commitReplacement, exportPreUpgrade, exportJson, download, audioUrlFromId, safeApiError, fetchReal };"), ctx);
+  vm.runInContext(source.replace("      initializeStorage();", "window.audit = { state, persistence, load, save, canWrite, commitReplacement, exportPreUpgrade, exportJson, download, audioUrlFromId, safeApiError, fetchReal, initializeSync };"), ctx);
   ctx.audit.persistence.writer = true;
   return { ctx, a: ctx.audit, values, elements, blobs, timers, fail(key) { failKey = key; } };
 }
 
 const cases = [];
 const it = (name, fn) => cases.push({ name, fn });
+
+it("actual replacement keeps current sync baseline and pending request while marking import or restore dirty", () => {
+  const h = harness();
+  const original = fixture();
+  original.sync = h.ctx.MWSync.initial(10, false);
+  original.sync.baseRevision = original.sync.serverRevision = 7;
+  original.sync.dirty = true;
+  original.sync.datasetId = "11111111111141118111111111111111";
+  original.sync.baseHash = original.sync.serverHash = "a".repeat(64);
+  original.sync.requestId = "22222222222242228222222222222222";
+  original.sync.pending = { state: "unknown", requestHash: "b".repeat(64), localRevision: 10, request: { protocol: 2, op: "push", datasetId: original.sync.datasetId, baseHash: original.sync.baseHash, requestId: original.sync.requestId, baseRevision: 7, payload: h.ctx.MWSync.project(original, []) } };
+  h.values.set(MAIN, JSON.stringify(original)); h.a.load();
+  const imported = fixture(); imported.sync = h.ctx.MWSync.initial(0, false);
+  assert.equal(h.a.commitReplacement(imported, "fixture.recovery"), true);
+  const saved = JSON.parse(h.values.get(MAIN));
+  assert.equal(saved.sync.localRevision, 11); assert.equal(saved.sync.baseRevision, 7);
+  assert.equal(saved.sync.dirty, true);
+  assert.equal(JSON.stringify(saved.sync.pending), JSON.stringify(original.sync.pending));
+});
+
+it("sync-only corruption does not block learning save, portable backup, import or restore; raw metadata is quarantined", () => {
+  for (const operation of ["save", "import", "restore"]) {
+    const original = fixture(); original.sync = { version: 1, suspicious: "LOCAL_QUARANTINE_ONLY" };
+    const h = harness(JSON.stringify(original)); h.a.load();
+    assert.equal(h.a.persistence.readError, false);
+    assert.doesNotThrow(() => h.ctx.MWStorage.createBackup(h.a.state));
+    const success = operation === "save" ? h.a.save(false) : h.a.commitReplacement(fixture(), "fixture." + operation);
+    assert.equal(success, true);
+    const saved = JSON.parse(h.values.get(MAIN));
+    assert.equal(saved.sync.state, "recovery-required"); assert.equal(saved.sync.dirty, true);
+    assert.equal(saved.ranges[0].words[0].word, "record");
+    const archives = [...h.values].filter(([k]) => k.includes("syncArchive.quarantine"));
+    assert.equal(archives.length, 1); assert.equal(archives[0][1], JSON.stringify(original.sync));
+    assert.equal(JSON.stringify(h.ctx.MWStorage.createBackup(saved)).includes("LOCAL_QUARANTINE_ONLY"), false);
+  }
+});
+
+it("actual app refuses cloud-verified write if startup normalization changes canonical payload", () => {
+  const h = harness(); h.a.load(); let host;
+  h.ctx.MWSync = { ...h.ctx.MWSync, createClient(value) { host = value; return { isBusy: () => false }; } };
+  h.a.initializeSync();
+  const incoming = fixture(); incoming.ranges[0].manualTestEndedDate = "2000-01-01";
+  const before = h.values.get(MAIN);
+  assert.throws(() => host.write(incoming, { verified: true }, true), /NON_CANONICAL/);
+  assert.equal(h.values.get(MAIN), before);
+  assert.equal(h.a.state.ranges[0].manualTestEndedDate, "");
+});
 
 it("corrupt and future primary data cannot be overwritten by normal save", () => {
   for (const raw of ["{broken", JSON.stringify({ schemaVersion: 999, ranges: [] })]) {
@@ -226,7 +273,7 @@ it("service worker caches only the manifest shell, keeps a consistent offline bu
   let response;
   handlers.fetch({ request: { url: index, method: "GET", mode: "navigate" }, respondWith(promise) { response = promise; } });
   assert.equal(await response, "shell:./index.html");
-  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v55:"))[1];
+  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v57:"))[1];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+\?v=\d+)"/g)) assert.equal(shell.has(new URL(asset, scope).href), true, asset);
 });

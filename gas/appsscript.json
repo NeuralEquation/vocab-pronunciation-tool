@@ -1,0 +1,7 @@
+{
+  "timeZone": "Asia/Tokyo",
+  "runtimeVersion": "V8",
+  "exceptionLogging": "NONE",
+  "oauthScopes": ["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/userinfo.email"],
+  "webapp": { "access": "MYSELF", "executeAs": "USER_ACCESSING" }
+}

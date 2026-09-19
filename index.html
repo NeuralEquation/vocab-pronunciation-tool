@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=55">
+  <link rel="stylesheet" href="styles.css?v=57">
 </head>
 <body>
   <aside id="saveStatus" class="save-status" role="status" aria-live="polite">
@@ -162,6 +162,24 @@
       </section>
 
       <section class="panel tab-page hidden" id="page-backup">
+        <h2>Google Drive 同期（検証用）</h2>
+        <p>端末の保存とクラウド同期は別です。自動送信・自動マージはしません。APIキーと端末設定は同期しません。</p>
+        <label for="syncEndpoint">GAS Web App URL（GitHub PWAから接続する場合）</label>
+        <input id="syncEndpoint" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
+        <p class="meta">GAS画面ではGoogleの接続機能を使用します。GitHub PWAからの接続はGoogle認証・CORS・リダイレクトの実機検証が必要です。公開アクセスへ緩めないでください。接続先は初回通信後に固定されます。</p>
+        <p id="syncStatus" role="status" aria-live="polite">未接続</p>
+        <div class="actions">
+          <button id="syncConnect" class="soft">接続先を確認</button>
+          <button id="syncCheck" class="soft">未確定要求の結果照会</button>
+          <button id="syncCancel" class="warn">未確定要求の取消を照会</button>
+          <button id="syncClear" class="soft">拒否された要求を退避・解除</button>
+          <button id="syncReconnect" class="warn">再接続・復旧</button>
+          <button id="syncPush" class="primary">送信 / 未確定要求を再試行</button>
+          <button id="syncPull" class="soft">クラウドから受信</button>
+          <button id="syncKeepLocal" class="warn">競合：端末版を残す</button>
+          <button id="syncUseRemote" class="warn">競合：クラウド版を使う</button>
+          <button id="restorePreSync" class="soft">同期直前に戻す</button>
+        </div>
         <h2>バックアップ</h2>
         <div class="actions">
           <button class="soft" id="exportJson">JSONエクスポート</button>
@@ -331,12 +349,14 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=55"></script>
-  <script defer src="js/content.js?v=55"></script>
-  <script defer src="js/test.js?v=55"></script>
-  <script defer src="js/playback.js?v=55"></script>
-  <script defer src="js/dictionary.js?v=55"></script>
-  <script defer src="js/app.js?v=55"></script>
-  <script defer src="js/ux-overrides.js?v=55"></script>
+  <script defer src="js/storage.js?v=57"></script>
+  <script defer src="js/sync-protocol.js?v=57"></script>
+  <script defer src="js/sync.js?v=57"></script>
+  <script defer src="js/content.js?v=57"></script>
+  <script defer src="js/test.js?v=57"></script>
+  <script defer src="js/playback.js?v=57"></script>
+  <script defer src="js/dictionary.js?v=57"></script>
+  <script defer src="js/app.js?v=57"></script>
+  <script defer src="js/ux-overrides.js?v=57"></script>
 </body>
 </html>

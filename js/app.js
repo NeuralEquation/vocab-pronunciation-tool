@@ -94,6 +94,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       let lastAutoSpokenStudyWordKey = "";
       let sessionReturnFocus = null;
       const persistence = { writer: false, loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
+      let syncClient = null;
+      let syncRuntime = "";
+      const SYNC_ENDPOINT_KEY = "mwPronunciationTool.syncEndpoint.v1";
+      const PRE_SYNC_KEY = "mwPronunciationTool.preSyncBackup.v1";
       let releaseWriter = null;
       let apiController = null;
       let actualApiCalls = 0;
@@ -333,6 +337,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function renderPersistence() {
+        renderSync();
         const root = $("saveStatus");
         if (!root) return;
         root.dataset.state = persistence.readError ? "recovery" : !persistence.writer || persistence.conflict ? "readonly" : persistence.dirty ? "unsaved" : "saved";
@@ -365,12 +370,110 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function localSecrets() {
         const values = [state.settings.apiKeySession, state.settings.collegiateApiKeySession, $("apiKey")?.value, $("collegiateApiKey")?.value];
         // Failure to inspect credentials must fail closed for every output path.
-        values.push(localStorage.getItem(API_KEY_KEY), localStorage.getItem(COLLEGIATE_API_KEY_KEY));
+        values.push(localStorage.getItem(API_KEY_KEY), localStorage.getItem(COLLEGIATE_API_KEY_KEY), localStorage.getItem(SYNC_ENDPOINT_KEY), $("syncEndpoint")?.value);
         return values.filter(Boolean).map(cleanApiKey);
       }
 
       function currentData() {
         return { settings: state.settings, ranges: state.ranges, studyLog: state.studyLog, ui: { selectedRangeId: state.selectedRangeId || "" } };
+      }
+
+      function storedSync() {
+        const record = JSON.parse(persistence.raw || "{}");
+        return window.MWSync.inspect(record.sync, Number(record.revision) || 0, persistence.raw != null).sync;
+      }
+
+      function renderSync() {
+        const label = $("syncStatus");
+        if (!label || !window.MWSync) return;
+        try {
+          const sync = storedSync();
+          const status = syncRuntime || window.MWSync.display(sync);
+          const labels = { disconnected: "未接続", dirty: "端末に未送信の変更があります", unknown: "送信結果が不明です。結果照会または同じ要求を再試行してください", rejected: "サーバーが保存を拒否しました。要求を退避・解除できます", committed: "クラウド保存確認済み。端末の確定処理を再試行してください", syncing: "同期中（学習は続けられます）", verified: "クラウド最新版を直近の通信で確認済み", "local-clean": "端末に未送信変更なし（クラウド最新版は未確認）", conflict: "競合：自動では統合しません", changed: "同期中に端末が変更されたため適用を中止しました", SYNC_FAILED: "通信・認証・保存に失敗しました。未確定要求は結果照会してください", SECRET: "秘密情報を検出したため送信を中止しました", MALFORMED: "同期データの形式が不正です", NON_CANONICAL: "受信データと端末保存形式が一致しないため停止しました", RECOVERY_REQUIRED: "同期の復旧が必要です。学習・JSON保存は続けられます", "recovery-required": "同期情報を隔離しました。学習は続けられます。同期には明示的な再接続が必要です", "dataset-mismatch": "接続先データセットが異なります。再接続・復旧が必要です", DATASET_MISMATCH: "接続先データセットが異なります", SIZE: "同期データがサイズ上限を超えています" };
+          label.dataset.state = status;
+          label.textContent = `${labels[status] || status} ｜ server ${sync.serverRevision} / base ${sync.baseRevision} / local ${sync.localRevision} / dirty ${sync.dirty}`;
+          ["syncConnect", "syncReconnect", "syncPush", "syncPull", "syncKeepLocal", "syncUseRemote", "syncCheck", "syncCancel", "syncClear"].forEach(id => { if ($(id)) $(id).disabled = Boolean(syncClient?.isBusy()) || !persistence.writer || persistence.readError || persistence.conflict || persistence.dirty; });
+        } catch { label.dataset.state = "recovery"; label.textContent = "同期メタデータを読み込めません。端末JSONを退避し、復旧手順を確認してください。"; }
+      }
+
+      function archiveSync(kind, value) {
+        const key = `mwPronunciationTool.syncArchive.${kind}.${crypto.randomUUID()}`;
+        const raw = JSON.stringify(value);
+        localStorage.setItem(key, raw);
+        if (localStorage.getItem(key) !== raw) throw new Error("RECOVERY_REQUIRED");
+      }
+
+      function quarantineSync(record) {
+        if (window.MWSync.inspect(record.sync, Number(record.revision) || 0).quarantine) archiveSync("quarantine", record.sync);
+      }
+
+      function initializeSync() {
+        if (!window.MWSync) return;
+        try { $("syncEndpoint").value = localStorage.getItem(SYNC_ENDPOINT_KEY) || ""; } catch { /* Keep disabled configuration; no request. */ }
+        $("syncEndpoint").disabled = Boolean(window.MW_GAS_HOST);
+        let reconnecting = false;
+        syncClient = window.MWSync.createClient({
+          read: () => {
+            if (!canWrite() || persistence.dirty) throw new Error("RECOVERY");
+            const record = JSON.parse(persistence.raw || "{}");
+            return { data: JSON.parse(JSON.stringify(currentData())), sync: record.sync, revision: Number(record.revision) || 0, hasData: persistence.raw != null };
+          },
+          secrets: localSecrets,
+          archive: archiveSync,
+          canApply: () => !state.activeTest && !state.speedSession && !state.spellingSession && !state.recallSession && !state.usageStudySession && !state.wordStudySession && !state.fetchingRangeId,
+          id: () => crypto.randomUUID().replace(/-/g, ""),
+          status: status => { syncRuntime = status; renderSync(); queueMicrotask(renderSync); },
+          write: (data, sync, recovery) => {
+            if (!canWrite() || persistence.dirty) throw new Error("RECOVERY");
+            const record = JSON.parse(persistence.raw || "{}");
+            quarantineSync(record);
+            const snapshot = createLocalSnapshot(data);
+            if (sync.verified) {
+              const originalRanges = state.ranges;
+              try {
+                state.ranges = JSON.parse(JSON.stringify(snapshot.ranges));
+                normalizeLoadedData();
+                const normalized = { ...snapshot, ranges: state.ranges };
+                if (window.MWSyncProtocol.canonical(window.MWSync.project(normalized, localSecrets())) !== window.MWSyncProtocol.canonical(window.MWSync.project(data, localSecrets()))) throw new Error("NON_CANONICAL");
+              } finally { state.ranges = originalRanges; }
+            }
+            if (sync.verified && window.MWSyncProtocol.canonical(window.MWSync.project(snapshot, localSecrets())) !== window.MWSyncProtocol.canonical(window.MWSync.project(data, localSecrets()))) throw new Error("NON_CANONICAL");
+            const raw = JSON.stringify({ ...snapshot, savedAt: new Date().toISOString(), revision: (Number(record.revision) || 0) + 1, sync });
+            assertNoSecrets(raw, localSecrets()); assertStorageSize(raw);
+            if (recovery && persistence.raw != null) localStorage.setItem(PRE_SYNC_KEY, persistence.raw);
+            localStorage.setItem(STORAGE_KEY, raw);
+            persistence.raw = raw;
+            renderSync();
+          },
+          send: request => {
+            const endpoint = $("syncEndpoint").value.trim();
+            const previous = localStorage.getItem(SYNC_ENDPOINT_KEY) || "";
+            if (!window.MW_GAS_HOST) {
+              if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(endpoint)) throw new Error("MALFORMED");
+              // Bind the outbox and its revision history to one server, including after reload.
+              if (previous && previous !== endpoint && !(reconnecting && request.op === "connect")) throw new Error("RECOVERY_REQUIRED");
+              localStorage.setItem(SYNC_ENDPOINT_KEY, endpoint);
+            }
+            return window.MWSync.transport(endpoint)(request);
+          },
+          applied: () => location.reload()
+        });
+        const invoke = action => { syncRuntime = ""; action().catch(() => {}).finally(renderSync); };
+        $("syncConnect").addEventListener("click", () => invoke(() => syncClient.connect()));
+        $("syncCheck").addEventListener("click", () => invoke(() => syncClient.status()));
+        const confirmSync = (id, title, message, action) => $(id).addEventListener("click", () => showModal(`<h2>${title}</h2><p>${message}</p><button data-modal-confirm>実行する</button><button data-modal-cancel>キャンセル</button>`, () => invoke(action)));
+        confirmSync("syncClear", "拒否された要求を解除", "保存されなかった要求を端末内へ退避して解除します。学習データは残ります。", () => syncClient.clearRejected());
+        confirmSync("syncCancel", "未確定要求の取消を照会", "すでに保存済みなら結果を回収します。未保存ならサーバーに拒否記録を作り、遅れた要求の保存も防ぎます。通信できない間は解除しません。", () => syncClient.status(true));
+        confirmSync("syncReconnect", "同期を再接続・復旧", "以前の同期情報を端末内へ退避します。以前のサーバーで送信が完了していた可能性は残ります。端末の学習を未送信として保持し、クラウドとは自動統合しません。接続先を確認してください。", async () => { reconnecting = true; try { return await syncClient.connect(true); } finally { reconnecting = false; } });
+        $("syncPush").addEventListener("click", () => invoke(() => syncClient.push()));
+        $("syncPull").addEventListener("click", () => invoke(() => syncClient.pull()));
+        $("syncKeepLocal").addEventListener("click", () => showModal('<h2>端末版を残す</h2><p>最新のクラウド版を確認し、次回の送信で端末版に置き換える準備をします。クラウドの学習変更は統合しません。送信は別途必要です。</p><button data-modal-confirm>端末版を選ぶ</button><button data-modal-cancel>キャンセル</button>', () => { invoke(() => syncClient.pull("local")); }));
+        $("syncUseRemote").addEventListener("click", () => showModal('<h2>クラウド版を使う</h2><p>端末の学習データを置き換えます。端末版は直前コピーとして退避します。まず必要ならJSONを保存してください。同期中に端末が変わった場合は適用しません。</p><button class="warn" data-modal-confirm>クラウド版を選ぶ</button><button data-modal-cancel>キャンセル</button>', () => { invoke(() => syncClient.pull("remote")); }));
+        $("restorePreSync").addEventListener("click", () => {
+          try { restoreStoredBackup(localStorage.getItem(PRE_SYNC_KEY), "同期直前"); }
+          catch { toast("同期直前コピーを読み込めません。", true); }
+        });
+        renderSync();
       }
 
       function save(shouldRender = true) {
@@ -380,13 +483,17 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         try {
           const savedAt = new Date().toISOString();
           const payload = createLocalSnapshot(currentData(), savedAt);
-          const raw = JSON.stringify({ ...payload, savedAt, revision: (Number(JSON.parse(persistence.raw || "{}").revision) || 0) + 1 });
+          const record = JSON.parse(persistence.raw || "{}");
+          quarantineSync(record);
+          const sync = window.MWSync.changed(record.sync, Number(record.revision) || 0);
+          const raw = JSON.stringify({ ...payload, savedAt, revision: (Number(record.revision) || 0) + 1, sync });
           assertNoSecrets(raw, localSecrets());
           assertStorageSize(raw);
           localStorage.setItem(STORAGE_KEY, raw);
           persistence.raw = raw;
           persistence.dirty = false;
           persistence.message = "";
+          if (!syncClient?.isBusy()) syncRuntime = "";
           renderPersistence();
           if (shouldRender) render();
           return true;
@@ -2783,7 +2890,11 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         }
         try {
           const payload = createLocalSnapshot(data);
-          const raw = JSON.stringify({ ...payload, savedAt: new Date().toISOString() });
+          let previous = {};
+          try { previous = JSON.parse(persistence.raw || "{}"); } catch { /* Explicit recovery from corrupt main. */ }
+          quarantineSync(previous);
+          const sync = window.MWSync.changed(previous.sync, Number(previous.revision) || 0);
+          const raw = JSON.stringify({ ...payload, savedAt: new Date().toISOString(), revision: (Number(previous.revision) || 0) + 1, sync });
           assertNoSecrets(raw, localSecrets());
           assertStorageSize(raw);
           // Never mutate primary storage unless its recovery copy succeeded.
@@ -3226,6 +3337,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           persistence.message = "";
           load();
           bindEvents();
+          initializeSync();
           render();
           document.documentElement.dataset.appReady = "true";
         };
@@ -3245,7 +3357,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         });
       }
       initializeStorage();
-      if ("serviceWorker" in navigator) {
+      if (!window.MW_GAS_HOST && "serviceWorker" in navigator) {
         window.addEventListener("load", () => {
           navigator.serviceWorker.register("./sw.js", { scope: "./" }).then(registration => {
             const notify = () => {
