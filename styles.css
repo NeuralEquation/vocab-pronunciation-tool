@@ -191,6 +191,8 @@ body.playback-active .jump-fab { bottom:112px; }
       color: var(--text);
       line-height: 1.55;
       display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
     }
     button, input, textarea, select {
@@ -653,7 +655,7 @@ body.playback-active .jump-fab { bottom:112px; }
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 60;
+      z-index: 100;
       background: rgba(0, 0, 0, .72);
       display: grid;
       place-items: end center;
@@ -675,7 +677,7 @@ body.playback-active .jump-fab { bottom:112px; }
       left: 16px;
       right: 16px;
       bottom: 16px;
-      z-index: 80;
+      z-index: 110;
       background: #0d151f;
       border: 1px solid #31506f;
       border-radius: var(--radius);
@@ -850,3 +852,14 @@ body.playback-active .jump-fab { bottom:112px; }
   
 
 
+.save-status { position:sticky; top:0; z-index:90; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px max(12px,env(safe-area-inset-left)); background:#142331; border-bottom:1px solid #31506f; }
+.save-status span { flex:1 1 260px; }
+.save-status[data-state="saved"] button { display:none; }
+.save-status[data-state="saved"] { position:relative; font-size:.85rem; }
+.save-status:not([data-state="saved"]) { border-color:#efb366; }
+.save-status button[hidden] { display:none; }
+.audio-status { padding:4px 12px; min-height:1.5em; color:#b8cee4; font-size:.85rem; }
+.save-status, .audio-status, #updateStatus { width:100%; max-width:900px; }
+.audio-status:empty { display:none; }
+body.session-active .save-status:not([data-state="saved"]) { position:fixed; left:0; right:0; }
+body.session-active:has(.save-status:not([data-state="saved"])) .study-session-layer { padding-top:150px; }

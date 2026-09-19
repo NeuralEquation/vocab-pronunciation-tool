@@ -9,7 +9,7 @@ var {
 window.runTestFeatureSelfCheck = runTestFeatureSelfCheck;
 var { parseUnifiedRows, parseMemoryRows, makeUsageItems, makeMemoryItems, normalizeRangeContent, isSettled, createRecallSession, rateRecallItem, contentStats, runContentSelfCheck } = window.MWContent;
 window.runContentFeatureSelfCheck = runContentSelfCheck;
-var { SCHEMA_VERSION: STORAGE_SCHEMA_VERSION, APP_VERSION, migrateBackup, parseBackup, planImport, createBackup, runStorageSelfCheck } = window.MWStorage;
+var { SCHEMA_VERSION: STORAGE_SCHEMA_VERSION, APP_VERSION, migrateBackup, parseBackup, planImport, createBackup, createLocalSnapshot, assertNoSecrets, assertStorageSize, safeStoredError, csvCell, runStorageSelfCheck } = window.MWStorage;
 window.runStorageSelfCheck = runStorageSelfCheck;
 var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
@@ -19,11 +19,11 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       const STORAGE_KEY = "mwPronunciationTool.v1";
       const PRE_SUPERAPP_BACKUP_KEY = "mwPronunciationTool.preSuperappBackup.v1";
       const PRE_IMPORT_BACKUP_KEY = "mwPronunciationTool.preImportBackup.v1";
+      const PRE_RESTORE_BACKUP_KEY = "mwPronunciationTool.preRestoreBackup.v1";
       const API_USAGE_KEY = "mwPronunciationTool.apiUsage.v1";
       const API_KEY_KEY = "mwPronunciationTool.apiKey.v1";
       const COLLEGIATE_API_KEY_KEY = "mwPronunciationTool.collegiateApiKey.v1";
       const CACHE_SCHEMA_VERSION = 7;
-      const TEST_WORD_LIMIT = 3;
       const READY_EVIDENCE_MAX_AGE_DAYS = 14;
       const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -84,11 +84,21 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         resumeAction: "none",
         operationToken: 0
       };
-      let previewAudio = null;
+      let continuousWatchdog = null;
+      const previewPlayer = window.MWPlayback.createPreviewPlayer(window, message => {
+        const label = document.getElementById("audioStatus");
+        if (label) label.textContent = message;
+      });
       let lastAutoSpokenSpeedKey = "";
       let lastAutoSpokenUsageKey = "";
       let lastAutoSpokenStudyWordKey = "";
       let sessionReturnFocus = null;
+      const persistence = { writer: false, loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
+      let releaseWriter = null;
+      let apiController = null;
+      let actualApiCalls = 0;
+      const dictionaryClient = window.MWDictionary.createClient();
+      let modalReturnFocus = null;
 
       const $ = (id) => document.getElementById(id);
       const playbackClock = window.__MWPlaybackTestClock || {
@@ -121,29 +131,6 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function splitMeanings(text) {
         return [...new Set(String(text || "").split(/[／/、;；]+/).map(value => value.trim()).filter(Boolean))];
-      }
-
-      function parseWords(text) {
-        const seen = new Set();
-        let duplicates = 0;
-        let invalid = 0;
-        const words = [];
-        text.split(/\r?\n/).flatMap(line => line.includes("\t") ? [line] : line.split(/[\s,、]+/)).map(w => w.trim()).filter(Boolean).forEach(entry => {
-          const [raw, ...meaningParts] = entry.split("\t");
-          const cleaned = raw.replace(/^[^A-Za-z'-]+|[^A-Za-z'-]+$/g, "");
-          if (!/^[A-Za-z][A-Za-z'-]{0,39}$/.test(cleaned)) {
-            invalid++;
-            return;
-          }
-          const normalized = cleaned.toLowerCase();
-          if (seen.has(normalized)) {
-            duplicates++;
-            return;
-          }
-          seen.add(normalized);
-          words.push({ raw: cleaned, normalized, meaningsJa: splitMeanings(meaningParts.join("／")) });
-        });
-        return { words, duplicates, invalid };
       }
 
       function emptyDirectionStats() {
@@ -210,7 +197,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         let subdir = audioId.charAt(0);
         if (audioId.startsWith("bix")) subdir = "bix";
         if (audioId.startsWith("gg")) subdir = "gg";
-        if (/^[0-9_]/.test(audioId)) subdir = "number";
+        if (/^[^A-Za-z]/.test(audioId)) subdir = "number";
         return `https://media.merriam-webster.com/audio/prons/en/us/mp3/${subdir}/${encodeURIComponent(audioId)}.mp3`;
       }
 
@@ -291,7 +278,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           // Not a URL; continue with plain text cleanup.
         }
         const keyMatch = text.match(/[?&]key=([^&\s]+)/i) || text.match(/^key=([^&\s]+)/i);
-        if (keyMatch) return decodeURIComponent(keyMatch[1]).trim();
+        if (keyMatch) { try { return decodeURIComponent(keyMatch[1]).trim(); } catch { return keyMatch[1].trim(); } }
         return text;
       }
 
@@ -303,10 +290,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function load() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
+          persistence.raw = raw;
           if (raw) {
-            if (!localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY) && new Blob([raw]).size < 1.5 * 1024 * 1024) {
-              localStorage.setItem(PRE_SUPERAPP_BACKUP_KEY, raw);
-            }
             const migrated = parseBackup(raw);
             if (!migrated.ok) throw new Error(migrated.errors.join(" "));
             state.settings = { ...state.settings, ...migrated.data.settings };
@@ -316,6 +301,12 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             const savedSelectedRangeId = String(migrated.data.ui?.selectedRangeId || "");
             state.selectedRangeId = state.ranges.some(range => range.id === savedSelectedRangeId) ? savedSelectedRangeId : null;
             state.pendingWordScroll = Boolean(state.selectedRangeId);
+            // A failed optional recovery copy must not prevent reading valid data.
+            try {
+              if (persistence.writer && !localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY)) localStorage.setItem(PRE_SUPERAPP_BACKUP_KEY, raw);
+            } catch {
+              persistence.message = "学習データは読み込めましたが、自動退避を作れません。JSON保存をおすすめします。";
+            }
           }
           if (state.settings.saveKey) {
             $("apiKey").value = localStorage.getItem(API_KEY_KEY) || "";
@@ -333,24 +324,74 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           $("mondayEndTime").value = state.settings.mondayEndTime;
           $("wednesdayEndTime").value = state.settings.wednesdayEndTime;
           $("fridayEndTime").value = state.settings.fridayEndTime;
+          persistence.loaded = true;
         } catch (err) {
-          toast("保存データの読み込みに失敗しました。JSONの破損があるかもしれません。");
+          persistence.readError = true;
+          persistence.message = "保存データを読み込めないため、上書きを停止しています。保存タブから正常なバックアップを復元してください。元データは保持しています。";
+        }
+        renderPersistence();
+      }
+
+      function renderPersistence() {
+        const root = $("saveStatus");
+        if (!root) return;
+        root.dataset.state = persistence.readError ? "recovery" : !persistence.writer || persistence.conflict ? "readonly" : persistence.dirty ? "unsaved" : "saved";
+        $("saveStatusText").textContent = persistence.readError ? persistence.message
+          : !persistence.writer ? "別のタブで編集中、または安全な保存に未対応です。この画面は閲覧専用です。他のタブを閉じて再読込してください。"
+          : persistence.conflict ? "別の画面でデータが変更されました。上書きを停止しました。未保存の内容はJSONで退避してから再読込してください。"
+          : persistence.credentialError ? "APIキーを保存できませんでした。設定画面からキーの保存を再試行してください。学習データはJSONで退避できます。"
+          : persistence.dirty ? "未保存です。この画面を閉じず、再試行するかJSONで退避してください。"
+          : persistence.message || "端末に保存済み";
+        $("retrySave").hidden = !persistence.dirty || persistence.credentialError || persistence.readError || persistence.conflict || !persistence.writer;
+      }
+
+      function canWrite(recovery = false) {
+        if (!persistence.writer || persistence.conflict || (persistence.readError && !recovery)) { renderPersistence(); return false; }
+        try {
+          if (localStorage.getItem(STORAGE_KEY) !== persistence.raw) {
+            persistence.conflict = true;
+            renderPersistence();
+            return false;
+          }
+          return true;
+        } catch {
+          persistence.message = "保存領域へアクセスできません。元データの上書きを停止しています。";
+          persistence.readError = true;
+          renderPersistence();
+          return false;
         }
       }
 
+      function localSecrets() {
+        const values = [state.settings.apiKeySession, state.settings.collegiateApiKeySession, $("apiKey")?.value, $("collegiateApiKey")?.value];
+        // Failure to inspect credentials must fail closed for every output path.
+        values.push(localStorage.getItem(API_KEY_KEY), localStorage.getItem(COLLEGIATE_API_KEY_KEY));
+        return values.filter(Boolean).map(cleanApiKey);
+      }
+
+      function currentData() {
+        return { settings: state.settings, ranges: state.ranges, studyLog: state.studyLog, ui: { selectedRangeId: state.selectedRangeId || "" } };
+      }
+
       function save(shouldRender = true) {
+        persistence.dirty = true;
+        if (persistence.credentialError) { renderPersistence(); return false; }
+        if (!canWrite()) return false;
         try {
           const savedAt = new Date().toISOString();
-          const payload = createBackup({
-            settings: state.settings,
-            ranges: state.ranges,
-            studyLog: state.studyLog,
-            ui: { selectedRangeId: state.selectedRangeId || "" }
-          }, savedAt);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, savedAt }));
+          const payload = createLocalSnapshot(currentData(), savedAt);
+          const raw = JSON.stringify({ ...payload, savedAt, revision: (Number(JSON.parse(persistence.raw || "{}").revision) || 0) + 1 });
+          assertNoSecrets(raw, localSecrets());
+          assertStorageSize(raw);
+          localStorage.setItem(STORAGE_KEY, raw);
+          persistence.raw = raw;
+          persistence.dirty = false;
+          persistence.message = "";
+          renderPersistence();
           if (shouldRender) render();
           return true;
         } catch (err) {
+          renderPersistence();
           toast("保存に失敗しました。容量が近い可能性があります。JSONエクスポート後、APIキャッシュ削除を検討してください。", true);
           return false;
         }
@@ -359,8 +400,6 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function normalizeLoadedData() {
         state.ranges.forEach(range => {
           range.words = Array.isArray(range.words) ? range.words : [];
-          delete range.material;
-          delete range.memo;
           range.testHistory = Array.isArray(range.testHistory) ? range.testHistory.slice(-30) : [];
           if (range.manualTestEndedDate && range.manualTestEndedDate !== todayKey()) range.manualTestEndedDate = "";
           range.words.forEach(word => {
@@ -392,15 +431,14 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             word.definitions = Array.isArray(word.definitions) ? word.definitions : [];
             word.meaningsJa = Array.isArray(word.meaningsJa) ? word.meaningsJa.map(String).filter(Boolean) : [];
             word.testStats = word.testStats && typeof word.testStats === "object" ? word.testStats : {};
-            ["enToJa", "jaToEn"].forEach(direction => { word.testStats[direction] = normalizeDirectionStats(word.testStats[direction]); });
+            ["enToJa", "jaToEn"].forEach(direction => { word.testStats[direction] = { ...word.testStats[direction], ...normalizeDirectionStats(word.testStats[direction]) }; });
             word.acceptedSpellings = [...new Set((Array.isArray(word.acceptedSpellings) ? word.acceptedSpellings : []).map(value => String(value).trim()).filter(Boolean))];
-            word.spellingStats = normalizeSpellingStats(word.spellingStats);
+            word.spellingStats = { ...word.spellingStats, ...normalizeSpellingStats(word.spellingStats) };
             word.speedStats = normalizeSpeedStats(word.speedStats);
             word.hasDefinition = Boolean(word.hasDefinition || word.definitions.length);
             word.cacheVersion = Number(word.cacheVersion) || 0;
             word.mwUrl = word.mwUrl || dictionaryUrl(word.normalized || word.word || "");
             syncLegacyPronunciationFields(word, word.dictionarySource || state.settings.dictionaryType);
-            ["checked", "hard", "play" + "Count", "last" + "CheckedAt"].forEach(key => delete word[key]);
           });
           const savedWordExists = range.words.some(word => word.id === range.currentWordId);
           range.currentWordId = savedWordExists ? range.currentWordId : range.words[0]?.id || "";
@@ -419,7 +457,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function setUsage(count) {
-        localStorage.setItem(API_USAGE_KEY, JSON.stringify({ date: todayKey(), count }));
+        try { localStorage.setItem(API_USAGE_KEY, JSON.stringify({ date: todayKey(), count })); }
+        catch { toast("API回数を保存できませんでした。学習データの保存状態を確認してください。", true); }
       }
 
       function incrementUsage(by) {
@@ -429,11 +468,13 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function storageBytes() {
         let total = 0;
+        try {
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i);
           const value = localStorage.getItem(key) || "";
           total += new Blob([key + value]).size;
         }
+        } catch { return total; }
         return total;
       }
 
@@ -886,23 +927,9 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function playUsageLinkedWordAudio(range, item) {
-        const { playableWords } = usageAudioInfo(range, item);
-        if (!playableWords.length) return false;
-        stopPreviewAudio();
-        let index = 0;
-        const playNext = () => {
-          const word = playableWords[index++];
-          if (!word) {
-            previewAudio = null;
-            return;
-          }
-          previewAudio = new Audio(officialAudioUrlForWord(word));
-          previewAudio.onended = playNext;
-          previewAudio.onerror = playNext;
-          previewAudio.play().catch(playNext);
-        };
-        playNext();
-        return true;
+        const { linkedWords } = usageAudioInfo(range, item);
+        stopContinuousPlayback();
+        return previewPlayer.play(linkedWords.map(word => ({ text: word.word, url: officialAudioUrlForWord(word) })));
       }
 
       function autoPlayUsageLinkedWord(range, item, key) {
@@ -916,7 +943,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const status = info.playableWords.length
           ? `${escapeHtml(info.label)} / 公式音声 ${info.playableWords.length}語`
           : `${escapeHtml(info.label)} / 公式音声未取得`;
-        return `<div class="usage-word-audio"><span>${status}</span>${info.playableWords.length ? `<button class="soft" data-${actionName}-action="audio">単語音声を再生</button>` : ""}</div>`;
+        return `<div class="usage-word-audio"><span>${status}</span>${info.linkedWords.length ? `<button class="soft" data-${actionName}-action="audio">関連単語を再生</button>` : ""}<button class="soft" data-${actionName}-action="full-audio">全文を読み上げ</button></div>`;
       }
 
       function setSessionView(panelId, title, active) {
@@ -1419,7 +1446,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!session || !range) return;
         $("testContent").innerHTML = renderTestQuestion(session, range);
         session.questionStartedAt = Date.now();
-        if (session.direction === "enToJa") setTimeout(() => playTestAudio(testWord(range, session.questions[session.index].wordId)), 120);
+        const questionIndex = session.index;
+        if (session.direction === "enToJa") setTimeout(() => {
+          if (state.activeTest === session && session.index === questionIndex && !session.finished) playTestAudio(testWord(range, session.questions[questionIndex].wordId));
+        }, 120);
       }
 
       function updateTestStats(range, answer) {
@@ -1513,7 +1543,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         }
         if (state.recallSession) {
           if (state.recallSession.finished) return leaveRecall();
-          return showModal(`<h2>この確認を終了しますか？</h2><p>ここまでの判定は例文・熟語の既存履歴へ保存されています。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
+          return showModal(`<h2>この確認を終了しますか？</h2><p>ここまでの判定は、画面上の保存状態を確認してください。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
         }
         setSessionView("", "", false);
       }
@@ -1567,11 +1597,9 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function safeApiError(error) {
-        const message = String(error?.message || error || "取得に失敗しました");
-        if (/HTTP\s+\d{3}/.test(message)) return message.match(/HTTP\s+\d{3}/)[0];
-        if (/Failed to fetch|NetworkError|network/i.test(message)) return "ネットワークまたはAPIへの接続に失敗しました";
-        if (/APIキー/.test(message)) return "APIキーを確認してください";
-        return message.slice(0, 100);
+        if (error?.name === "AbortError") return "API取得を中止しました";
+        if (error?.name === "TimeoutError") return "API通信が時間切れになりました";
+        return safeStoredError(error?.message || "取得に失敗しました");
       }
 
       function toast(message, isDanger = false) {
@@ -1592,16 +1620,20 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function showModal(html, onConfirm) {
         const root = $("modalRoot");
+        if (root.classList.contains("hidden")) modalReturnFocus = document.activeElement;
         root.innerHTML = `<div class="modal">${html}</div>`;
         root.classList.remove("hidden");
+        root.querySelector("button, input, select, textarea")?.focus();
         root.querySelector("[data-modal-cancel]")?.addEventListener("click", closeModal);
         root.querySelector("[data-modal-confirm]")?.addEventListener("click", async () => {
           const confirmButton = root.querySelector("[data-modal-confirm]");
           confirmButton.disabled = true;
           try {
-            await onConfirm?.();
+            const result = await onConfirm?.();
             // Long-running flows may replace the confirmation with a completion screen.
-            if (root.querySelector("[data-modal-confirm]")) closeModal();
+            if (result !== false && root.querySelector("[data-modal-confirm]")) closeModal();
+          } catch {
+            toast("操作を完了できませんでした。保存状態を確認してください。", true);
           } finally {
             confirmButton.disabled = false;
           }
@@ -1611,6 +1643,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function closeModal() {
         $("modalRoot").classList.add("hidden");
         $("modalRoot").innerHTML = "";
+        modalReturnFocus?.focus?.();
+        modalReturnFocus = null;
       }
 
       function updateImportPreview() {
@@ -1692,7 +1726,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (materialType === "vocabulary" && !parsedWords.rows.length) return toast("例文・熟語を関連付けるため、単語を1語以上入力してください。", true);
         const range = buildRangeFromForm(parsedWords.rows, parsedMemory.rows, materialType);
         state.ranges.push(range);
-        save();
+        if (!save()) return;
         if (materialType === "memorization") {
           toast(`暗記構文${range.memoryItems.length}件を登録しました。`);
         } else {
@@ -1770,7 +1804,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       async function fetchWords(rangeId, wordIds, reference) {
         const range = state.ranges.find(r => r.id === rangeId);
-        if (!range || state.fetchingRangeId === rangeId) return;
+        if (!range || state.fetchingRangeId || !canWrite()) return;
+        apiController = new AbortController();
+        const controller = apiController;
+        const callsBefore = actualApiCalls;
         state.fetchingRangeId = rangeId;
         const targets = range.words.filter(w => wordIds.includes(w.id));
         let success = 0, audio = 0, noAudio = 0, failed = 0, defYes = 0, defNo = 0, learnersCount = 0, collegiateCount = 0, apiCalls = 0;
@@ -1779,14 +1816,17 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           const done = success + failed, total = targets.length, pct = total ? Math.floor(done / total * 100) : 100;
           const reasons = done === total && failureReasons.size ? `<div class="danger-note">失敗理由: ${[...failureReasons.entries()].map(([reason, count]) => `${escapeHtml(reason)}（${count}語）`).join(" / ")}</div>` : "";
           const mode = state.settings.demoMode ? `<div class="caution">デモモード中です。実APIを使う場合は設定でデモモードをOFFにしてください。</div>` : "";
-          $("modalRoot").innerHTML = `<div class="modal api-progress"><h2>APIデータを取得しています</h2><div>${escapeHtml(range.rangeName || "無題の範囲")}</div><strong>${done} / ${total}語（${pct}%）</strong><div class="api-progress-bar"><span style="width:${pct}%"></span></div><div>現在処理中: ${escapeHtml(current || "完了")}</div><div class="mini-grid"><div class="mini"><strong>${success}</strong>成功</div><div class="mini"><strong>${failed}</strong>失敗</div><div class="mini"><strong>${audio}</strong>音声あり</div><div class="mini"><strong>${noAudio}</strong>音声なし</div><div class="mini"><strong>${defYes}</strong>定義あり</div><div class="mini"><strong>${defNo}</strong>定義なし</div></div>${reasons}${mode}</div>`;
+          $("modalRoot").innerHTML = `<div class="modal api-progress"><h2>APIデータを取得しています</h2><div>${escapeHtml(range.rangeName || "無題の範囲")}</div><strong>${done} / ${total}語（${pct}%）</strong><div class="api-progress-bar"><span style="width:${pct}%"></span></div><div>現在処理中: ${escapeHtml(current || "完了")}</div><div class="mini-grid"><div class="mini"><strong>${success}</strong>成功</div><div class="mini"><strong>${failed}</strong>失敗</div><div class="mini"><strong>${audio}</strong>音声あり</div><div class="mini"><strong>${noAudio}</strong>音声なし</div><div class="mini"><strong>${defYes}</strong>定義あり</div><div class="mini"><strong>${defNo}</strong>定義なし</div></div>${reasons}${mode}<div class="actions"><button class="soft" data-api-cancel>取得を中止</button></div></div>`;
+          $("modalRoot").querySelector("[data-api-cancel]")?.addEventListener("click", () => controller.abort());
         };
+        try {
         renderProgress(targets[0]?.word || "");
         for (const word of targets) {
+          if (controller.signal.aborted || !canWrite()) break;
           try {
             const result = state.settings.demoMode ? await fetchDemo(word.normalized, reference) : await fetchReal(word.normalized, getApiKey(reference), reference);
+            if (controller.signal.aborted) break;
             const { apiCalls: resultApiCalls = 1, ...storedResult } = result;
-            apiCalls += state.settings.demoMode ? 0 : resultApiCalls;
             Object.assign(word, storedResult, {
               apiFetched: true,
               cacheVersion: CACHE_SCHEMA_VERSION,
@@ -1798,21 +1838,25 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             if (word.hasDefinition) defYes++; else defNo++;
             if (word.dictionarySource === "collegiate") collegiateCount++; else learnersCount++;
           } catch (err) {
-            if (!state.settings.demoMode) apiCalls++;
+            if (controller.signal.aborted) break;
             word.apiFetched = false;
             word.error = safeApiError(err);
             failureReasons.set(word.error, (failureReasons.get(word.error) || 0) + 1);
             failed++;
           }
           renderProgress(word.word);
+          if (!save(false)) break;
         }
-        if (!state.settings.demoMode) incrementUsage(apiCalls);
-        save();
-        renderProgress("完了");
+        apiCalls = actualApiCalls - callsBefore;
+        const saved = save();
+        renderProgress(controller.signal.aborted ? "中止" : "完了");
         $("modalRoot").querySelector(".api-progress").insertAdjacentHTML("beforeend", `<div class="actions"><button class="primary" data-progress-close>範囲画面へ戻る</button></div>`);
         $("modalRoot").querySelector("[data-progress-close]").addEventListener("click", closeModal);
-        state.fetchingRangeId = "";
-        toast(`取得完了: 成功${success} / 失敗${failed} / API通信${apiCalls}。通知はタップで閉じられます。`, failed > 0);
+        if (saved) toast(`取得処理終了: 成功${success} / 失敗${failed} / API通信${apiCalls}。通知はタップで閉じられます。`, failed > 0);
+        } finally {
+          state.fetchingRangeId = "";
+          if (apiController === controller) apiController = null;
+        }
       }
 
       async function fetchDemo(word, reference = "learners") {
@@ -1863,9 +1907,9 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       async function fetchReal(word, apiKey, reference = "learners") {
         const cleanedKey = cleanApiKey(apiKey);
-        if (!cleanedKey) throw new Error("APIキー未入力です");
+        if (!cleanedKey) throw new Error("APIキーを確認してください");
+        const callsBefore = actualApiCalls;
         const data = await requestDictionaryApi(word, cleanedKey, reference);
-        let apiCalls = 1;
         if (data.length && data.every(item => typeof item === "string")) {
           const fallback = await fetchSuggestionEntry(data, word, cleanedKey, reference);
           if (!fallback) {
@@ -1880,41 +1924,20 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
               definitions: [],
               hasDefinition: false,
               hasAudio: false,
-              apiCalls,
+              apiCalls: actualApiCalls - callsBefore,
               error: "単語候補のみ返りました"
             };
           }
-          apiCalls += fallback.apiCalls;
-          return buildResultFromData(fallback.data, word, reference, apiCalls);
+          return buildResultFromData(fallback.data, word, reference, actualApiCalls - callsBefore);
         }
-        return buildResultFromData(data, word, reference, apiCalls);
+        return buildResultFromData(data, word, reference, actualApiCalls - callsBefore);
       }
 
       async function requestDictionaryApi(word, apiKey, reference) {
-        const endpoint = `https://www.dictionaryapi.com/api/v3/references/${reference}/json/${encodeURIComponent(word)}?key=${encodeURIComponent(apiKey)}`;
-        let response;
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            response = await fetch(endpoint);
-            if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt) break;
-          } catch (error) {
-            if (attempt) throw error;
-          }
-          await new Promise(resolve => setTimeout(resolve, 650));
-        }
-        if (!response) throw new Error("ネットワークまたはAPIへの接続に失敗しました");
-        if (!response.ok) throw new Error(`APIエラー: HTTP ${response.status}`);
-        const text = await response.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          throw new Error(text.slice(0, 80) || "APIレスポンスをJSONとして読めません");
-        }
-        if (!Array.isArray(data)) {
-          throw new Error(data.message || data.error || "APIキーまたはレスポンス形式を確認してください");
-        }
-        return data;
+        return dictionaryClient.request(word, apiKey, reference, {
+          signal: apiController?.signal,
+          onAttempt: () => { actualApiCalls++; incrementUsage(1); }
+        });
       }
 
       async function fetchSuggestionEntry(suggestions, word, apiKey, reference) {
@@ -2162,7 +2185,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             w.lastApiFetchedAt = "";
           });
           range.cacheClearedAt = new Date().toISOString();
-          save();
+          if (!save()) return false;
           toast("APIキャッシュのみ削除しました。");
         });
       }
@@ -2182,7 +2205,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           stopContinuousPlayback();
           state.ranges = state.ranges.filter(r => r.id !== rangeId);
           if (state.selectedRangeId === rangeId) state.selectedRangeId = null;
-          save();
+          if (!save()) return false;
           $("wordPanel").classList.add("hidden");
           toast("範囲を削除しました。");
         });
@@ -2191,70 +2214,41 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function playOfficial(wordId) {
         stopContinuousPlayback();
         const word = findWord(wordId);
-        if (!word || !word.audioUrl) return;
+        if (!word) return;
         rememberWord(wordId);
-        stopPreviewAudio();
-        previewAudio = new Audio(word.audioUrl);
-        previewAudio.onended = () => { previewAudio = null; };
-        previewAudio.play().catch(() => {
-          previewAudio = null;
-          if (!speakWordText(word.word)) toast("公式音声と端末読み上げを再生できませんでした。", true);
-        });
+        previewPlayer.play([{ text: word.word, url: word.audioUrl }]);
       }
 
       function playPronunciationVariant(wordId, variantId) {
         stopContinuousPlayback();
         const word = findWord(wordId);
         const variant = word?.pronunciationVariants?.find(item => item.id === variantId);
-        if (!word || !variant?.audioUrl) return;
+        if (!word || !variant) return;
         rememberWord(wordId);
-        stopPreviewAudio();
-        previewAudio = new Audio(variant.audioUrl);
-        previewAudio.onended = () => { previewAudio = null; };
-        previewAudio.play().catch(() => {
-          previewAudio = null;
-          if (!speakWordText(word.word)) toast("この発音の公式音声を再生できませんでした。", true);
-        });
+        previewPlayer.play([{ text: word.word, url: variant.audioUrl }]);
       }
 
       function speakWord(wordId) {
         stopContinuousPlayback();
         const word = findWord(wordId);
-        if (!word || !speakWordText(word.word)) {
-          toast("このブラウザでは読み上げに対応していません。", true);
-          return;
-        }
+        if (!word || !speakWordText(word.word)) return toast("このブラウザでは読み上げに対応していません。", true);
         rememberWord(wordId);
       }
 
-      function stopPreviewAudio() {
-        if (previewAudio) {
-          previewAudio.onended = null;
-          previewAudio.onerror = null;
-          previewAudio.pause();
-          previewAudio.removeAttribute("src");
-          previewAudio = null;
-        }
-        if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-      }
+      function stopPreviewAudio() { previewPlayer.stop(); }
 
       function speakWordText(text) {
-        if (!text || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return false;
-        stopPreviewAudio();
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = "en-US";
-        const voices = window.speechSynthesis.getVoices?.() || [];
-        utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang)) || voices.find(voice => /^en\b/i.test(voice.lang)) || null;
-        window.speechSynthesis.speak(utterance);
-        return true;
+        if (!text || !canUseContinuousSpeech()) return false;
+        return previewPlayer.play([{ text }]);
       }
 
       function rememberWord(wordId) {
         const range = findRangeByWord(wordId);
         if (!range) return;
+        const changed = state.selectedRangeId !== range.id || range.currentWordId !== wordId;
         state.selectedRangeId = range.id;
         range.currentWordId = wordId;
-        save(false);
+        if (changed) save(false);
         updateCurrentWord(wordId);
       }
 
@@ -2352,6 +2346,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function detachContinuousMediaCallbacks() {
+        window.clearTimeout(continuousWatchdog);
+        continuousWatchdog = null;
         if (playbackState.currentAudio) {
           playbackState.currentAudio.onended = null;
           playbackState.currentAudio.onerror = null;
@@ -2409,22 +2405,22 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!audio) return;
         audio.onended = () => finishContinuousWord(token, index, wordId);
         audio.onerror = () => fallbackToContinuousSpeech(token, index, wordId);
+        continuousWatchdog = window.setTimeout(() => fallbackToContinuousSpeech(token, index, wordId), 15000);
       }
 
       function attachSpeechCallbacks(utterance, token, index, wordId) {
         utterance.onend = () => finishContinuousWord(token, index, wordId);
         utterance.onerror = () => skipUnplayableContinuousWord(token, index, wordId);
+        continuousWatchdog = window.setTimeout(() => skipUnplayableContinuousWord(token, index, wordId), 30000);
       }
 
       function startContinuousSpeech(word, token, index, wordId) {
         if (!canUseContinuousSpeech()) return false;
-        const utterance = new SpeechSynthesisUtterance(word.word);
-        utterance.lang = "en-US";
-        const voices = window.speechSynthesis.getVoices?.() || [];
-        utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang)) || voices.find(voice => /^en\b/i.test(voice.lang)) || null;
+        const utterance = window.MWPlayback.englishUtterance(word.word);
         attachSpeechCallbacks(utterance, token, index, wordId);
         playbackState.currentUtterance = utterance;
         playbackState.transport = "speech-synthesis";
+        $("audioStatus").textContent = "端末読み上げ（en-US指定）";
         playbackState.resumeAction = "speech-synthesis";
         try {
           window.speechSynthesis.speak(utterance);
@@ -2437,7 +2433,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function fallbackToContinuousSpeech(token, index, wordId) {
-        if (!callbackMatches(token, index, wordId)) return;
+        if (!callbackMatches(token, index, wordId) || playbackState.transport !== "official-audio") return;
         detachContinuousMediaCallbacks();
         playbackState.currentAudio?.pause();
         const word = findWord(wordId);
@@ -2577,6 +2573,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           playbackState.currentAudio = audio;
           playbackState.currentUtterance = null;
           playbackState.transport = "official-audio";
+          $("audioStatus").textContent = "Merriam-Webster公式音声";
           playbackState.resumeAction = "official-audio";
           attachOfficialAudioCallbacks(token, nextPlayableIndex, word.id);
           audio.src = officialAudioUrl;
@@ -2640,13 +2637,14 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function exportJson() {
+        if (persistence.readError) return toast("元データを読み込めないため、空のJSONは出力しません。正常なバックアップを選んで復元してください。", true);
         try {
-          const payload = createBackup({ settings: state.settings, ranges: state.ranges, studyLog: state.studyLog, ui: { selectedRangeId: state.selectedRangeId || "" } });
+          const payload = createBackup(currentData(), new Date().toISOString(), localSecrets());
           const text = JSON.stringify(payload, null, 2);
-          download(`mw-pronunciation-${todayKey()}.json`, text, "application/json");
+          if (!download(`mw-pronunciation-${todayKey()}.json`, text, "application/json")) return;
           toast(`学習履歴・設定を含むschema v${payload.schemaVersion}のJSONを書き出しました。APIキーは含まれていません。サイズ: ${formatBytes(new Blob([text]).size)}`);
         } catch (error) {
-          toast(`JSONの作成に失敗しました: ${error.message}`, true);
+          toast("JSONを安全に作成できませんでした。秘密情報の混入やデータの形式を確認してください。", true);
         }
       }
 
@@ -2675,7 +2673,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           w.testStats?.jaToEn?.correct || 0,
           w.testStats?.jaToEn?.incorrect || 0
         ])));
-        const csv = rows.map(row => row.map(cell => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+        const csv = rows.map(row => row.map(csvCell).join(",")).join("\n");
         download(`mw-pronunciation-${todayKey()}.csv`, csv, "text/csv");
       }
 
@@ -2683,15 +2681,19 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const examples = state.ranges.flatMap(range => (range.usageItems || []).filter(item => item.type === "example"));
         if (!examples.length) return toast("Quizlet用に出力できる例文がありません。", true);
         const text = examples.map(item => `${item.english}\t${item.japanese}`).join("\n");
-        download(`quizlet-examples-${todayKey()}.txt`, text, "text/plain");
+        if (!download(`quizlet-examples-${todayKey()}.txt`, text, "text/plain")) return;
         toast(`例文${examples.length}件をQuizlet形式で書き出しました。熟語と管理IDは含みません。`);
       }
 
       function exportPreUpgrade() {
-        const raw = localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY);
-        if (!raw) return toast("この端末には改修前データの自動保存がありません。通常のJSON保存を使ってください。", true);
-        download(`mw-before-superapp-${todayKey()}.json`, raw, "application/json");
-        toast("改修前データを書き出しました。APIキーは含まれていません。");
+        try {
+          const raw = localStorage.getItem(PRE_SUPERAPP_BACKUP_KEY);
+          if (!raw) return toast("この端末には改修前データの自動保存がありません。通常のJSON保存を使ってください。", true);
+          const parsed = parseBackup(raw);
+          if (!parsed.ok) throw new Error("invalid backup");
+          const payload = createBackup(parsed.data, new Date().toISOString(), localSecrets());
+          if (download(`mw-before-superapp-${todayKey()}.json`, JSON.stringify(payload, null, 2), "application/json")) toast("改修前データを検証して書き出しました。APIキーは含まれていません。");
+        } catch { toast("改修前データを安全に出力できません。元データは端末内に保持しています。", true); }
       }
 
       function restorePreUpgrade() {
@@ -2709,15 +2711,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function restoreStoredBackup(raw, label) {
         const migrated = parseBackup(raw);
         if (!migrated.ok) return toast(`${label}を安全に復元できません: ${migrated.errors[0]}`, true);
-        showModal(`<h2>${escapeHtml(label)}へ戻す</h2><div class="danger-note">現在の学習データを置き換えます。必要なら先に現在のJSONを書き出してください。</div><div class="actions"><button class="warn" data-modal-confirm>復元する</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
-          try {
-            const payload = createBackup(migrated.data);
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, savedAt: new Date().toISOString() }));
-            location.reload();
-          } catch (error) {
-            toast(`復元に失敗しました: ${error.message}`, true);
-          }
-        });
+        migrated.data.settings.saveKey = false;
+        showModal(`<h2>${escapeHtml(label)}へ戻す</h2><div class="danger-note">現在の学習データを置き換えます。直前の保存データは端末内に退避します。未保存の変更がある場合は先にJSONで退避してください。</div><div class="actions"><button class="warn" data-modal-confirm>復元する</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => commitReplacement(migrated.data, PRE_RESTORE_BACKUP_KEY));
       }
 
       function studyStatusLabel(status) {
@@ -2734,6 +2729,11 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function download(filename, text, type) {
+        try {
+          assertNoSecrets(text, localSecrets());
+          if (type === "application/json") assertStorageSize(text);
+        }
+        catch { toast("秘密情報の混入、または保存領域へのアクセス失敗のため出力を中止しました。", true); return false; }
         const blob = new Blob([text], { type });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -2741,6 +2741,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+        return true;
       }
 
       function updateBackupImportPreview(mode = "append") {
@@ -2771,22 +2772,31 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         };
         const combined = migrateBackup({ schemaVersion: STORAGE_SCHEMA_VERSION, ...base });
         if (!combined.ok) return toast(`インポート候補を統合できません: ${combined.errors[0]}`, true);
-        const currentRaw = localStorage.getItem(STORAGE_KEY);
-        const previousPreImport = localStorage.getItem(PRE_IMPORT_BACKUP_KEY);
-        try {
-          const payload = createBackup(combined.data);
-          if (currentRaw) localStorage.setItem(PRE_IMPORT_BACKUP_KEY, currentRaw);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, savedAt: new Date().toISOString() }));
-          location.reload();
-        } catch (error) {
+        return commitReplacement(combined.data, PRE_IMPORT_BACKUP_KEY);
+      }
 
-          try {
-            if (previousPreImport == null) localStorage.removeItem(PRE_IMPORT_BACKUP_KEY);
-            else localStorage.setItem(PRE_IMPORT_BACKUP_KEY, previousPreImport);
-          } catch {
-            // The primary data was never replaced; keep the original error visible.
-          }
-          toast(`保存領域を変更せず中止しました: ${error.message}`, true);
+      function commitReplacement(data, recoveryKey) {
+        if (!canWrite(true)) return false;
+        if (persistence.dirty && !persistence.readError) {
+          toast("未保存の変更があります。先に保存を再試行するか、JSONで退避してから再読込してください。", true);
+          return false;
+        }
+        try {
+          const payload = createLocalSnapshot(data);
+          const raw = JSON.stringify({ ...payload, savedAt: new Date().toISOString() });
+          assertNoSecrets(raw, localSecrets());
+          assertStorageSize(raw);
+          // Never mutate primary storage unless its recovery copy succeeded.
+          // Keep that copy even if the subsequent primary write fails.
+          if (persistence.raw != null) localStorage.setItem(recoveryKey, persistence.raw);
+          localStorage.setItem(STORAGE_KEY, raw);
+          persistence.raw = raw;
+          persistence.dirty = false;
+          location.reload();
+          return true;
+        } catch (error) {
+          toast("置き換えを中止しました。元の学習データは保持しています。空き容量とデータの形式を確認してください。", true);
+          return false;
         }
       }
 
@@ -2807,7 +2817,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           stopContinuousPlayback();
           state.ranges = [];
           state.selectedRangeId = null;
-          save();
+          if (!save()) return false;
           $("wordPanel").classList.add("hidden");
           toast("全データを削除しました。");
         });
@@ -2830,12 +2840,63 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function bindEvents() {
+        $("retrySave").addEventListener("click", () => save());
+        $("reloadData").addEventListener("click", () => location.reload());
+        $("saveStatusExport").addEventListener("click", exportJson);
+        $("restorePreRestore").addEventListener("click", () => {
+          try {
+            const raw = localStorage.getItem(PRE_RESTORE_BACKUP_KEY);
+            if (raw) restoreStoredBackup(raw, "復元直前のデータ");
+            else toast("復元直前の退避データはありません。", true);
+          } catch { toast("退避データを読み込めません。", true); }
+        });
+        document.addEventListener("click", event => {
+          if (persistence.writer && !persistence.conflict && !persistence.readError) return;
+          const control = event.target.closest?.("button");
+          if (!control) return;
+          if (control.matches("[data-tab], #reloadData, #exportJson, #exportCsv, #exportPreUpgrade, #exportQuizlet, #saveStatusExport, [data-modal-cancel], [data-progress-close], #continuousStop, #playbackDockStop")) return;
+          if (persistence.writer && !persistence.conflict && control.matches("#replaceJson, #restorePreUpgrade, #restorePreImport, #restorePreRestore, [data-modal-confirm]")) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          renderPersistence();
+        }, true);
+        document.addEventListener("keydown", event => {
+          const root = $("modalRoot");
+          if (root.classList.contains("hidden")) return;
+          if (event.key === "Escape" && root.querySelector("[data-modal-cancel]")) { event.preventDefault(); closeModal(); }
+          if (event.key === "Tab") {
+            const controls = [...root.querySelectorAll("button:not(:disabled), input, select, textarea, a[href]")];
+            if (!controls.length) return;
+            const first = controls[0], last = controls.at(-1);
+            if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+            else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+          }
+        });
+        window.addEventListener("storage", event => {
+          if ((event.key === STORAGE_KEY || event.key === null) && event.newValue !== persistence.raw) {
+            persistence.conflict = true;
+            stopContinuousPlayback();
+            apiController?.abort();
+            renderPersistence();
+          }
+        });
+        window.addEventListener("beforeunload", event => {
+          if (persistence.dirty) { event.preventDefault(); event.returnValue = ""; }
+        });
+        window.addEventListener("pagehide", () => {
+          persistence.writer = false;
+          stopContinuousPlayback();
+          apiController?.abort();
+          releaseWriter?.();
+        });
+        window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
         document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
         $("saveApiSettings").addEventListener("click", () => {
           const wantsSave = $("saveKey").checked;
           const apiKey = cleanApiKey($("apiKey").value);
           const collegiateApiKey = cleanApiKey($("collegiateApiKey").value);
           const apply = () => {
+            if (!canWrite()) return false;
             state.settings.demoMode = $("demoMode").checked;
             state.settings.saveKey = wantsSave;
             state.settings.dictionaryType = $("dictionaryType").value;
@@ -2847,13 +2908,18 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             state.settings.collegiateApiKeySession = wantsSave ? "" : collegiateApiKey;
             $("apiKey").value = apiKey;
             $("collegiateApiKey").value = collegiateApiKey;
-            if (wantsSave && apiKey) localStorage.setItem(API_KEY_KEY, apiKey);
-            if (wantsSave && collegiateApiKey) localStorage.setItem(COLLEGIATE_API_KEY_KEY, collegiateApiKey);
-            if (!wantsSave) {
-              localStorage.removeItem(API_KEY_KEY);
-              localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+            try {
+              if (wantsSave && apiKey) localStorage.setItem(API_KEY_KEY, apiKey); else localStorage.removeItem(API_KEY_KEY);
+              if (wantsSave && collegiateApiKey) localStorage.setItem(COLLEGIATE_API_KEY_KEY, collegiateApiKey); else localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+            } catch {
+              persistence.dirty = true;
+              persistence.credentialError = true;
+              renderPersistence();
+              toast("APIキーを保存できませんでした。設定画面から再試行してください。", true);
+              return false;
             }
-            save();
+            persistence.credentialError = false;
+            if (!save()) return false;
             toast("API設定を保存しました。保存だけではAPI通信しません。");
           };
           if (wantsSave && (apiKey || collegiateApiKey)) {
@@ -2869,13 +2935,23 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           <p>保存済みAPIキーと一時入力を削除します。</p>
           <div class="actions"><button class="danger" data-modal-confirm>削除する</button><button class="soft" data-modal-cancel>キャンセル</button></div>
         `, () => {
+          if (!canWrite()) return false;
           $("apiKey").value = "";
           $("collegiateApiKey").value = "";
           state.settings.apiKeySession = "";
           state.settings.collegiateApiKeySession = "";
-          localStorage.removeItem(API_KEY_KEY);
-          localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
-          save();
+          try {
+            localStorage.removeItem(API_KEY_KEY);
+            localStorage.removeItem(COLLEGIATE_API_KEY_KEY);
+            persistence.credentialError = false;
+          } catch {
+            persistence.dirty = true;
+            persistence.credentialError = true;
+            renderPersistence();
+            toast("APIキーを削除できませんでした。設定画面から再試行してください。", true);
+            return false;
+          }
+          if (!save()) return false;
           toast("APIキーを削除しました。");
         }));
         $("testDate").addEventListener("change", () => {
@@ -2907,8 +2983,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (btn.dataset.action === "open") { stopContinuousPlayback(); state.selectedRangeId = range.id; state.pendingWordScroll = true; save(false); renderWords(); $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" }); }
           if (btn.dataset.action === "ready") { stopContinuousPlayback(); state.selectedRangeId = range.id; save(false); startTestReadyReview("enToJa"); }
           if (btn.dataset.action === "fetch") confirmFetch(range);
-          if (btn.dataset.action === "test-ended") { range.manualTestEndedDate = todayKey(); save(); toast("テスト終了として記録しました。次の範囲を優先します。"); }
-          if (btn.dataset.action === "test-before") { range.manualTestEndedDate = ""; save(); toast("テスト前として記録しました。"); }
+          if (btn.dataset.action === "test-ended") { range.manualTestEndedDate = todayKey(); if (!save()) return; toast("テスト終了として記録しました。次の範囲を優先します。"); }
+          if (btn.dataset.action === "test-before") { range.manualTestEndedDate = ""; if (!save()) return; toast("テスト前として記録しました。"); }
           if (btn.dataset.action === "clear-cache") clearCache(range.id);
           if (btn.dataset.action === "delete-range") deleteRange(range.id);
         });
@@ -3042,6 +3118,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         });
         $("recallContent").addEventListener("click", event => {
           const studyAction = event.target.closest("[data-study-action]")?.dataset.studyAction;
+          if (studyAction === "full-audio") return speakWordText(currentUsageStudyItem()?.english);
           if (studyAction === "audio") {
             const session = activeStudySession();
             const range = state.ranges.find(item => item.id === session?.rangeId);
@@ -3053,6 +3130,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           const rating = event.target.closest("[data-recall-rating]")?.dataset.recallRating;
           if (rating) return rateCurrentRecall(rating);
           const action = event.target.closest("[data-recall-action]")?.dataset.recallAction;
+          if (action === "full-audio") return speakWordText(currentRecallItem()?.english);
           if (action === "audio") {
             const session = state.recallSession;
             const range = state.ranges.find(item => item.id === session?.rangeId);
@@ -3067,7 +3145,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             return startRecall(previous.source, previous.mode, previous.type, previous.purpose);
           }
           if (action === "return") return leaveRecall();
-          if (action === "abort") return showModal(`<h2>全文暗唱を終了しますか？</h2><p>ここまでの○・△・×は保存されています。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
+          if (action === "abort") return showModal(`<h2>全文暗唱を終了しますか？</h2><p>ここまでの履歴は、画面上の保存状態を確認してください。</p><div class="actions"><button class="danger" data-modal-confirm>終了する</button><button class="soft" data-modal-cancel>続ける</button></div>`, leaveRecall);
           if (event.target.closest("[data-study-card]")) {
             const session = activeStudySession();
             if (!session || session.transitioning) return;
@@ -3143,16 +3221,44 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         window.addEventListener("focus", render);
       }
 
-      load();
-      bindEvents();
-      render();
+      function initializeStorage() {
+        const start = () => {
+          persistence.message = "";
+          load();
+          bindEvents();
+          render();
+          document.documentElement.dataset.appReady = "true";
+        };
+        if (!navigator.locks?.request) { start(); return; }
+        // A lifetime single-writer lock makes synchronous localStorage saves safe
+        // across tabs. Other tabs remain read-only until explicitly reloaded.
+        navigator.locks.request(`${STORAGE_KEY}.writer`, { ifAvailable: true }, async lock => {
+          persistence.writer = Boolean(lock);
+          if (!lock) { start(); return; }
+          const released = new Promise(resolve => { releaseWriter = resolve; });
+          start();
+          await released;
+        }).catch(() => {
+          persistence.writer = false;
+          if (!persistence.loaded && !persistence.readError) start();
+          else renderPersistence();
+        });
+      }
+      initializeStorage();
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
-          navigator.serviceWorker.register("./sw.js", { scope: "./" }).catch(() => {
+          navigator.serviceWorker.register("./sw.js", { scope: "./" }).then(registration => {
+            const notify = () => {
+              if (!registration.waiting || !navigator.serviceWorker.controller) return;
+              $("updateStatus").textContent = "更新があります。保存済みを確認し、すべてのタブを閉じて開き直すと反映されます。";
+              $("updateStatus").classList.remove("hidden");
+            };
+            notify();
+            registration.addEventListener("updatefound", () => registration.installing?.addEventListener("statechange", notify));
+          }).catch(() => {
             // PWA登録に失敗しても通常のWebアプリとして使えます。
           });
         });
       }
     })();
   
-

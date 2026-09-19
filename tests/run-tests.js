@@ -8,6 +8,7 @@ const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
 const sandbox = {
   Blob,
+  URL,
   Date,
   JSON,
   Map,

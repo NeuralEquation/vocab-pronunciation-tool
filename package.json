@@ -2,8 +2,8 @@
   "name": "vocab-pronunciation-superapp",
   "private": true,
   "scripts": {
-    "test": "node tests/run-tests.js",
-    "test:browser": "node tests/browser-smoke.js"
+    "test": "node tests/run-tests.js && node tests/audit-regressions.js",
+    "test:browser": "node tests/browser-smoke.js && node tests/browser-safety.js"
   }
 }
 
