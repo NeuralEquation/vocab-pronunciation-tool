@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b0f17">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="MW発音確認">
@@ -11,9 +11,17 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=54">
+  <link rel="stylesheet" href="styles.css?v=55">
 </head>
 <body>
+  <aside id="saveStatus" class="save-status" role="status" aria-live="polite">
+    <span id="saveStatusText">保存領域を確認しています。</span>
+    <button id="retrySave" class="soft" hidden>保存を再試行</button>
+    <button id="saveStatusExport" class="soft">JSONで退避</button>
+    <button id="reloadData" class="soft">再読込</button>
+  </aside>
+  <div id="updateStatus" class="caution hidden" role="status"></div>
+  <div id="audioStatus" class="audio-status" role="status" aria-live="polite"></div>
   <div class="app">
     <header>
       <div class="topline">
@@ -162,6 +170,7 @@
           <button class="soft" id="exportPreUpgrade">改修前データを保存</button>
           <button class="warn" id="restorePreUpgrade">改修前データへ戻す</button>
           <button class="warn" id="restorePreImport">前回インポート前へ戻す</button>
+          <button class="soft" id="restorePreRestore">復元直前に戻す</button>
           <button class="danger" id="wipeAll">全データ削除</button>
         </div>
         <label for="importJson" style="margin-top:12px">JSONインポート</label>
@@ -309,7 +318,7 @@
   </div>
 
   <div id="modalRoot" class="modal-backdrop hidden" role="dialog" aria-modal="true"></div>
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <div id="playbackDock" class="playback-dock hidden" aria-live="polite">
     <div class="playback-dock-status">
       <strong id="playbackDockWord">連続再生</strong>
@@ -322,11 +331,12 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=54"></script>
-  <script defer src="js/content.js?v=54"></script>
-  <script defer src="js/test.js?v=54"></script>
-  <script defer src="js/playback.js?v=54"></script>
-  <script defer src="js/app.js?v=54"></script>
-  <script defer src="js/ux-overrides.js?v=54"></script>
+  <script defer src="js/storage.js?v=55"></script>
+  <script defer src="js/content.js?v=55"></script>
+  <script defer src="js/test.js?v=55"></script>
+  <script defer src="js/playback.js?v=55"></script>
+  <script defer src="js/dictionary.js?v=55"></script>
+  <script defer src="js/app.js?v=55"></script>
+  <script defer src="js/ux-overrides.js?v=55"></script>
 </body>
 </html>

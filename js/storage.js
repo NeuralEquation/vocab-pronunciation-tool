@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = 3;
-  const APP_VERSION = "2026.09.13";
+  const APP_VERSION = "2026.09.19";
   const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
   const MAX_RANGES = 500;
   const MAX_WORDS_PER_RANGE = 5000;
@@ -35,6 +35,7 @@
     try {
       const url = new URL(text);
       if (url.protocol !== "https:") return "";
+      if (url.username || url.password || url.search || url.hash) return "";
       if (allowedHost && url.hostname !== allowedHost && !url.hostname.endsWith(`.${allowedHost}`)) return "";
       return url.href.slice(0, 2000);
     } catch {
@@ -160,7 +161,7 @@
         word.word = wordText;
         word.normalized = clean(word.normalized || wordText).toLocaleLowerCase("en-US").slice(0, 100);
         word.meaningsJa = uniqueStrings(word.meaningsJa).map(item => item.slice(0, 500)).slice(0, 30);
-        word.acceptedSpellings = uniqueStrings(word.acceptedSpellings).filter(item => item.length <= 100).slice(0, 30);
+        word.acceptedSpellings = uniqueStrings([...(Array.isArray(word.acceptedSpellings) ? word.acceptedSpellings : []), ...(Array.isArray(word.acceptedForms) ? word.acceptedForms : []), ...(Array.isArray(word.spellingForms) ? word.spellingForms : [])]).filter(item => item.length <= 100).slice(0, 30);
         word.mwUrl = safeHttpUrl(word.mwUrl, "merriam-webster.com");
         word.audioUrl = safeHttpUrl(word.audioUrl, "merriam-webster.com");
         word.audioId = clean(word.audioId).replace(/[^A-Za-z0-9_-]+/g, "").slice(0, 100);
@@ -169,8 +170,9 @@
         word.partOfSpeech = clean(word.partOfSpeech).slice(0, 100);
         word.dictionarySource = ["learners", "collegiate"].includes(word.dictionarySource) ? word.dictionarySource : "";
         word.definitions = uniqueStrings(word.definitions).map(item => item.slice(0, 2000)).slice(0, 10);
-        word.error = clean(word.error).slice(0, 300);
-        word.studyStatus = ["unrated", "hard", "known"].includes(word.studyStatus) ? word.studyStatus : "unrated";
+        word.error = safeStoredError(word.error);
+        word.studyStatus = ["unrated", "hard", "known"].includes(word.studyStatus) ? word.studyStatus
+          : word.hard === true ? "hard" : word.checked === true ? "known" : "unrated";
         const usedVariantIds = new Set();
         word.pronunciationVariants = (Array.isArray(word.pronunciationVariants) ? word.pronunciationVariants : []).map((variant, variantIndex) => {
           if (!isObject(variant)) return null;
@@ -335,7 +337,10 @@
         const metadataMatch = byMetadata.get(metadata);
         const match = idMatch || metadataMatch;
         if (match) {
-          if (rangeContentKey(match) === rangeContentKey(range)) duplicates++;
+          if (rangeContentKey(match) === rangeContentKey(range)) {
+            duplicates++;
+            parsed.warnings.push("同じ教材は追加しません。学習履歴・苦手設定の統合は行いません。履歴を戻す場合は、内容を確認して置き換えを選んでください。");
+          }
           else conflicts.push(`範囲「${range.rangeName || id}」は既存範囲とIDまたは名称・日付が同じですが、内容が異なります。追加を中止しました。`);
           return;
         }
@@ -360,7 +365,9 @@
     };
   }
 
-  function createBackup(data, exportedAt = new Date().toISOString()) {
+  // Local snapshots preserve extension fields. Portable backups use a separate,
+  // explicit projection so unknown fields can never become an export channel.
+  function createLocalSnapshot(data, exportedAt = new Date().toISOString()) {
     const normalized = migrateBackup({ schemaVersion: SCHEMA_VERSION, ...clone(data) });
     if (!normalized.ok) throw new Error(normalized.errors.join(" "));
     return {
@@ -372,6 +379,72 @@
       studyLog: normalized.data.studyLog,
       ui: normalized.data.ui
     };
+  }
+
+  function safeStoredError(value) {
+    const text = clean(value);
+    const allowed = ["単語候補のみ返りました", "単語自体が見つかりません", "辞書項目はありますが発音情報がありません",
+      "発音表記はありますが公式音声がありません", "音声はありますが発音表記がありません",
+      "ネットワークまたはAPIへの接続に失敗しました", "APIキーを確認してください", "API取得を中止しました",
+      "API応答を安全に読み込めません", "API通信が時間切れになりました", "取得に失敗しました"];
+    if (!text || allowed.includes(text) || /^HTTP \d{3}$/.test(text)) return text;
+    return "取得に失敗しました";
+  }
+
+  const pickScalars = (value, fields) => Object.fromEntries(fields.split(" ")
+    .filter(key => ["string", "boolean"].includes(typeof value?.[key]) || (typeof value?.[key] === "number" && Number.isFinite(value[key])))
+    .map(key => [key, value[key]]));
+  function portableStats(value) {
+    if (!isObject(value)) return {};
+    const result = pickScalars(value, "attempts correct incorrect consecutiveCorrect lastResult lastTestedAt totalResponseMs slowCount hesitantCount lastTiming lastLapseAt lastConfusionAt instant unsure unknown lastRating lastReviewedAt circle triangle cross consecutiveCircle lastSuccessfulReviewDate lastLapseDate lastAnswer lastAttemptedAt");
+    ["successfulReviewDates", "successfulDates", "instantReviewDates"].forEach(key => {
+      if (Array.isArray(value[key])) result[key] = value[key].map(validDateKey).filter(Boolean);
+    });
+    if (Array.isArray(value.wrongAnswers)) result.wrongAnswers = value.wrongAnswers.filter(item => typeof item === "string").slice(-8);
+    if (Array.isArray(value.recentResponseMs)) result.recentResponseMs = value.recentResponseMs.filter(Number.isFinite);
+    if (isObject(value.confusedWith)) result.confusedWith = Object.fromEntries(Object.entries(value.confusedWith).filter(([, count]) => Number.isFinite(count)));
+    ["enToJa", "jaToEn"].forEach(key => { if (isObject(value[key])) result[key] = portableStats(value[key]); });
+    return result;
+  }
+
+  function assertNoSecrets(value, secrets = []) {
+    const text = typeof value === "string" ? value : JSON.stringify(value);
+    for (const secret of secrets.map(clean).filter(Boolean)) {
+      const forms = [secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1)];
+      if (forms.some(form => text.includes(form))) throw new Error("秘密情報の混入を検出したため、保存・出力を中止しました。");
+    }
+    return value;
+  }
+
+  function assertStorageSize(text) {
+    if (new Blob([text]).size > MAX_IMPORT_BYTES) throw new Error("保存データが読込上限の8MBを超えています。");
+    return text;
+  }
+
+  function createBackup(data, exportedAt = new Date().toISOString(), secrets = []) {
+    const local = createLocalSnapshot(data, exportedAt);
+    const item = source => ({
+      ...pickScalars(source, "id sourceId type label english japanese"),
+      ...(Array.isArray(source.linkedWordIds) ? { linkedWordIds: source.linkedWordIds, unresolvedRefs: source.unresolvedRefs } : {}),
+      recallStats: portableStats(source.recallStats)
+    });
+    const ranges = local.ranges.map(range => ({
+      ...pickScalars(range, "id rangeName testDate materialType weekday pages deleteAt manualTestEndedDate currentWordId createdAt cacheClearedAt"),
+      words: range.words.map(word => ({
+        ...pickScalars(word, "id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus hasAudio hasDefinition cacheVersion apiFetched lastApiFetchedAt"),
+        meaningsJa: word.meaningsJa, acceptedSpellings: word.acceptedSpellings, definitions: word.definitions,
+        pronunciationVariants: word.pronunciationVariants,
+        testStats: portableStats(word.testStats), spellingStats: portableStats(word.spellingStats), speedStats: portableStats(word.speedStats)
+      })),
+      usageItems: range.usageItems.map(item), memoryItems: range.memoryItems.map(item), testHistory: range.testHistory
+    }));
+    return assertNoSecrets({ ...local, ranges }, [...secrets, data.settings?.apiKeySession, data.settings?.collegiateApiKeySession]);
+  }
+
+  function csvCell(value) {
+    let text = String(value ?? "");
+    if (/^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = `'${text}`;
+    return `"${text.replace(/"/g, '""')}"`;
   }
 
   function runStorageSelfCheck() {
@@ -406,6 +479,11 @@
     parseBackup,
     planImport,
     createBackup,
+    createLocalSnapshot,
+    assertNoSecrets,
+    assertStorageSize,
+    safeStoredError,
+    csvCell,
     runStorageSelfCheck
   });
 })();

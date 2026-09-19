@@ -295,6 +295,7 @@
     range.memoryItems = Array.isArray(range.memoryItems) ? range.memoryItems : [];
     const wordIds = new Set((range.words || []).map(word => word.id));
     range.usageItems = range.usageItems.map(item => ({
+      ...item,
       id: item.id || uid("usage"),
       sourceId: clean(item.sourceId),
       type: VALID_USAGE_TYPES.has(item.type) ? item.type : "example",
@@ -305,6 +306,7 @@
       recallStats: normalizeRecallStats(item.recallStats)
     })).filter(item => item.english && item.japanese);
     range.memoryItems = range.memoryItems.map(item => ({
+      ...item,
       id: item.id || uid("memory"),
       sourceId: clean(item.sourceId),
       label: clean(item.label),

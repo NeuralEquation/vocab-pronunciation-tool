@@ -62,7 +62,7 @@ Official Merriam-Webster audio remains the first choice. In speed review, each c
 
 The repository tag `stable-before-superapp-2026-07-29` identifies the code before the super-app changes.
 
-On the first load, the app keeps a one-time copy of the existing main data when it is small enough to duplicate safely. The backup screen can export or restore this copy. JSON export remains the recommended manual backup before a large import. API keys are never included.
+On the first successful load, the app attempts a one-time local recovery copy. If that optional copy fails, valid study data is still loaded and a warning is shown. The backup screen can export or restore this copy. JSON export remains the recommended manual backup before a large import. API keys are never included.
 
 ### Feedback and bug reports
 
@@ -78,10 +78,12 @@ This is a static, local-first PWA. Study data, settings, and dictionary lookup c
 | `js/storage.js` | schema v3 validation, migration, safe JSON export, append/replace import planning |
 | `js/content.js` | vocabulary/example/phrase/memorization parsing and the `○` / `△` / `×` full-text recall queue |
 | `js/test.js` | two-direction test sessions, choice construction, spelling evaluation, Speed Review sessions, and readiness rules |
-| `js/app.js` | UI state, localStorage writes, import confirmation, API/audio access, speech fallback, and service-worker registration |
+| `js/playback.js` | cancellable single/linked-word audio, shared en-US voice selection, usage timing |
+| `js/dictionary.js` | bounded, abortable MW requests, retries and safe errors |
+| `js/app.js` | UI state, guarded localStorage writes, import/restore confirmation, continuous playback, and service-worker registration |
 | `sw.js` | same-origin app-shell cache and removal of old app-shell caches |
 
-`index.html` loads `storage.js`, `content.js`, `test.js`, then `app.js`. Keep this order because the UI uses the APIs supplied by the first three files.
+`index.html` loads `storage.js`, `content.js`, `test.js`, `playback.js`, `dictionary.js`, then `app.js`. Keep this order because the UI uses the APIs supplied by these modules. The empty `ux-overrides.js` entry remains for PWA compatibility.
 
 ## Local data, schema v3, and API-key safety / ローカルデータと安全性
 
@@ -93,10 +95,11 @@ API keys are intentionally outside schema v3. Optional Learner's and Collegiate 
 
 ## Back up, import, and roll back / バックアップ・インポート・復元
 
-Before a large change, use **JSON export** and keep the downloaded file safely. The backup screen also offers two automatic recovery points:
+Before a large change, use **JSON export** and keep the downloaded file safely. The backup screen also offers three local recovery points:
 
 - **Pre-upgrade backup** is the one-time copy retained when eligible older data is first upgraded. It can be exported or restored.
-- **Pre-import backup** is written immediately before a successful append or replace import. “Restore before last import” replaces current study data with that checkpoint after confirmation.
+- **Pre-restore backup** preserves the main saved value before a restore. “復元直前に戻す” can undo a restore. If the recovery copy cannot be saved, the main value is not changed.
+- **Pre-import backup** is written before attempting an append or replace import. “Restore before last import” replaces current study data with that checkpoint after confirmation.
 
 Paste JSON into the backup screen first. The app previews ranges, words, duplicates, and migration warnings before enabling the operation.
 
@@ -161,9 +164,22 @@ npm test
 
 The automated command is a code-level check. It does not prove a visible browser flow, installation, offline reload, audio permission/voice behaviour, or real-device behavior. Those require a separate localhost browser/PWA pass.
 
-For a release that changes app-shell files, update the cache/query version consistently in `index.html` and `sw.js`, then reload the HTTP-served app and check the service-worker update path. `sw.js` only caches same-origin app files; external Merriam-Webster API responses and audio are not put in the PWA cache. A browser with an older service worker may need one reload/activation cycle before the new shell is used.
+For a release that changes app-shell files, update the cache/query version consistently in `index.html` and `sw.js`, then reload the HTTP-served app and check the service-worker update path. `sw.js` only caches same-origin app files; external Merriam-Webster API responses and audio are not put in the PWA cache. An installed update waits until all app tabs close. The app shows an update notice; confirm that data is saved, close all app tabs, then reopen. HTML and assets are served from the same installed shell, and only explicitly listed app assets are cached.
 
 ## GitHub Pages / GitHub Pages での公開
 
 This project can be published as a static GitHub Pages site: publish the repository's app files, enable Pages for the intended branch/folder, and open the resulting HTTPS URL before installing it as a PWA. The relative asset and service-worker paths support a project Pages subpath. GitHub Pages serves the client application only; it must not be used to publish API keys or private exports. Verify the deployed HTML, JavaScript versions, and service-worker cache name after a release rather than treating a successful upload as browser or device validation.
 
+
+## Audit fixes (app shell v55)
+
+- 読込失敗時は復旧モードになり、通常保存で元データを上書きしません。「保存」タブで正常なJSONへの置き換え・退避済みデータからの復元を行えます。破損した元の値も置き換え直前のローカル退避に残ります。
+- 保存失敗は「未保存」として表示し続けます。タブを閉じずに再試行するか、JSONで退避してください。APIキーの保存が失敗した場合は、設定画面から再試行します。
+- 現行版同士の同時上書きを防ぐため、Web Locksで編集するタブを1つに限定します。他のタブは閲覧専用です。編集タブを閉じてから再読込すると引き継げます。Web Locks未対応のブラウザでは保存を停止します。古い版を開いているタブも閉じてください。
+- `revision`は端末内の保存用番号です。GAS/Drive同期、端末間の自動マージ、クラウドのrevision/dirty管理は未実装です。追加importは教材の追加であり、同じ教材の学習履歴を統合する機能ではありません。
+- JSON出力は許可したschema項目だけを組み立てます。未知の拡張項目は出力しません。範囲・単語・例文の未知項目はローカル側で保持し、元JSONのローカル退避も維持します。旧バックアップの出力にも同じ検証を適用します。
+- 端末で保持しているMWキーと一致する文字列が学習データや出力に見つかった場合は、保存・出力を中止します。MWへの認証以外にキーを送る経路は追加していません。応答本文や通信URLはアプリのログ・保存用エラーに入れません。
+- 単発音声・例文に関連する単語音声は、遅れて届く失敗通知を無視します。公式音声が失敗・時間切れになればen-US指定の端末TTSへ切り替えます。例文・熟語の学習画面には「全文を読み上げ」もあります。端末TTSの実音声・オフライン可否は端末の音声設定に依存します。
+- API通信は1回15秒で時間切れになり、取得中に中止できます。使用回数は候補検索・再試行も含む実通信の開始ごとに数えます。
+
+Verification: `npm test` runs the original unit suite and the audit regressions. Serve this directory over HTTP, then set `MW_TEST_URL` and run `npm run test:browser` for both learning/PWA smoke tests and corruption/quota/two-tab/secret-boundary browser tests. Tests use synthetic data and mocked dictionary/audio paths; they do not certify physical iPad audio, background behavior, or GAS authentication. Keep a separate JSON backup before testing an actual installed iPad PWA.
