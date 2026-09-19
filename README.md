@@ -17,7 +17,13 @@ A PWA for checking pronunciation, parts of speech, and short definitions with th
 * The API key is not included in JSON or CSV exports.
 * Demo mode is enabled by default, so simply opening the page does not send any API requests.
 
-## PWA Notes
+## GAS同期（検証用・未デプロイ）
+
+GitHub PagesのPWAは引き続き使えます。同期は保存タブから手動で行い、APIキー・端末設定を除外します。GAS用には同じ画面をローカルでまとめる `npm run build:gas` を追加しました。Google認証・CORS・リダイレクト・実Drive保存・実iPadは未検証です。GitHub PWAからの直接同期が利用可能かは実環境での確認が必要です。
+
+設計、競合解決、復旧、テスト、実環境での確認項目は [GAS同期ガイド](gas/README.md) を参照してください。本番deployやDriveデータ作成は実行していません。
+
+## PWA Cache
 
 The service worker only caches the app files. Merriam-Webster API responses and audio files are not stored in the PWA cache.
 
@@ -176,7 +182,7 @@ This project can be published as a static GitHub Pages site: publish the reposit
 - 読込失敗時は復旧モードになり、通常保存で元データを上書きしません。「保存」タブで正常なJSONへの置き換え・退避済みデータからの復元を行えます。破損した元の値も置き換え直前のローカル退避に残ります。
 - 保存失敗は「未保存」として表示し続けます。タブを閉じずに再試行するか、JSONで退避してください。APIキーの保存が失敗した場合は、設定画面から再試行します。
 - 現行版同士の同時上書きを防ぐため、Web Locksで編集するタブを1つに限定します。他のタブは閲覧専用です。編集タブを閉じてから再読込すると引き継げます。Web Locks未対応のブラウザでは保存を停止します。古い版を開いているタブも閉じてください。
-- `revision`は端末内の保存用番号です。GAS/Drive同期、端末間の自動マージ、クラウドのrevision/dirty管理は未実装です。追加importは教材の追加であり、同じ教材の学習履歴を統合する機能ではありません。
+- `revision`は端末内の保存用番号です。v56では別の`sync`領域に同期のrevision/dirty/pending/conflictを保持します（上記GAS同期ガイド参照）。端末間の自動マージは行いません。追加importは教材の追加であり、同じ教材の学習履歴を統合する機能ではありません。
 - JSON出力は許可したschema項目だけを組み立てます。未知の拡張項目は出力しません。範囲・単語・例文の未知項目はローカル側で保持し、元JSONのローカル退避も維持します。旧バックアップの出力にも同じ検証を適用します。
 - 端末で保持しているMWキーと一致する文字列が学習データや出力に見つかった場合は、保存・出力を中止します。MWへの認証以外にキーを送る経路は追加していません。応答本文や通信URLはアプリのログ・保存用エラーに入れません。
 - 単発音声・例文に関連する単語音声は、遅れて届く失敗通知を無視します。公式音声が失敗・時間切れになればen-US指定の端末TTSへ切り替えます。例文・熟語の学習画面には「全文を読み上げ」もあります。端末TTSの実音声・オフライン可否は端末の音声設定に依存します。

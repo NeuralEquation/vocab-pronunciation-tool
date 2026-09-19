@@ -27,7 +27,7 @@ function harness(raw = JSON.stringify(fixture())) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
-  for (const file of ["storage", "content", "test", "playback", "dictionary"]) vm.runInContext(fs.readFileSync(path.join(root, `js/${file}.js`), "utf8"), ctx);
+  for (const file of ["storage", "sync-protocol", "sync", "content", "test", "playback", "dictionary"]) vm.runInContext(fs.readFileSync(path.join(root, `js/${file}.js`), "utf8"), ctx);
   const source = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
   assert.ok(source.includes("      initializeStorage();"));
   // Expose only inside this isolated VM, without production hooks or DOM boot.
@@ -38,6 +38,23 @@ function harness(raw = JSON.stringify(fixture())) {
 
 const cases = [];
 const it = (name, fn) => cases.push({ name, fn });
+
+it("actual replacement keeps current sync baseline and pending request while marking import or restore dirty", () => {
+  const h = harness();
+  const original = fixture();
+  original.sync = h.ctx.MWSync.initial(10, false);
+  original.sync.baseRevision = original.sync.serverRevision = 7;
+  original.sync.dirty = true;
+  original.sync.requestId = "pending_fixture_1234";
+  original.sync.pending = { localRevision: 10, request: { protocol: 1, op: "push", requestId: original.sync.requestId, baseRevision: 7, payload: h.ctx.MWSync.project(original, []) } };
+  h.values.set(MAIN, JSON.stringify(original)); h.a.load();
+  const imported = fixture(); imported.sync = h.ctx.MWSync.initial(0, false);
+  assert.equal(h.a.commitReplacement(imported, "fixture.recovery"), true);
+  const saved = JSON.parse(h.values.get(MAIN));
+  assert.equal(saved.sync.localRevision, 11); assert.equal(saved.sync.baseRevision, 7);
+  assert.equal(saved.sync.dirty, true);
+  assert.equal(JSON.stringify(saved.sync.pending), JSON.stringify(original.sync.pending));
+});
 
 it("corrupt and future primary data cannot be overwritten by normal save", () => {
   for (const raw of ["{broken", JSON.stringify({ schemaVersion: 999, ranges: [] })]) {
@@ -226,7 +243,7 @@ it("service worker caches only the manifest shell, keeps a consistent offline bu
   let response;
   handlers.fetch({ request: { url: index, method: "GET", mode: "navigate" }, respondWith(promise) { response = promise; } });
   assert.equal(await response, "shell:./index.html");
-  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v55:"))[1];
+  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v56:"))[1];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+\?v=\d+)"/g)) assert.equal(shell.has(new URL(asset, scope).href), true, asset);
 });

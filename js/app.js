@@ -94,6 +94,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       let lastAutoSpokenStudyWordKey = "";
       let sessionReturnFocus = null;
       const persistence = { writer: false, loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
+      let syncClient = null;
+      let syncRuntime = "";
+      const SYNC_ENDPOINT_KEY = "mwPronunciationTool.syncEndpoint.v1";
+      const PRE_SYNC_KEY = "mwPronunciationTool.preSyncBackup.v1";
       let releaseWriter = null;
       let apiController = null;
       let actualApiCalls = 0;
@@ -333,6 +337,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function renderPersistence() {
+        renderSync();
         const root = $("saveStatus");
         if (!root) return;
         root.dataset.state = persistence.readError ? "recovery" : !persistence.writer || persistence.conflict ? "readonly" : persistence.dirty ? "unsaved" : "saved";
@@ -373,6 +378,73 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         return { settings: state.settings, ranges: state.ranges, studyLog: state.studyLog, ui: { selectedRangeId: state.selectedRangeId || "" } };
       }
 
+      function storedSync() {
+        const record = JSON.parse(persistence.raw || "{}");
+        return window.MWSync.metadata(record.sync, Number(record.revision) || 0, persistence.raw != null);
+      }
+
+      function renderSync() {
+        const label = $("syncStatus");
+        if (!label || !window.MWSync) return;
+        try {
+          const sync = storedSync();
+          const status = syncRuntime || (sync.pending ? "pending" : sync.conflict ? "conflict" : sync.dirty ? "dirty" : sync.baseRevision ? "synced" : "idle");
+          const labels = { idle: "未接続", dirty: "端末に未同期の変更があります", pending: "送信結果が未確定です。同じ要求を再試行してください", syncing: "同期中（学習は続けられます）", synced: "同期済み", conflict: "競合：自動では統合しません", changed: "同期中に端末が変更されたため受信内容を適用しませんでした", error: "通信・認証・保存に失敗しました。送信結果は未確定の場合があります", secret: "秘密情報を検出したため送信を中止しました", malformed: "同期データの形式が不正です", recovery: "復旧が必要です。未確定の送信は再試行してください", size: "同期データがサイズ上限を超えています" };
+          label.dataset.state = status;
+          label.textContent = `${labels[status] || status} ｜ server ${sync.serverRevision} / base ${sync.baseRevision} / local ${sync.localRevision} / dirty ${sync.dirty}`;
+          ["syncPush", "syncPull", "syncKeepLocal", "syncUseRemote"].forEach(id => { if ($(id)) $(id).disabled = Boolean(syncClient?.isBusy()) || !persistence.writer || persistence.readError || persistence.conflict || persistence.dirty; });
+        } catch { label.dataset.state = "recovery"; label.textContent = "同期メタデータを読み込めません。端末JSONを退避し、復旧手順を確認してください。"; }
+      }
+
+      function initializeSync() {
+        if (!window.MWSync) return;
+        try { $("syncEndpoint").value = localStorage.getItem(SYNC_ENDPOINT_KEY) || ""; } catch { /* Keep disabled configuration; no request. */ }
+        $("syncEndpoint").disabled = Boolean(window.MW_GAS_HOST);
+        syncClient = window.MWSync.createClient({
+          read: () => {
+            if (!canWrite() || persistence.dirty) throw new Error("RECOVERY");
+            const record = JSON.parse(persistence.raw || "{}");
+            return { data: JSON.parse(JSON.stringify(currentData())), sync: record.sync, revision: Number(record.revision) || 0, hasData: persistence.raw != null };
+          },
+          secrets: localSecrets,
+          canApply: () => !state.activeTest && !state.speedSession && !state.spellingSession && !state.recallSession && !state.usageStudySession && !state.wordStudySession && !state.fetchingRangeId,
+          id: () => crypto.randomUUID().replace(/-/g, ""),
+          status: status => { syncRuntime = status; renderSync(); queueMicrotask(renderSync); },
+          write: (data, sync, recovery) => {
+            if (!canWrite() || persistence.dirty) throw new Error("RECOVERY");
+            const record = JSON.parse(persistence.raw || "{}");
+            const raw = JSON.stringify({ ...createLocalSnapshot(data), savedAt: new Date().toISOString(), revision: (Number(record.revision) || 0) + 1, sync });
+            assertNoSecrets(raw, localSecrets()); assertStorageSize(raw);
+            if (recovery && persistence.raw != null) localStorage.setItem(PRE_SYNC_KEY, persistence.raw);
+            localStorage.setItem(STORAGE_KEY, raw);
+            persistence.raw = raw;
+            renderSync();
+          },
+          send: request => {
+            const endpoint = $("syncEndpoint").value.trim();
+            const previous = localStorage.getItem(SYNC_ENDPOINT_KEY) || "";
+            if (!window.MW_GAS_HOST) {
+              if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(endpoint)) throw new Error("MALFORMED");
+              // Bind the outbox and its revision history to one server, including after reload.
+              if (previous && previous !== endpoint) throw new Error("RECOVERY");
+              localStorage.setItem(SYNC_ENDPOINT_KEY, endpoint);
+            }
+            return window.MWSync.transport(endpoint)(request);
+          },
+          applied: () => location.reload()
+        });
+        const invoke = action => { syncRuntime = ""; action().catch(() => {}).finally(renderSync); };
+        $("syncPush").addEventListener("click", () => invoke(() => syncClient.push()));
+        $("syncPull").addEventListener("click", () => invoke(() => syncClient.pull()));
+        $("syncKeepLocal").addEventListener("click", () => showModal('<h2>端末版を残す</h2><p>最新のクラウド版を確認し、次回の送信で端末版に置き換える準備をします。クラウドの学習変更は統合しません。送信は別途必要です。</p><button data-modal-confirm>端末版を選ぶ</button><button data-modal-cancel>キャンセル</button>', () => { invoke(() => syncClient.pull("local")); }));
+        $("syncUseRemote").addEventListener("click", () => showModal('<h2>クラウド版を使う</h2><p>端末の学習データを置き換えます。端末版は直前コピーとして退避します。まず必要ならJSONを保存してください。同期中に端末が変わった場合は適用しません。</p><button class="warn" data-modal-confirm>クラウド版を選ぶ</button><button data-modal-cancel>キャンセル</button>', () => { invoke(() => syncClient.pull("remote")); }));
+        $("restorePreSync").addEventListener("click", () => {
+          try { restoreStoredBackup(localStorage.getItem(PRE_SYNC_KEY), "同期直前"); }
+          catch { toast("同期直前コピーを読み込めません。", true); }
+        });
+        renderSync();
+      }
+
       function save(shouldRender = true) {
         persistence.dirty = true;
         if (persistence.credentialError) { renderPersistence(); return false; }
@@ -380,13 +452,16 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         try {
           const savedAt = new Date().toISOString();
           const payload = createLocalSnapshot(currentData(), savedAt);
-          const raw = JSON.stringify({ ...payload, savedAt, revision: (Number(JSON.parse(persistence.raw || "{}").revision) || 0) + 1 });
+          const record = JSON.parse(persistence.raw || "{}");
+          const sync = window.MWSync.changed(record.sync, Number(record.revision) || 0);
+          const raw = JSON.stringify({ ...payload, savedAt, revision: (Number(record.revision) || 0) + 1, sync });
           assertNoSecrets(raw, localSecrets());
           assertStorageSize(raw);
           localStorage.setItem(STORAGE_KEY, raw);
           persistence.raw = raw;
           persistence.dirty = false;
           persistence.message = "";
+          if (!syncClient?.isBusy()) syncRuntime = "";
           renderPersistence();
           if (shouldRender) render();
           return true;
@@ -2783,7 +2858,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         }
         try {
           const payload = createLocalSnapshot(data);
-          const raw = JSON.stringify({ ...payload, savedAt: new Date().toISOString() });
+          let previous = {};
+          try { previous = JSON.parse(persistence.raw || "{}"); } catch { /* Explicit recovery from corrupt main. */ }
+          const sync = window.MWSync.changed(previous.sync, Number(previous.revision) || 0);
+          const raw = JSON.stringify({ ...payload, savedAt: new Date().toISOString(), revision: (Number(previous.revision) || 0) + 1, sync });
           assertNoSecrets(raw, localSecrets());
           assertStorageSize(raw);
           // Never mutate primary storage unless its recovery copy succeeded.
@@ -3226,6 +3304,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           persistence.message = "";
           load();
           bindEvents();
+          initializeSync();
           render();
           document.documentElement.dataset.appReady = "true";
         };
@@ -3245,7 +3324,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         });
       }
       initializeStorage();
-      if ("serviceWorker" in navigator) {
+      if (!window.MW_GAS_HOST && "serviceWorker" in navigator) {
         window.addEventListener("load", () => {
           navigator.serviceWorker.register("./sw.js", { scope: "./" }).then(registration => {
             const notify = () => {
