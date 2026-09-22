@@ -1,6 +1,10 @@
 "use strict";
 const assert = require("node:assert/strict"), fs = require("node:fs"), path = require("node:path"), os = require("node:os"), vm = require("node:vm"), crypto = require("node:crypto");
 let playwright; try { playwright = require("playwright"); } catch { playwright = require(path.join(os.homedir(), ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright")); }
+async function expand(page, selector) {
+  const group = page.locator(selector);
+  if (await group.getAttribute("open") === null) await group.locator(":scope > summary").click();
+}
 const baseUrl = process.env.MW_TEST_URL || "http://127.0.0.1:8765/";
 const root = path.resolve(__dirname, ".."), MAIN = "mwPronunciationTool.v1", endpoint = "https://script.google.com/macros/s/mock_only/exec";
 const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.executablePath(), "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"].find(p => p && fs.existsSync(p));
@@ -34,7 +38,7 @@ const remote = ctx.MWSyncServer.createServer(store);
     }
     await page.goto(baseUrl + (native ? ".gas-build/Index.html" : ""));
     await page.waitForFunction(() => document.documentElement.dataset.appReady === "true");
-    await page.locator("[data-tab='backup']").click();
+    await page.locator("[data-tab='backup']").click(); await expand(page, "#cloudOptions");
     if (!native) await page.locator("#syncEndpoint").fill(endpoint);
     await page.locator("#syncConnect").click();
     await page.waitForFunction(key => Boolean(JSON.parse(localStorage.getItem(key)).sync?.datasetId), MAIN);
@@ -46,7 +50,7 @@ const remote = ctx.MWSyncServer.createServer(store);
     const a = await open("record");
     await a.locator("#syncPush").click(); await a.locator('#syncStatus[data-state="SYNC_FAILED"]').waitFor();
     const pendingId = (await stored(a)).sync.requestId; assert.ok(pendingId); assert.equal(rows.length, 1);
-    await a.reload(); await ready(a); await a.locator("[data-tab='backup']").click();
+    await a.reload(); await ready(a); await a.locator("[data-tab='backup']").click(); await expand(a, "#cloudOptions");
     await a.locator("#syncCheck").click(); await a.locator('#syncStatus[data-state="verified"]').waitFor();
     assert.equal(rows.length, 1); assert.equal(rows[0].request.requestId, pendingId);
 
@@ -57,17 +61,17 @@ const remote = ctx.MWSyncServer.createServer(store);
     await b.waitForFunction(key => !JSON.parse(localStorage.getItem(key)).sync.pending, MAIN);
     await b.locator("#syncUseRemote").click(); await b.locator("[data-modal-confirm]").click();
     await b.waitForFunction(key => JSON.parse(localStorage.getItem(key)).ranges[0].words[0].word === "record", MAIN);
-    await b.waitForLoadState("networkidle"); await ready(b); await b.locator("[data-tab='backup']").click();
+    await b.waitForLoadState("networkidle"); await ready(b); await b.locator("[data-tab='backup']").click(); await expand(b, "#cloudOptions");
     await b.locator("#restorePreSync").click(); await b.locator("[data-modal-confirm]").click();
     await b.waitForFunction(key => JSON.parse(localStorage.getItem(key)).ranges[0].words[0].word === "local alternative", MAIN);
     await b.waitForLoadState("networkidle"); await ready(b);
     assert.equal((await stored(b)).sync.dirty, true); assert.equal((await stored(b)).sync.baseRevision, 1);
 
     // App mutations while a response is held must survive acknowledgement.
-    await a.locator("[data-tab='settings']").click(); await a.locator("#definitionLimit").selectOption("3"); await a.locator("#saveApiSettings").click();
-    await a.locator("[data-tab='backup']").click(); hold = true; await a.locator("#syncPush").click();
+    await a.locator("[data-tab='settings']").click(); await expand(a, "#dictionaryOptions"); await a.locator("#definitionLimit").selectOption("3"); await a.locator("#saveApiSettings").click();
+    await a.locator("[data-tab='backup']").click(); await expand(a, "#cloudOptions"); hold = true; await a.locator("#syncPush").click();
     await a.waitForFunction(() => document.getElementById("syncStatus").dataset.state === "syncing");
-    await a.locator("[data-tab='settings']").click(); await a.locator("#dictionaryType").selectOption("collegiate"); await a.locator("#saveApiSettings").click();
+    await a.locator("[data-tab='settings']").click(); await expand(a, "#dictionaryOptions"); await a.locator("#dictionaryType").selectOption("collegiate"); await a.locator("#saveApiSettings").click();
     assert.ok(release); hold = false; release();
     await a.waitForFunction(key => { const s = JSON.parse(localStorage.getItem(key)).sync; return !s.pending && s.baseRevision === 2; }, MAIN);
     assert.equal((await stored(a)).sync.dirty, true); assert.equal((await stored(a)).settings.dictionaryType, "collegiate");

@@ -6,6 +6,10 @@ const path = require("node:path");
 let playwright;
 try { playwright = require("playwright"); }
 catch { playwright = require(path.join(os.homedir(), ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright")); }
+async function expand(page, selector) {
+  const group = page.locator(selector);
+  if (await group.getAttribute("open") === null) await group.locator(":scope > summary").click();
+}
 const baseUrl = process.env.MW_TEST_URL || "http://127.0.0.1:8765/";
 const MAIN = "mwPronunciationTool.v1";
 const KEY = "mwPronunciationTool.apiKey.v1";
@@ -43,10 +47,11 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
   try {
     const broken = await open(await contextFor({ raw: "{broken" }));
     assert.equal(await broken.locator("#saveStatus").getAttribute("data-state"), "recovery");
-    await broken.locator("[data-tab='settings']").click();
+    await broken.locator("[data-tab='settings']").click(); await expand(broken, "#dictionaryOptions");
     await broken.locator("#saveApiSettings").click();
     assert.equal(await stored(broken), "{broken");
     await broken.locator("[data-tab='backup']").click();
+    await expand(broken, "#backupOptions");
     await broken.locator("#importJson").fill(JSON.stringify(data));
     await broken.locator("#replaceJson").click();
     await broken.locator("[data-modal-confirm]").click();
@@ -60,7 +65,7 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
 
     const quota = await open(await contextFor({ quota: MAIN }));
     const before = await stored(quota);
-    await quota.locator("[data-tab='settings']").click();
+    await quota.locator("[data-tab='settings']").click(); await expand(quota, "#dictionaryOptions");
     await quota.locator("#dictionaryType").selectOption("collegiate");
     await quota.locator("#saveApiSettings").click();
     assert.equal(await stored(quota), before);
@@ -72,7 +77,7 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
     assert.equal(await quota.locator("#saveStatus").getAttribute("data-state"), "saved");
 
     const credentialQuota = await open(await contextFor({ quota: KEY }));
-    await credentialQuota.locator("[data-tab='settings']").click();
+    await credentialQuota.locator("[data-tab='settings']").click(); await expand(credentialQuota, "#dictionaryOptions");
     await credentialQuota.locator("#apiKey").fill("FIXTURE_ONLY_KEY");
     await credentialQuota.locator("#saveKey").check();
     await credentialQuota.locator("#saveApiSettings").click();
@@ -89,10 +94,10 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
     const shared = await contextFor(); const first = await open(shared), second = await open(shared);
     assert.equal(await first.locator("#saveStatus").getAttribute("data-state"), "saved");
     assert.equal(await second.locator("#saveStatus").getAttribute("data-state"), "readonly");
-    await first.locator("[data-tab='settings']").click();
+    await first.locator("[data-tab='settings']").click(); await expand(first, "#dictionaryOptions");
     await first.locator("#dictionaryType").selectOption("collegiate");
     await first.locator("#saveApiSettings").click();
-    await second.locator("[data-tab='settings']").click();
+    await second.locator("[data-tab='settings']").click(); await expand(second, "#dictionaryOptions");
     await second.locator("#saveApiSettings").click();
     assert.equal(JSON.parse(await stored(second)).settings.dictionaryType, "collegiate");
     await first.close();

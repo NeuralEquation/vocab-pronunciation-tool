@@ -14,6 +14,10 @@ try {
 }
 const { chromium } = playwright;
 
+async function expand(page, selector) {
+  const group = page.locator(selector);
+  if (await group.getAttribute("open") === null) await group.locator(":scope > summary").click();
+}
 const baseUrl = process.env.MW_TEST_URL || "http://127.0.0.1:8765/";
 const vocabulary = [
   "record", "expense", "apple", "science", "diligent", "example", "audio", "pronunciation", "crucial", "besides",
@@ -85,6 +89,8 @@ async function startMode(page, value) {
 async function returnFromTest(page) {
   await page.locator("[data-test-action='return']").click();
   await page.locator("#wordPanel:not(.hidden)").waitFor();
+    await expand(page, "#materialContents");
+    await expand(page, "#morePractice");
 }
 
 async function main() {
@@ -213,9 +219,11 @@ async function main() {
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).locator("[data-action='open']").click();
     await page.locator("#wordPanel:not(.hidden)").waitFor();
-    assert.match(await page.locator(".readiness-state").first().textContent(), /未確認|危険/);
+    await expand(page, "#materialContents");
+    await expand(page, "#morePractice");
+    assert.match(await page.locator("#wordPanel .readiness-state").first().textContent(), /未確認|危険/);
     assert.equal(await page.locator(".readiness-detail-grid").count(), 0, "risk reasons stay collapsed until requested");
-    await page.locator(".readiness-state").first().click();
+    await page.locator("#wordPanel .readiness-state").first().click();
     await page.locator("#modalRoot .readiness-detail-grid").waitFor();
     await page.locator("#modalRoot [data-modal-cancel]").click();
     assert.match(await page.locator(".word-card .word-meaning").first().textContent(), /意味\d+/);
@@ -462,6 +470,8 @@ async function main() {
     await page.locator("#studySessionClose").click();
     await page.locator("#modalRoot [data-modal-confirm]").click();
     await page.locator("#wordPanel:not(.hidden)").waitFor();
+    await expand(page, "#materialContents");
+    await expand(page, "#morePractice");
 
     await page.locator("#startUsageSpeed").click();
     assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・高速周回[\s\S]*初回2件/);
@@ -490,18 +500,22 @@ async function main() {
 
     const replacement = structuredClone(exported);
     replacement.ranges[0].rangeName = "Browser Replacement Range";
+    await expand(page, "#backupOptions");
     await page.locator("#importJson").fill(JSON.stringify(replacement));
     await page.locator("#backupImportPreview.invalid").waitFor();
     assert.match(await page.locator("#backupImportPreview").textContent(), /置き換えインポート/);
     await page.locator("#replaceJson").click();
     await page.locator("[data-modal-confirm]").click();
     await page.waitForLoadState("networkidle");
+    await page.locator("[data-tab='ranges']").click();
     await page.locator(".range-card").filter({ hasText: "Browser Replacement Range" }).waitFor();
 
     await page.locator("[data-tab='backup']").click();
+    await expand(page, "#recoveryOptions");
     await page.locator("#restorePreImport").click();
     await page.locator("[data-modal-confirm]").click();
     await page.waitForLoadState("networkidle");
+    await page.locator("[data-tab='ranges']").click();
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
     const restored = JSON.parse(await page.evaluate(() => localStorage.getItem("mwPronunciationTool.v1")));
     assert.deepEqual(restored.ranges, beforeImport.ranges);
@@ -510,15 +524,19 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v57:")));
+    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v59:")));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator("[data-tab='ranges']").click();
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).waitFor();
     await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).locator("[data-action='open']").click();
+    await expand(page, "#materialContents");
     const firstHard = page.locator("[data-word-action='hard'][aria-pressed='false']").first();
     const hardWordId = await firstHard.getAttribute("data-id");
     await firstHard.click();
     await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator("#wordPanel:not(.hidden)").waitFor();
+    await expand(page, "#materialContents");
     const restoredHard = page.locator(`[data-word-action='hard'][data-id='${hardWordId}']`);
     await restoredHard.waitFor();
     assert.equal(await restoredHard.getAttribute("aria-pressed"), "true");
