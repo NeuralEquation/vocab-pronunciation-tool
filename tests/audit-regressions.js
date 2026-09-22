@@ -273,7 +273,7 @@ it("service worker caches only the manifest shell, keeps a consistent offline bu
   let response;
   handlers.fetch({ request: { url: index, method: "GET", mode: "navigate" }, respondWith(promise) { response = promise; } });
   assert.equal(await response, "shell:./index.html");
-  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v57:"))[1];
+  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v59:"))[1];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+\?v=\d+)"/g)) assert.equal(shell.has(new URL(asset, scope).href), true, asset);
 });

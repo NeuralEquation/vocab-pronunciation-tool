@@ -749,7 +749,13 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         }
         $("todayStudyPanel").classList.remove("hidden");
         const memoryStats = plan.memory ? contentStats(plan.memory) : null;
-        $("todayStudyPanel").innerHTML = `<h3>次の小テストを満点まで仕上げる</h3><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">今日落とした項目は、次の範囲より先に確認します。</div>` : ""}${plan.memory ? `<div class="caution">暗記構文「${escapeHtml(plan.memory.rangeName)}」: 未定着 ${memoryStats.memoryUnsettled}/${memoryStats.memoryTotal}件</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "今日の取りこぼし" : "最優先", plan.primary, now)}${rangePlanHtml("次の範囲", plan.preview, now)}</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>危険単語を満点確認</button><button class="soft" id="startTodayNormal" ${plan.primary ? "" : "disabled"}>通常15問</button>${plan.memory ? `<button class="primary" id="startTodayMemory">暗記構文を始める</button>` : ""}</div>`;
+        $("todayStudyPanel").innerHTML = `<h3>次の小テストに向けて</h3><p class="next-material">${escapeHtml((plan.primary || plan.memory).rangeName || "無題の範囲")}</p><button class="primary" id="continueLearning">教材を開いて学習する →</button><details class="disclosure today-details"><summary>学習プランと満点確認</summary><p>${escapeHtml(plan.reason)}</p>${plan.endedToday ? `<div class="caution">今日落とした項目は、次の範囲より先に確認します。</div>` : ""}${plan.memory ? `<div class="caution">暗記構文「${escapeHtml(plan.memory.rangeName)}」: 未定着 ${memoryStats.memoryUnsettled}/${memoryStats.memoryTotal}件</div>` : ""}<div class="plan-grid">${rangePlanHtml(plan.endedToday ? "今日の取りこぼし" : "最優先", plan.primary, now)}${rangePlanHtml("次の範囲", plan.preview, now)}</div><div class="actions"><select id="todayDirection"><option value="enToJa">英語 → 日本語</option><option value="jaToEn">日本語 → 英語</option></select><button class="primary" id="startTodayStudy" ${plan.primary ? "" : "disabled"}>危険単語を満点確認</button><button class="soft" id="startTodayNormal" ${plan.primary ? "" : "disabled"}>通常15問</button>${plan.memory ? `<button class="primary" id="startTodayMemory">暗記構文を始める</button>` : ""}</div></details>`;
+        $("continueLearning")?.addEventListener("click", () => {
+          stopContinuousPlayback();
+          state.selectedRangeId = (plan.primary || plan.memory).id;
+          save(false); renderWords();
+          $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+        });
         $("startTodayStudy")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTestReadyReview($("todayDirection").value); });
         $("startTodayNormal")?.addEventListener("click", () => { state.selectedRangeId = plan.primary.id; startTest($("todayDirection").value, "normal"); });
         $("startTodayMemory")?.addEventListener("click", () => { state.selectedRangeId = plan.memory.id; startRecall("memory", "unsettled"); });
@@ -804,11 +810,16 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function renderRanges() {
         const filter = $("rangeFilter").value;
         const nextId = nextRangeId();
+        $("openNext").classList.toggle("hidden", !nextId);
+        $("libraryTools").classList.toggle("hidden", !state.ranges.length);
+        $("libraryHeading").classList.toggle("hidden", !state.ranges.length);
         let ranges = state.ranges.map(r => ({ ...r, status: statusForRange(r, nextId) }));
         if (filter !== "all") ranges = ranges.filter(r => r.status === filter);
         ranges.sort((a, b) => (a.testDate || "9999").localeCompare(b.testDate || "9999"));
         if (!ranges.length) {
-          $("rangeList").innerHTML = `<div class="empty">範囲がありません。登録タブから範囲枠または単語リストを追加できます。</div>`;
+          $("rangeList").innerHTML = state.ranges.length
+            ? `<div class="empty">この条件の教材はありません。表示する教材を「すべて」に変更してください。</div>`
+            : `<div class="welcome-card"><h3>教材がありません</h3><p>単語・例文・暗記構文を登録して学習できます。</p><ol><li>教材を登録する</li><li>音声と意味を確認する</li><li>テストで覚えたか確かめる</li></ol><button class="primary" data-go="import">最初の教材を登録 →</button><p class="meta">登録済みのバックアップは「データ」から取り込めます。</p></div>`;
           return;
         }
         $("rangeList").innerHTML = ranges.map(range => {
@@ -828,11 +839,11 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
               </div>
               <div class="meta">${isMemory ? `未定着 ${s.memoryUnsettled}/${s.memoryTotal}件` : `学習定着率 ${s.learningPct}%`}</div>
               ${readinessSummaryHtml(readiness, range.id)}
-              <div class="mini-grid">
+              <details class="range-progress"><summary>学習状況の内訳</summary><div class="mini-grid">
                 ${isMemory ? `<div class="mini"><strong>${s.memoryTotal}</strong>構文</div><div class="mini"><strong>${s.memoryUnsettled}</strong>未定着</div>` : `<div class="mini"><strong>${s.total}</strong>単語</div><div class="mini"><strong>${s.examples}</strong>例文</div><div class="mini"><strong>${s.phrases}</strong>熟語</div><div class="mini"><strong>${s.hard}</strong>苦手</div><div class="mini"><strong>${s.usageUnsettled}</strong>例文等未定着</div>`}
-              </div>
+              </div></details>
               <div class="actions" style="margin-top:10px">
-                <button class="primary" data-action="open" data-id="${escapeHtml(range.id)}">開く</button>
+                <button class="primary" data-action="open" data-id="${escapeHtml(range.id)}">学習する →</button>
                 ${isMemory ? "" : `<button class="warn" data-action="ready" data-id="${escapeHtml(range.id)}">満点確認</button>`}
                 ${range.testDate === todayKey() ? (isRangeEnded(range) ? `<button class="soft" data-action="test-before" data-id="${escapeHtml(range.id)}">テスト前</button>` : `<button class="soft" data-action="test-ended" data-id="${escapeHtml(range.id)}">テスト終了</button>`) : ""}
               </div>
@@ -919,6 +930,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const range = state.ranges.find(r => r.id === state.selectedRangeId);
         if (!range) return;
         $("wordPanel").classList.remove("hidden");
+        $("page-ranges").classList.add("hidden");
         const isMemory = range.materialType === "memorization";
         configureLearningModes(isMemory);
         $("openRangeTitle").textContent = `${range.rangeName || "無題の範囲"} の${isMemory ? "暗記構文" : "教材"}`;
@@ -2645,6 +2657,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const requestedWordId = typeof startWordId === "string" && startWordId ? startWordId : range.currentWordId;
         const requestedIndex = words.findIndex(word => word.id === requestedWordId);
         if (startWordId && requestedIndex < 0) return toast("現在の表示条件では、その単語から再生できません。", true);
+        $("materialContents").open = true;
         playbackState.active = true;
         playbackState.rangeId = range.id;
         playbackState.wordIds = words.map(word => word.id);
@@ -2936,7 +2949,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function switchTab(name) {
         stopContinuousPlayback();
-        document.querySelectorAll("[data-tab]").forEach(btn => btn.setAttribute("aria-selected", String(btn.dataset.tab === name)));
+        document.querySelectorAll("[data-tab]").forEach(btn => {
+          btn.setAttribute("aria-selected", String(btn.dataset.tab === name));
+          btn.tabIndex = btn.dataset.tab === name ? 0 : -1;
+        });
         document.querySelectorAll(".tab-page").forEach(page => page.classList.add("hidden"));
         $(`page-${name}`).classList.remove("hidden");
         if (name === "ranges" && state.selectedRangeId) {
@@ -2951,6 +2967,19 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function bindEvents() {
+        document.querySelector(".tabs").addEventListener("keydown", event => {
+          const tabs = [...document.querySelectorAll("[data-tab]")];
+          const current = tabs.indexOf(event.target);
+          if (current < 0 || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+          event.preventDefault();
+          const index = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1
+            : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+          tabs[index].focus(); tabs[index].click();
+        });
+        document.addEventListener("click", event => {
+          const target = event.target.closest("[data-go]");
+          if (target) { switchTab(target.dataset.go); window.scrollTo(0, 0); $("rangeName").focus(); }
+        });
         $("retrySave").addEventListener("click", () => save());
         $("reloadData").addEventListener("click", () => location.reload());
         $("saveStatusExport").addEventListener("click", exportJson);
@@ -2965,7 +2994,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (persistence.writer && !persistence.conflict && !persistence.readError) return;
           const control = event.target.closest?.("button");
           if (!control) return;
-          if (control.matches("[data-tab], #reloadData, #exportJson, #exportCsv, #exportPreUpgrade, #exportQuizlet, #saveStatusExport, [data-modal-cancel], [data-progress-close], #continuousStop, #playbackDockStop")) return;
+          if (control.matches("[data-tab], [data-go], #reloadData, #exportJson, #exportCsv, #exportPreUpgrade, #exportQuizlet, #saveStatusExport, [data-modal-cancel], [data-progress-close], #continuousStop, #playbackDockStop")) return;
           if (persistence.writer && !persistence.conflict && control.matches("#replaceJson, #restorePreUpgrade, #restorePreImport, #restorePreRestore, [data-modal-confirm]")) return;
           event.preventDefault();
           event.stopImmediatePropagation();
@@ -3001,7 +3030,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           releaseWriter?.();
         });
         window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
-        document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+        document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => { if (btn.dataset.tab === "ranges") state.selectedRangeId = null; switchTab(btn.dataset.tab); window.scrollTo(0, 0); }));
         $("saveApiSettings").addEventListener("click", () => {
           const wantsSave = $("saveKey").checked;
           const apiKey = cleanApiKey($("apiKey").value);
@@ -3109,7 +3138,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           renderWords();
           $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
         });
-        $("closeWords").addEventListener("click", () => { stopContinuousPlayback(); state.selectedRangeId = null; save(false); $("wordPanel").classList.add("hidden"); });
+        $("closeWords").addEventListener("click", () => { stopContinuousPlayback(); state.selectedRangeId = null; save(false); $("wordPanel").classList.add("hidden"); $("page-ranges").classList.remove("hidden"); $("page-ranges").scrollIntoView({ block: "start" }); });
         $("wordFilter").addEventListener("change", () => {
           stopContinuousPlayback();
           state.temporaryWordIds = null;

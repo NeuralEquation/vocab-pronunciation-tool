@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=57">
+  <link rel="stylesheet" href="styles.css?v=59">
 </head>
 <body>
   <aside id="saveStatus" class="save-status" role="status" aria-live="polite">
@@ -29,27 +29,19 @@
           <h1>Merriam-Webster 発音確認</h1>
         </div>
       </div>
-      <div class="range-count-summary"><strong id="rangeCount">0</strong> 範囲</div>
-      <details class="app-data-summary">
-        <summary>データ情報</summary>
-        <div class="stats">
-          <div class="stat"><strong id="usageToday">0</strong>今日のAPI</div>
-          <div class="stat"><strong id="storageSize">0KB</strong>保存容量</div>
-        </div>
-      </details>
       <div id="storageWarning"></div>
     </header>
 
-    <nav class="tabs" aria-label="画面切り替え">
-      <button class="soft" data-tab="ranges" aria-selected="true">範囲</button>
-      <button class="soft" data-tab="import">登録</button>
-      <button class="soft" data-tab="backup">保存</button>
-      <button class="soft" data-tab="settings">設定</button>
+    <nav role="tablist" class="tabs" aria-label="メインナビゲーション">
+      <button class="soft" role="tab" id="tab-ranges" aria-controls="page-ranges" tabindex="0" data-tab="ranges" aria-selected="true"><span>学習</span></button>
+      <button class="soft" role="tab" id="tab-import" aria-controls="page-import" tabindex="-1" data-tab="import"><span>教材登録</span></button>
+      <button class="soft" role="tab" id="tab-backup" aria-controls="page-backup" tabindex="-1" data-tab="backup"><span>データ</span></button>
+      <button class="soft" role="tab" id="tab-settings" aria-controls="page-settings" tabindex="-1" data-tab="settings"><span>設定</span></button>
     </nav>
 
     <main class="grid layout">
-      <section class="panel tab-page hidden" id="page-settings">
-        <h2>APIキー設定</h2>
+      <section class="panel tab-page hidden" id="page-settings" role="tabpanel" aria-labelledby="tab-settings">
+        <h2>設定</h2><p class="page-intro">辞書と学校テストの設定を変更できます。</p><details class="disclosure" id="dictionaryOptions"><summary>辞書・発音の設定<span>APIキーと使用辞書</span></summary><div class="disclosure-body">
         <label for="apiKey">Learner's Dictionary APIキー</label>
         <input id="apiKey" type="password" autocomplete="off" placeholder="Learner's用キーをスマホ本番確認時に入力">
         <label for="collegiateApiKey">Collegiate Dictionary APIキー（任意・フォールバック用）</label>
@@ -65,21 +57,29 @@
           <option value="3">最大3個</option>
         </select>
         <label class="switch"><input id="demoMode" type="checkbox"> デモモードON</label>
-        <label class="switch"><input id="saveKey" type="checkbox"> このブラウザにAPIキーを保存する</label>
-        <h3>学校テストの終了時刻（未設定なら範囲ごとの手動切替）</h3>
+        <label class="switch"><input id="saveKey" type="checkbox"> このブラウザにAPIキーを保存する</label><button class="danger" id="clearApiKey">APIキー削除</button>
+        </div></details><details class="disclosure"><summary>学校テストの予定<span>曜日ごとの終了時刻</span></summary><div class="disclosure-body"><p class="meta">未設定なら範囲ごとに手動で切り替えられます。</p>
         <div class="row"><div><label for="mondayEndTime">月曜英単語</label><input id="mondayEndTime" type="time"></div><div><label for="wednesdayEndTime">水曜英単語</label><input id="wednesdayEndTime" type="time"></div><div><label for="fridayEndTime">金曜暗記構文</label><input id="fridayEndTime" type="time"></div></div>
-        <div class="actions">
-          <button class="soft" id="saveApiSettings">設定を保存</button>
-          <button class="danger" id="clearApiKey">APIキー削除</button>
+        </div></details><div class="actions">
+          <button class="primary" id="saveApiSettings">設定を保存</button>
+
         </div>
+<details class="app-data-summary">
+        <summary>データ情報</summary>
+        <div class="stats">
+          <div class="stat"><strong id="usageToday">0</strong>今日のAPI</div>
+          <div class="stat"><strong id="storageSize">0KB</strong>保存容量</div>
+        </div>
+      </details>
+
       </section>
 
-      <section class="panel tab-page" id="page-ranges">
-        <h2>範囲一覧</h2>
+      <section class="panel tab-page" id="page-ranges" role="tabpanel" aria-labelledby="tab-ranges">
+        <div class="page-heading"><div><h2>今日の学習</h2></div><div class="range-count-summary"><strong id="rangeCount">0</strong> 範囲</div></div>
         <section id="todayStudyPanel" class="today-study" aria-live="polite"></section>
-        <div class="row">
+        <div class="library-heading" id="libraryHeading"><h3>教材ライブラリ</h3><button class="soft" data-go="import">＋ 教材を追加</button></div><details class="disclosure" id="libraryTools"><summary>教材を絞り込む・次回へ移動</summary><div class="disclosure-body"><div class="row">
           <div>
-            <label for="rangeFilter">絞り込み</label>
+            <label for="rangeFilter">表示する教材</label>
             <select id="rangeFilter">
               <option value="all">すべて</option>
               <option value="今日の範囲">今日の範囲</option>
@@ -90,13 +90,14 @@
           </div>
         </div>
         <div class="actions">
-          <button class="primary" id="openNext">次回の範囲を開く</button>
+          <button class="soft" id="openNext">次回の範囲を開く</button>
         </div>
+        </div></details>
         <div id="rangeList" style="margin-top:12px"></div>
       </section>
 
-      <section class="panel tab-page hidden" id="page-import">
-        <h2>教材登録</h2>
+      <section class="panel tab-page hidden" id="page-import" role="tabpanel" aria-labelledby="tab-import">
+        <h2>教材を登録</h2><p class="page-intro">範囲名とテスト日を入力し、学びたい教材を貼り付けます。</p>
         <div class="row">
           <div>
             <label for="rangeKind">教材の種類</label>
@@ -123,7 +124,7 @@
               <option value="金">金曜日</option>
             </select>
           </div>
-          <div>
+          <details class="disclosure wide"><summary>任意の項目<span>ページ・削除予定</span></summary><div class="disclosure-body">          <div>
             <label for="pages">ページ範囲</label>
             <input id="pages" placeholder="312-320">
           </div>
@@ -131,6 +132,7 @@
             <label for="deleteAt">削除予定日時</label>
             <input id="deleteAt" type="datetime-local">
           </div>
+</div></details>
           <div class="wide import-fields" id="vocabImportFields">
             <label for="wordInput">単語・例文・熟語の一体データ</label>
             <div class="meta input-help">推奨形式は、範囲全体を1つのJSON配列にした形式です。各単語に日本語訳・対応する例文・熟語をまとめます。</div>
@@ -161,8 +163,8 @@
         </div>
       </section>
 
-      <section class="panel tab-page hidden" id="page-backup">
-        <h2>Google Drive 同期（検証用）</h2>
+      <section class="panel tab-page hidden" id="page-backup" role="tabpanel" aria-labelledby="tab-backup">
+        <h2>データの保存と引き継ぎ</h2><p class="page-intro">学習データはこの端末に保存されます。バックアップして、別の端末へ引き継げます。</p><div id="backupPrimary" class="actions"><button class="primary" id="exportJson">バックアップを保存（JSON）</button></div><details class="disclosure" id="cloudOptions"><summary>Google Drive 同期<span>接続・送信・受信</span></summary><div class="disclosure-body"><h3>Google Drive 同期（検証用）</h3>
         <p>端末の保存とクラウド同期は別です。自動送信・自動マージはしません。APIキーと端末設定は同期しません。</p>
         <label for="syncEndpoint">GAS Web App URL（GitHub PWAから接続する場合）</label>
         <input id="syncEndpoint" type="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec">
@@ -180,16 +182,16 @@
           <button id="syncUseRemote" class="warn">競合：クラウド版を使う</button>
           <button id="restorePreSync" class="soft">同期直前に戻す</button>
         </div>
-        <h2>バックアップ</h2>
+        </div></details><details class="disclosure" id="backupOptions"><summary>バックアップを取り込む・書き出す<span>JSON・CSV・Quizlet</span></summary><div class="disclosure-body">
         <div class="actions">
-          <button class="soft" id="exportJson">JSONエクスポート</button>
+
           <button class="soft" id="exportCsv">CSVエクスポート</button>
           <button class="soft" id="exportQuizlet">例文をQuizlet形式で出力</button>
-          <button class="soft" id="exportPreUpgrade">改修前データを保存</button>
-          <button class="warn" id="restorePreUpgrade">改修前データへ戻す</button>
-          <button class="warn" id="restorePreImport">前回インポート前へ戻す</button>
-          <button class="soft" id="restorePreRestore">復元直前に戻す</button>
-          <button class="danger" id="wipeAll">全データ削除</button>
+
+
+
+
+
         </div>
         <label for="importJson" style="margin-top:12px">JSONインポート</label>
         <textarea id="importJson" placeholder="エクスポートしたJSONを貼り付け"></textarea>
@@ -200,30 +202,32 @@
           <button class="soft" id="appendJson">追加インポート</button>
           <button class="warn" id="replaceJson">置き換えインポート</button>
         </div>
-        <h3 style="margin-top:16px">使い方</h3>
+        </div></details><details class="disclosure" id="recoveryOptions"><summary>データの復旧と削除<span>以前の状態へ戻す操作</span></summary><div class="disclosure-body actions" id="recoveryActions"><button class="soft" id="exportPreUpgrade">改修前データを保存</button><button class="warn" id="restorePreUpgrade">改修前データへ戻す</button><button class="warn" id="restorePreImport">前回インポート前へ戻す</button><button class="soft" id="restorePreRestore">復元直前に戻す</button><button class="danger" id="wipeAll">全データ削除</button></div></details>
+        <details class="disclosure"><summary>使い方のヒント</summary><div class="disclosure-body">
         <ul class="help-list">
           <li>スマホで範囲を開き、公式音声を聞いたら「次へ」で進みます。</li>
           <li>API取得や再取得は、確認画面で単語数を見てから実行します。</li>
-        </ul>
+        </ul></div></details>
       </section>
 
-      <section class="panel hidden" id="wordPanel" style="grid-column:1/-1">
+      <section class="panel hidden" id="wordPanel" role="region" aria-labelledby="openRangeTitle" style="grid-column:1/-1">
         <div class="range-head">
           <div>
             <h2 id="openRangeTitle">単語確認</h2>
             <div class="meta" id="openRangeMeta"></div>
           </div>
-          <button class="session-close" id="closeWords" aria-label="教材を閉じる">×</button>
+          <button class="soft" id="closeWords" aria-label="教材を閉じる">← 教材一覧</button>
         </div>
         <div class="learning-toolbar" id="learningControls">
           <div class="primary-mode-grid" id="vocabPrimaryModes">
             <section class="mode-card first-study-mode">
-              <div><strong>学習モード</strong><span>初見用・採点なし・カードをタップして次へ</span></div>
+              <div><strong>学習モード</strong><span>音声と意味を確認します。採点はしません。</span></div>
               <div class="mode-card-actions">
                 <button class="primary" id="startWordStudy">単語を学習</button>
-                <button class="primary" id="startUsageStudy">例文・熟語を学習</button>
+                <button class="soft" id="startUsageStudy">例文・熟語を学習</button>
               </div>
             </section>
+            <details class="disclosure more-practice" id="morePractice"><summary>復習・テストを選ぶ<span>高速周回・確認テスト・仕上げ</span></summary><div class="practice-grid">
             <section class="mode-card speed-study-mode">
               <div><strong>高速周回</strong><span>定着状況をすばやく確認</span></div>
               <div class="mode-card-actions">
@@ -246,6 +250,7 @@
                 <button class="soft" id="startSpellingFinish">スペル</button>
               </div>
             </section>
+            </div></details>
           </div>
           <div class="primary-mode-grid hidden" id="memoryPrimaryModes">
             <section class="mode-card">
@@ -309,8 +314,7 @@
             </div>
           </details>
         </div>
-        <div id="wordList"></div>
-        <div id="usageList"></div>
+        <details class="disclosure" id="materialContents"><summary>教材の内容を見る<span>単語・例文・熟語・暗記構文の一覧</span></summary><div id="wordList"></div><div id="usageList"></div></details>
       </section>
 
     </main>
@@ -349,14 +353,14 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=57"></script>
-  <script defer src="js/sync-protocol.js?v=57"></script>
-  <script defer src="js/sync.js?v=57"></script>
-  <script defer src="js/content.js?v=57"></script>
-  <script defer src="js/test.js?v=57"></script>
-  <script defer src="js/playback.js?v=57"></script>
-  <script defer src="js/dictionary.js?v=57"></script>
-  <script defer src="js/app.js?v=57"></script>
-  <script defer src="js/ux-overrides.js?v=57"></script>
+  <script defer src="js/storage.js?v=59"></script>
+  <script defer src="js/sync-protocol.js?v=59"></script>
+  <script defer src="js/sync.js?v=59"></script>
+  <script defer src="js/content.js?v=59"></script>
+  <script defer src="js/test.js?v=59"></script>
+  <script defer src="js/playback.js?v=59"></script>
+  <script defer src="js/dictionary.js?v=59"></script>
+  <script defer src="js/app.js?v=59"></script>
+  <script defer src="js/ux-overrides.js?v=59"></script>
 </body>
 </html>
