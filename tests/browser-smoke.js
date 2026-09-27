@@ -314,6 +314,48 @@ async function main() {
       const audio = window.__audioHarness.instances.at(-1);
       return { currentTime: audio.currentTime, paused: audio.paused, playCalls: audio.playCalls };
     }), { currentTime: 1.25, paused: false, playCalls: 2 }, "audio resumes from the same position");
+    await stopPlayback();
+
+    // Seeking or replaying while paused must change the selection without starting media.
+    await startFrom(0);
+    const pausedAudioEndIndex = await page.evaluate(() => window.__audioHarness.capturedEnds.length - 1);
+    await playbackPause.click();
+    const audioPlaysAtPause = await page.evaluate(() => window.__audioHarness.instances.at(-1).playCalls);
+    const speechCountAtPause = await page.evaluate(() => window.__speechHarness.utterances.length);
+    await page.locator("#playbackNext").click();
+    assert.equal((await dockProgress.textContent()).trim(), "2 / 20");
+    assert.match((await dockWord.textContent()).trim(), /^expense/);
+    assert.equal((await playbackPause.textContent()).trim(), "再開", "Next keeps the paused state");
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.length), speechCountAtPause, "Next does not speak while paused");
+    await page.evaluate(index => window.__audioHarness.fireCapturedEnd(index), pausedAudioEndIndex);
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending())).length, 0, "stale audio cannot advance paused navigation");
+    await page.locator("#playbackPrevious").click();
+    assert.equal((await dockProgress.textContent()).trim(), "1 / 20");
+    assert.equal((await playbackPause.textContent()).trim(), "再開", "Previous keeps the paused state");
+    await page.locator("#playbackReplay").click();
+    assert.equal((await playbackPause.textContent()).trim(), "再開", "Replay keeps the paused state");
+    assert.equal(await page.evaluate(() => window.__audioHarness.instances.at(-1).playCalls), audioPlaysAtPause, "paused navigation and replay do not play audio");
+    await playbackPause.click();
+    assert.equal((await playbackPause.textContent()).trim(), "一時停止");
+    assert.equal(await page.evaluate(() => window.__audioHarness.instances.at(-1).playCalls), audioPlaysAtPause + 1, "Resume starts the selected word");
+    await stopPlayback();
+
+    await startFrom(0);
+    await page.evaluate(() => window.__audioHarness.fireLatestEnd());
+    await playbackPause.click();
+    await page.locator("#playbackNext").click();
+    assert.equal((await playbackPause.textContent()).trim(), "再開", "moving during a paused review timer stays paused");
+    assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending())).length, 0);
+    await playbackPause.click();
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "expense", "Resume plays the selected TTS word");
+    await playbackPause.click();
+    const speechCountPausedAgain = await page.evaluate(() => window.__speechHarness.utterances.length);
+    await page.locator("#playbackPrevious").click();
+    assert.equal((await playbackPause.textContent()).trim(), "再開", "moving during paused TTS stays paused");
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.length), speechCountPausedAgain);
+    await stopPlayback();
+
+    await startFrom(0);
     const staleAudioEndIndex = await page.evaluate(() => window.__audioHarness.capturedEnds.length - 1);
     await page.locator("#playbackReplay").click();
     await page.evaluate(index => window.__audioHarness.fireCapturedEnd(index), staleAudioEndIndex);
@@ -524,7 +566,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v59:")));
+    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v60:")));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("[data-tab='ranges']").click();

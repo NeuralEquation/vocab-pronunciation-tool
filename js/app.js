@@ -2721,8 +2721,12 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function replayCurrentContinuousWord() {
         if (!playbackState.active || playbackState.currentIndex < 0) return;
+        const wasPaused = playbackState.paused;
         invalidateContinuousOperation();
-        playbackState.paused = false;
+        if (wasPaused) {
+          selectPausedContinuousWord(playbackState.currentIndex);
+          return;
+        }
         playbackState.phase = "idle";
         playbackState.transport = "none";
         playbackState.resumeAction = "play-current";
@@ -2730,13 +2734,33 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         playContinuousWord();
       }
 
+      function selectPausedContinuousWord(index) {
+        const word = findWord(playbackState.wordIds[index]);
+        if (!word) return;
+        playbackState.currentIndex = index;
+        playbackState.currentWordId = word.id;
+        playbackState.paused = true;
+        playbackState.phase = "idle";
+        playbackState.transport = "none";
+        playbackState.resumeAction = "play-current";
+        playbackState.remainingDelayMs = 0;
+        setContinuousUsageOpen(word.id);
+        rememberWord(word.id);
+        document.querySelector(`[data-word-id="${CSS.escape(word.id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        updatePlaybackControls();
+      }
+
       function moveContinuousPlayback(direction) {
         if (!playbackState.active || ![-1, 1].includes(direction)) return;
         const targetIndex = playableIndexFrom(playbackState.currentIndex + direction, direction);
         if (targetIndex < 0) return;
+        const wasPaused = playbackState.paused;
         invalidateContinuousOperation();
+        if (wasPaused) {
+          selectPausedContinuousWord(targetIndex);
+          return;
+        }
         playbackState.currentIndex = targetIndex;
-        playbackState.paused = false;
         playbackState.phase = "idle";
         playbackState.transport = "none";
         playbackState.resumeAction = "play-current";
