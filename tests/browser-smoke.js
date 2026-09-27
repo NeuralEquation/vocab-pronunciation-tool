@@ -410,7 +410,11 @@ async function main() {
     await startMode(page, "word-enToJa-normal");
     await answerTest(page, { firstWrong: true });
     assert.match(await page.locator("#testContent .result-score").textContent(), /14\s*\/\s*15/);
-    await returnFromTest(page);
+    await page.locator("[data-test-action='open-wrong']").click();
+    assert.equal(await page.locator(".word-card").count(), 1, "wrong-answer view contains only the missed word");
+    await page.locator("#closeWords").click();
+    await page.locator(".range-card").filter({ hasText: "Browser Smoke Range" }).locator("[data-action='open']").click();
+    assert.equal(await page.locator(".word-card").count(), 20, "leaving the wrong-answer view restores the full range");
 
     await startMode(page, "word-enToJa-wrong");
     await answerTest(page);
@@ -566,7 +570,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v60:")));
+    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v61:")));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("[data-tab='ranges']").click();

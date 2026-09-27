@@ -938,6 +938,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (isMemory) {
           $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.memoryTotal}構文 / 未定着${s.memoryUnsettled}`;
           renderMemoryOverview(range);
+          $("usageList").innerHTML = "";
           return;
         }
         $("wordFilter").value = state.settings.studyFilter;
@@ -949,6 +950,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const readiness = readinessForRange(range);
         $("openRangeMeta").textContent = `${range.testDate || "日付未設定"} / ${s.total}語 / 例文${s.examples}・熟語${s.phrases}`;
         const readinessOverview = readinessSummaryHtml(readiness, range.id);
+        renderUsageOverview(range);
         const words = filteredWords(range);
         if (!words.length) {
           $("wordList").innerHTML = `${readinessOverview}<div class="empty">この条件に一致する単語はありません。</div>`;
@@ -993,7 +995,6 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
               <div class="danger-actions"><button class="soft mw-small" data-word-action="mw" data-id="${escapeHtml(word.id)}">MWで開く</button><button class="compact refetch" data-word-action="refetch" data-id="${escapeHtml(word.id)}">再取得</button><button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${escapeHtml(word.id)}">Collegiate</button></div>
             </div></details>
           </article>`).join("");
-        renderUsageOverview(range);
         if (state.pendingWordScroll) {
           const target = $("wordList").querySelector(`[data-word-id="${CSS.escape(rememberedWordId)}"]`);
           target?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1845,6 +1846,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (materialType === "vocabulary" && !parsedWords.rows.length) return toast("例文・熟語を関連付けるため、単語を1語以上入力してください。", true);
         const range = buildRangeFromForm(parsedWords.rows, parsedMemory.rows, materialType);
         state.ranges.push(range);
+        state.selectedRangeId = null;
+        state.temporaryWordIds = null;
+        state.savedFilterBeforeTemporary = null;
+        $("rangeFilter").value = "all";
         if (!save()) return;
         if (materialType === "memorization") {
           toast(`暗記構文${range.memoryItems.length}件を登録しました。`);
@@ -3054,7 +3059,18 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           releaseWriter?.();
         });
         window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
-        document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => { if (btn.dataset.tab === "ranges") state.selectedRangeId = null; switchTab(btn.dataset.tab); window.scrollTo(0, 0); }));
+        document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => {
+          if (btn.dataset.tab === "ranges") {
+            state.temporaryWordIds = null;
+            state.savedFilterBeforeTemporary = null;
+            if (state.selectedRangeId) {
+              state.selectedRangeId = null;
+              if (persistence.writer && !persistence.conflict && !persistence.readError) save(false);
+            }
+          }
+          switchTab(btn.dataset.tab);
+          window.scrollTo(0, 0);
+        }));
         $("saveApiSettings").addEventListener("click", () => {
           const wantsSave = $("saveKey").checked;
           const apiKey = cleanApiKey($("apiKey").value);
@@ -3162,7 +3178,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           renderWords();
           $("wordPanel").scrollIntoView({ behavior: "smooth", block: "start" });
         });
-        $("closeWords").addEventListener("click", () => { stopContinuousPlayback(); state.selectedRangeId = null; save(false); $("wordPanel").classList.add("hidden"); $("page-ranges").classList.remove("hidden"); $("page-ranges").scrollIntoView({ block: "start" }); });
+        $("closeWords").addEventListener("click", () => { stopContinuousPlayback(); state.selectedRangeId = null; state.temporaryWordIds = null; state.savedFilterBeforeTemporary = null; save(false); $("wordPanel").classList.add("hidden"); $("page-ranges").classList.remove("hidden"); $("page-ranges").scrollIntoView({ block: "start" }); });
         $("wordFilter").addEventListener("change", () => {
           stopContinuousPlayback();
           state.temporaryWordIds = null;

@@ -55,6 +55,50 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, chromium.executableP
   if(await page.locator('[data-modal-confirm]').isVisible())await page.locator('[data-modal-confirm]').click();
   await page.locator('#closeWords').click();
   assert.equal(await page.locator('#page-ranges').isVisible(),true);
+  await page.locator('[data-action="open"]').click();
+  await page.locator('[data-tab="ranges"]').click();
+  assert.equal(await page.locator('#page-ranges').isVisible(),true);
+  await page.reload();
+  await page.waitForFunction(()=>document.documentElement.dataset.appReady==='true');
+  assert.equal(await page.locator('#page-ranges').isVisible(),true,'returning to the library survives reload');
+  assert.equal(await page.locator('#wordPanel').isVisible(),false);
+
+  await page.locator('[data-action="open"]').click();
+  await page.locator('[data-tab="import"]').click();
+  await page.locator('#rangeFilter').evaluate(select => { select.value = '終了'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.locator('#rangeName').fill('Another study range');
+  await page.locator('#testDate').fill('2026-09-23');
+  await page.locator('#wordInput').fill(JSON.stringify([{word:'apple',meaning:'りんご',examples:[],phrases:[]}]));
+  await page.locator('#importRange').click();
+  assert.equal(await page.locator('#page-ranges').isVisible(),true,'registration returns to the library');
+  assert.equal(await page.locator('#wordPanel').isVisible(),false,'registration does not reopen the old range');
+  assert.equal(await page.locator('#rangeFilter').inputValue(),'all','new material is not hidden by an old filter');
+  assert.equal(await page.locator('.range-card').count(),2);
+
+  await page.locator('.range-card').filter({hasText:'Section 59'}).locator('[data-action="open"]').click();
+  assert.match(await page.locator('#usageList').textContent(),/Keep a record/);
+  await page.locator('#vocabLearningOptions > summary').click();
+  await page.locator('#wordFilter').selectOption('hard');
+  await page.locator('#closeWords').click();
+  await page.locator('.range-card').filter({hasText:'Another study range'}).locator('[data-action="open"]').click();
+  assert.match(await page.locator('#wordList').textContent(),/この条件に一致する単語はありません/);
+  assert.doesNotMatch(await page.locator('#usageList').textContent(),/Keep a record/,'another range cannot show stale examples');
+  await page.locator('#wordFilter').selectOption('all');
+  await page.locator('#closeWords').click();
+
+  await page.locator('[data-tab="import"]').click();
+  await page.locator('#rangeKind').selectOption('memorization');
+  await page.locator('#rangeName').fill('Friday memory range');
+  await page.locator('#testDate').fill('2026-09-25');
+  await page.locator('#memoryInput').fill('I am ready.\t私は準備ができています。');
+  await page.locator('#importRange').click();
+  await page.locator('.range-card').filter({hasText:'Section 59'}).locator('[data-action="open"]').click();
+  assert.match(await page.locator('#usageList').textContent(),/Keep a record/);
+  await page.locator('#closeWords').click();
+  await page.locator('.range-card').filter({hasText:'Friday memory range'}).locator('[data-action="open"]').click();
+  assert.equal((await page.locator('#usageList').textContent()).trim(),'','memory material cannot show vocabulary examples');
+  await page.locator('#closeWords').click();
+
   await page.locator('[data-tab="backup"]').click();
   assert.equal(await page.locator('#exportJson').isVisible(),true);
   assert.equal(await page.locator('#wipeAll').isVisible(),false);
