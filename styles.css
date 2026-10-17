@@ -809,7 +809,7 @@ body.playback-active .jump-fab { bottom:112px; }
       border-radius: 18px;
       background: linear-gradient(145deg, #151e2a, #15263a);
       text-align: center;
-      touch-action: manipulation;
+      touch-action: pan-y pinch-zoom;
       user-select: none;
       cursor: pointer;
       will-change: transform, opacity;
@@ -903,3 +903,9 @@ input, textarea, select { font-size:16px; }
 }
 
 body.session-active .save-status[data-state="saved"] { z-index:0; }
+
+.usage-study-card.study-card-exit-back { animation:studyCardExitBack .22s ease-in forwards; }
+.usage-study-card.study-card-enter-back { animation:studyCardEnterBack .24s ease-out; }
+.tap-next-hint span { font-size:.8rem; font-weight:400; }
+@keyframes studyCardExitBack { to { opacity:0; transform:translateX(115%); } }
+@keyframes studyCardEnterBack { from { opacity:0; transform:translateX(-28px); } to { opacity:1; transform:translateX(0); } }

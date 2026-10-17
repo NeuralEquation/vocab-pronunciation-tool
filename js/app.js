@@ -1349,27 +1349,12 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
         const audio = hasOfficial ? "公式音声を自動再生" : canSpeak ? "端末音声を自動再生" : "利用できる音声なし";
         const replay = hasOfficial || canSpeak ? `<button class="soft" data-study-action="audio">発音をもう一度聞く</button>` : "";
-        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${escapeHtml(word.word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="tap-next-hint">タップして次へ</div></article>`;
+        $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・単語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">単語</span><div class="usage-word-audio"><span>${audio}</span>${replay}</div><div class="usage-study-english">${escapeHtml(word.word)}</div><div class="usage-study-japanese">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div><div class="tap-next-hint">タップして次へ<br><span>左スワイプで次へ・右スワイプで前へ</span></div></article>`;
         const key = `study-word:${session.rangeId}:${session.index}:${word.id}`;
         if (key !== lastAutoSpokenStudyWordKey) {
           lastAutoSpokenStudyWordKey = key;
           playTestAudio(word);
         }
-      }
-
-      function advanceWordStudy() {
-        const session = state.wordStudySession;
-        const card = $("recallContent").querySelector("[data-study-card]");
-        if (!session || session.finished || session.transitioning || !card) return;
-        session.transitioning = true;
-        card.classList.add("study-card-exit");
-        setTimeout(() => {
-          stopPreviewAudio();
-          session.index++;
-          session.transitioning = false;
-          session.finished = session.index >= session.itemIds.length;
-          renderWordStudy();
-        }, 220);
       }
 
       function activeStudySession() {
@@ -1387,23 +1372,75 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const item = currentUsageStudyItem();
         if (!item) return;
         const progress = session.itemIds.length ? session.index / session.itemIds.length * 100 : 0;
-          $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・例文・熟語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${usageAudioHtml(range, item, "study")}<div class="usage-study-english">${escapeHtml(item.english)}</div><div class="usage-study-japanese">${escapeHtml(item.japanese)}</div><div class="tap-next-hint">タップして次へ</div></article>`;
+          $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・例文・熟語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${usageAudioHtml(range, item, "study")}<div class="usage-study-english">${escapeHtml(item.english)}</div><div class="usage-study-japanese">${escapeHtml(item.japanese)}</div><div class="tap-next-hint">タップして次へ<br><span>左スワイプで次へ・右スワイプで前へ</span></div></article>`;
         autoPlayUsageLinkedWord(range, item, `study:${session.rangeId}:${session.index}:${item.id}`);
       }
 
-      function advanceUsageStudy() {
-        const session = state.usageStudySession;
+      function moveStudyCard(direction) {
+        const session = activeStudySession();
         const card = $("recallContent").querySelector("[data-study-card]");
-        if (!session || session.finished || session.transitioning || !card) return;
+        if (!session || session.finished || session.transitioning || !card || ![-1, 1].includes(direction)) return;
+        const targetIndex = session.index + direction;
+        if (targetIndex < 0) return;
+        const isWordStudy = Boolean(state.wordStudySession);
         session.transitioning = true;
-        card.classList.add("study-card-exit");
+        stopPreviewAudio();
+        card.classList.add(direction < 0 ? "study-card-exit-back" : "study-card-exit");
         setTimeout(() => {
-          stopPreviewAudio();
-          session.index++;
+          // A swipe must not redraw an abandoned or newly started session.
+          if (activeStudySession() !== session) return;
+          session.index = targetIndex;
           session.transitioning = false;
-          session.finished = session.index >= session.itemIds.length;
-          renderUsageStudy();
+          session.finished = targetIndex >= session.itemIds.length;
+          if (isWordStudy) renderWordStudy();
+          else renderUsageStudy();
+          if (direction < 0) $("recallContent").querySelector("[data-study-card]")?.classList.add("study-card-enter-back");
         }, 220);
+      }
+
+      function bindStudyCardSwipe() {
+        const root = $("recallContent");
+        let gesture = null;
+        let suppressClickCard = null;
+        root.addEventListener("pointerdown", event => {
+          suppressClickCard = null;
+          gesture = null;
+          if (!event.isPrimary) { gesture = null; return; }
+          const card = event.target.closest?.("[data-study-card]");
+          const session = activeStudySession();
+          if (event.button !== 0 || !card || !session || session.transitioning
+              || event.target.closest("button, a, input, select, textarea, summary")) return;
+          gesture = { id: event.pointerId, x: event.clientX, y: event.clientY, card, session };
+          try { card.setPointerCapture(event.pointerId); } catch { /* Synthetic test pointers have no capture target. */ }
+        });
+        root.addEventListener("pointerup", event => {
+          const start = gesture;
+          if (!start || start.id !== event.pointerId) return;
+          gesture = null;
+          if (activeStudySession() !== start.session || !start.card.isConnected) return;
+          const dx = event.clientX - start.x, dy = event.clientY - start.y;
+          suppressClickCard = start.card;
+          if (Math.max(Math.abs(dx), Math.abs(dy)) < 12) {
+            event.preventDefault();
+            moveStudyCard(1);
+            return;
+          }
+          // Dragging is never a tap, including vertical scrolls and a back swipe at the first card.
+          if (Math.abs(dx) < 56 || Math.abs(dx) <= Math.abs(dy) * 1.3) return;
+          event.preventDefault();
+          moveStudyCard(dx > 0 ? -1 : 1);
+        });
+        root.addEventListener("pointercancel", () => {
+          suppressClickCard = gesture?.card || null;
+          gesture = null;
+        });
+        root.addEventListener("click", event => {
+          if (suppressClickCard && event.target.closest?.("[data-study-card]") === suppressClickCard) {
+            suppressClickCard = null;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
       }
 
       function leaveUsageStudy() {
@@ -2996,6 +3033,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function bindEvents() {
+        bindStudyCardSwipe();
         document.querySelector(".tabs").addEventListener("keydown", event => {
           const tabs = [...document.querySelectorAll("[data-tab]")];
           const current = tabs.indexOf(event.target);
@@ -3329,7 +3367,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (event.target.closest("[data-study-card]")) {
             const session = activeStudySession();
             if (!session || session.transitioning) return;
-            return state.wordStudySession ? advanceWordStudy() : advanceUsageStudy();
+            return moveStudyCard(1);
           }
         });
         document.addEventListener("keydown", event => {
