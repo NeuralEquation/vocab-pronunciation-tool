@@ -41,7 +41,10 @@
     if (!environment.speechSynthesis || !environment.SpeechSynthesisUtterance) return null;
     const utterance = new environment.SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
-    utterance.voice = (environment.speechSynthesis.getVoices?.() || []).find(voice => /^en-US\b/i.test(voice.lang)) || null;
+    const voices = environment.speechSynthesis.getVoices?.() || [];
+    utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang))
+      || voices.find(voice => /^en(?:[-_]|$)/i.test(voice.lang)) || null;
+    if (utterance.voice) utterance.lang = utterance.voice.lang;
     return utterance;
   }
 

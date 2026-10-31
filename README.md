@@ -145,7 +145,9 @@ The range checklist reports unverified items, missing cross-day success, latest 
 
 **Speed Review / 高速周回** records per-word `speedStats` and keeps `unknown` and `unsure` cards in the next round until they are rated `instant`. These ratings are persisted and directly feed readiness risk and normal-test question priority, without changing the user's manual `hard` flag. They do **not** write ordinary `testStats`, alter a 15-question test score, or replace the direction-specific cross-day test evidence.
 
-During continuous word playback, linked examples and phrases are expanded for the focused word. Their globally configured extra review time is added before moving to the next word, and the section is collapsed when playback advances or stops.
+During continuous word playback, linked examples and phrases are expanded for the focused word. After the word audio, each linked example is read in full using the device's English voice, followed by the configured extra review time before the next word. Words without examples continue normally. Pause, replay, previous/next, and stop also control example playback. The section is collapsed when playback advances or stops.
+
+Example/phrase **学習モード** automatically reads the full English text, and its replay button reads that same text again. Android uses the browser's Web Speech API and an available English TTS voice; English voice availability depends on the device's speech settings. Word and example/phrase **高速周回** adapt to the viewport height, keeping reveal and rating buttons in view while long text or expanded examples scroll within their own area.
 
 ## Pronunciation and speech / 発音
 

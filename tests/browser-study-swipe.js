@@ -60,7 +60,7 @@ const fixture = ["record", "expense", "apple"].map((word, i) => ({ word, meaning
         await swipe(-110); await settle(2);
         await swipe(-110); await settle(3);
         await swipe(110); await settle(2);
-        assert.equal(await page.evaluate(() => window.__studySpoken.at(-1)), "expense", "back replays the selected card's word");
+        assert.equal(await page.evaluate(() => window.__studySpoken.at(-1)), mode === "Word" ? "expense" : "Example 1.", "back replays the selected word or full example");
         await swipe(0, 110);
         await page.waitForTimeout(300); await settle(2);
         await swipe(30);

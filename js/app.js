@@ -70,6 +70,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         active: false,
         currentAudio: null,
         currentUtterance: null,
+        exampleTexts: [],
+        exampleIndex: -1,
         timerId: null,
         timerStartedAt: 0,
         timerDueAt: 0,
@@ -1059,6 +1061,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function usageAudioHtml(range, item, actionName) {
+        if (actionName === "study") {
+          const available = canUseContinuousSpeech();
+          return `<div class="usage-word-audio"><span>${available ? "英文全文を端末音声で自動読み上げ" : "この端末では全文読み上げを利用できません"}</span>${available ? `<button class="soft" data-study-action="audio">全文をもう一度読み上げ</button>` : ""}</div>`;
+        }
         const info = usageAudioInfo(range, item);
         const status = info.playableWords.length
           ? `${escapeHtml(info.label)} / 公式音声 ${info.playableWords.length}語`
@@ -1068,6 +1074,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function setSessionView(panelId, title, active) {
         const layer = $("studySessionLayer");
+        layer.dataset.session = active ? panelId : "";
+        $("recallContent").classList.remove("usage-speed-running");
         ["testPanel", "speedPanel", "spellingPanel", "recallPanel"].forEach(id => $(id).classList.toggle("hidden", !active || id !== panelId));
         if (active) {
           if (layer.classList.contains("hidden")) sessionReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1133,6 +1141,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const session = state.speedSession;
         const range = state.ranges.find(item => item.id === session?.rangeId);
         if (!session || !range) return;
+        $("speedContent").classList.toggle("speed-running", !session.finished);
         if (session.finished) {
           lastAutoSpokenSpeedKey = "";
           const elapsedSeconds = Math.max(1, Math.round((session.finishedAtMs - session.startedAtMs) / 1000));
@@ -1373,7 +1382,11 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!item) return;
         const progress = session.itemIds.length ? session.index / session.itemIds.length * 100 : 0;
           $("recallContent").innerHTML = `<div class="recall-head"><span>学習モード・例文・熟語</span><span>${session.index + 1} / ${session.itemIds.length}</span></div><div class="test-progressbar"><span style="width:${progress}%"></span></div><article class="usage-study-card study-card-enter" data-study-card><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${usageAudioHtml(range, item, "study")}<div class="usage-study-english">${escapeHtml(item.english)}</div><div class="usage-study-japanese">${escapeHtml(item.japanese)}</div><div class="tap-next-hint">タップして次へ<br><span>左スワイプで次へ・右スワイプで前へ</span></div></article>`;
-        autoPlayUsageLinkedWord(range, item, `study:${session.rangeId}:${session.index}:${item.id}`);
+        const key = `study:${session.rangeId}:${session.index}:${item.id}`;
+        if (key !== lastAutoSpokenUsageKey) {
+          lastAutoSpokenUsageKey = key;
+          if (!speakWordText(item.english)) toast("この端末では全文読み上げを利用できません。", true);
+        }
       }
 
       function moveStudyCard(direction) {
@@ -1512,6 +1525,9 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const session = state.recallSession;
         const range = state.ranges.find(item => item.id === session?.rangeId);
         if (!session || !range) return;
+        const usageSpeed = session.source === "usage" && session.mode === "speed";
+        $("studySessionLayer").dataset.session = usageSpeed ? "usageSpeed" : "recallPanel";
+        $("recallContent").classList.toggle("usage-speed-running", usageSpeed && !session.finished);
         if (session.finished) {
           const isUsageSpeed = session.source === "usage" && session.mode === "speed";
           const isUsageTest = session.source === "usage" && session.purpose === "test";
@@ -1539,7 +1555,15 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             : `<div class="recall-ratings"><button class="rating cross" data-recall-rating="cross" aria-label="言えなかった">×</button><button class="rating triangle" data-recall-rating="triangle" aria-label="一部ミス">△</button><button class="rating circle" data-recall-rating="circle" aria-label="完全に言えた">○</button></div>`;
         const sessionLabel = isUsageSpeed ? "例文・熟語・高速周回" : isUsageTest ? "例文・熟語・確認テスト" : isUsageFinish ? "例文・熟語・仕上げ" : session.source === "memory" ? "暗記構文" : item.type === "phrase" ? "熟語" : "例文";
         $("recallContent").innerHTML = `<div class="recall-head"><span>${sessionLabel}</span><span>未完了 ${session.queue.length} / 初回${total}件</span></div><div class="test-progressbar"><span style="width:${total ? completed / total * 100 : 0}%"></span></div><article class="recall-card"><span class="content-type">${item.type === "phrase" ? "熟語" : "例文"}</span>${isUsageSpeed ? usageAudioHtml(range, item, "recall") : ""}<div class="recall-prompt-label">${isUsageSpeed ? "日本語を見て英文を即答" : "日本語から英語全文を暗唱"}</div><div class="recall-japanese">${escapeHtml(item.japanese)}</div>${session.answerVisible ? `<div class="recall-answer">${escapeHtml(item.english)}</div>${ratings}` : `<button class="primary reveal-answer" data-recall-action="reveal">${isUsageSpeed ? "英文を表示" : "答えを表示"}</button>`}</article>`;
-        if (isUsageSpeed) autoPlayUsageLinkedWord(range, item, `usage-speed:${session.id}:${session.index}:${item.id}`);
+        if (isUsageSpeed) {
+          const card = $("recallContent").querySelector(".recall-card");
+          const controls = card.querySelector(".recall-ratings, .reveal-answer");
+          const body = document.createElement("div");
+          body.className = "speed-recall-body";
+          while (card.firstChild && card.firstChild !== controls) body.append(card.firstChild);
+          card.prepend(body);
+          autoPlayUsageLinkedWord(range, item, `usage-speed:${session.id}:${session.index}:${item.id}`);
+        }
       }
 
       function rateCurrentRecall(rating) {
@@ -2482,7 +2506,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         pause.disabled = !playbackState.active;
         const word = findWord(playbackState.currentWordId);
         const reviewMs = playbackState.phase === "reviewing" ? playbackState.remainingDelayMs : 0;
-        const timingLabel = reviewMs ? `・例文熟語 ${Math.ceil(reviewMs / 100) / 10}秒` : "";
+        const timingLabel = playbackState.phase === "examples" ? `・例文読み上げ ${playbackState.exampleIndex + 1} / ${playbackState.exampleTexts.length}` : reviewMs ? `・例文熟語 ${Math.ceil(reviewMs / 100) / 10}秒` : "";
         $("playbackDockWord").textContent = word ? `${word.word}${timingLabel}` : "連続再生";
         $("playbackDockProgress").textContent = playbackState.active ? `${Math.min(playbackState.currentIndex + 1, playbackState.wordIds.length)} / ${playbackState.wordIds.length}` : "0 / 0";
         $("playbackReplay").disabled = !playbackState.active || playbackState.currentIndex < 0;
@@ -2547,6 +2571,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         playbackState.active = false;
         playbackState.currentAudio = null;
         playbackState.currentUtterance = null;
+        playbackState.exampleTexts = [];
+        playbackState.exampleIndex = -1;
         playbackState.rangeId = "";
         playbackState.wordIds = [];
         playbackState.currentIndex = -1;
@@ -2564,15 +2590,49 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function attachOfficialAudioCallbacks(token, index, wordId) {
         const audio = playbackState.currentAudio;
         if (!audio) return;
-        audio.onended = () => finishContinuousWord(token, index, wordId);
+        audio.onended = () => {
+          if (playbackState.transport === "official-audio" && playbackState.phase === "playing") finishContinuousWord(token, index, wordId);
+        };
         audio.onerror = () => fallbackToContinuousSpeech(token, index, wordId);
         continuousWatchdog = window.setTimeout(() => fallbackToContinuousSpeech(token, index, wordId), 15000);
       }
 
       function attachSpeechCallbacks(utterance, token, index, wordId) {
-        utterance.onend = () => finishContinuousWord(token, index, wordId);
-        utterance.onerror = () => skipUnplayableContinuousWord(token, index, wordId);
-        continuousWatchdog = window.setTimeout(() => skipUnplayableContinuousWord(token, index, wordId), 30000);
+        const complete = failed => {
+          if (!callbackMatches(token, index, wordId) || playbackState.currentUtterance !== utterance) return;
+          if (playbackState.phase === "examples") {
+            if (failed) toast("例文を読み上げられませんでした。端末の英語音声設定を確認してください。", true);
+            detachContinuousMediaCallbacks();
+            playbackState.currentUtterance = null;
+            playNextContinuousExample(token, index, wordId);
+          } else if (failed) skipUnplayableContinuousWord(token, index, wordId);
+          else finishContinuousWord(token, index, wordId);
+        };
+        utterance.onend = () => complete(false);
+        utterance.onerror = () => complete(true);
+        continuousWatchdog = window.setTimeout(() => {
+          if (!callbackMatches(token, index, wordId) || playbackState.currentUtterance !== utterance) return;
+          utterance.onend = null;
+          utterance.onerror = null;
+          window.speechSynthesis.cancel();
+          complete(true);
+        }, Math.min(120000, Math.max(30000, utterance.text.length * 160)));
+      }
+
+      function playNextContinuousExample(token, index, wordId) {
+        if (!callbackMatches(token, index, wordId)) return;
+        const text = playbackState.exampleTexts[++playbackState.exampleIndex];
+        if (!text || !canUseContinuousSpeech()) return scheduleNextContinuousWord();
+        const utterance = window.MWPlayback.englishUtterance(text);
+        playbackState.phase = "examples";
+        playbackState.currentUtterance = utterance;
+        playbackState.transport = "speech-synthesis";
+        playbackState.resumeAction = "speech-synthesis";
+        attachSpeechCallbacks(utterance, token, index, wordId);
+        $("audioStatus").textContent = "例文全文を読み上げ（英語）";
+        updatePlaybackControls();
+        try { window.speechSynthesis.speak(utterance); }
+        catch { utterance.onerror?.(); }
       }
 
       function startContinuousSpeech(word, token, index, wordId) {
@@ -2618,7 +2678,12 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!callbackMatches(token, index, wordId)) return;
         detachContinuousMediaCallbacks();
         playbackState.currentUtterance = null;
-        scheduleNextContinuousWord();
+        const range = state.ranges.find(item => item.id === playbackState.rangeId);
+        playbackState.exampleTexts = linkedUsageItemsForWord(range, wordId)
+          .filter(item => item.type === "example" && item.english?.trim())
+          .map(item => item.english.trim());
+        playbackState.exampleIndex = -1;
+        playNextContinuousExample(token, index, wordId);
       }
 
       function armContinuousTimer(delayMs) {
@@ -3339,8 +3404,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (studyAction === "full-audio") return speakWordText(currentUsageStudyItem()?.english);
           if (studyAction === "audio") {
             const session = activeStudySession();
-            const range = state.ranges.find(item => item.id === session?.rangeId);
-            return session === state.wordStudySession ? playTestAudio(currentWordStudyWord()) : playUsageLinkedWordAudio(range, currentUsageStudyItem());
+            return session === state.wordStudySession ? playTestAudio(currentWordStudyWord()) : speakWordText(currentUsageStudyItem()?.english);
           }
           if (studyAction === "repeat") return state.wordStudySession ? startWordStudy() : startUsageStudy();
           if (studyAction === "return") return state.wordStudySession ? leaveWordStudy() : leaveUsageStudy();

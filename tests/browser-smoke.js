@@ -269,6 +269,8 @@ async function main() {
 
     await startFrom(0);
     await page.evaluate(() => window.__audioHarness.fireLatestEnd());
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "Keep a record.", "official word audio is followed by its full example");
+    await page.evaluate(() => window.__speechHarness.fireLatestEnd());
     assert.equal((await page.evaluate(() => window.__MWPlaybackTestClock.pending()))[0].delay, 1000);
     await page.evaluate(() => window.__MWPlaybackTestClock.advance(700));
     await playbackPause.click();
@@ -286,6 +288,7 @@ async function main() {
 
     await startFrom(0);
     await page.evaluate(() => window.__audioHarness.fireLatestEnd());
+    await page.evaluate(() => window.__speechHarness.fireLatestEnd());
     await page.evaluate(() => window.__MWPlaybackTestClock.advance(300));
     await playbackPause.click();
     await page.evaluate(() => window.__MWPlaybackTestClock.advance(4000));
@@ -342,6 +345,7 @@ async function main() {
 
     await startFrom(0);
     await page.evaluate(() => window.__audioHarness.fireLatestEnd());
+    await page.evaluate(() => window.__speechHarness.fireLatestEnd());
     await playbackPause.click();
     await page.locator("#playbackNext").click();
     assert.equal((await playbackPause.textContent()).trim(), "再開", "moving during a paused review timer stays paused");
@@ -486,7 +490,8 @@ async function main() {
     const usageHistoryBeforeStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
     await page.locator("#startUsageStudy").click();
     assert.equal(await page.locator("[data-recall-rating]").count(), 0);
-    assert.match(await page.locator("#recallContent").textContent(), /学習モード[\s\S]*公式音声(?:未取得|\s+\d+語)[\s\S]*タップして次へ/);
+    assert.match(await page.locator("#recallContent").textContent(), /学習モード[\s\S]*英文全文[\s\S]*タップして次へ/);
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "Keep a record.");
     const studyCard = page.locator("[data-study-card]");
     await studyCard.locator(".usage-study-english").click();
     await page.waitForFunction(() => document.querySelector(".recall-head")?.textContent.includes("2 / 2"));
@@ -570,7 +575,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v62:")));
+    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v63:")));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("[data-tab='ranges']").click();
