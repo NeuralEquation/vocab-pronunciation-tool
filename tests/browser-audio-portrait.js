@@ -12,11 +12,14 @@ async function setup(browser, viewport, fixture) {
   await context.route("https://**", route => route.abort());
   await context.addInitScript(() => {
     window.__spoken = [];
+    window.__speechState = { active: null, cancelled: 0 };
     window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
     Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
       getVoices: () => [{ lang: "en-GB", name: "English" }],
-      cancel() {}, pause() {}, resume() {},
-      speak(utterance) { window.__spoken.push(utterance); }
+      cancel() { window.__speechState.active = null; window.__speechState.cancelled++; },
+      // Model engines that discard paused speech and cannot resume it.
+      pause() { window.__speechState.active = null; }, resume() {},
+      speak(utterance) { window.__speechState.active = utterance; window.__spoken.push(utterance); }
     } });
     let id = 0;
     const pending = new Map();
@@ -111,10 +114,33 @@ async function setup(browser, viewport, fixture) {
     await end(); assert.equal(await lastText(), "Keep a record.");
     const stale = await page.evaluate(() => { window.__oldExampleEnd = window.__spoken.at(-1).onend; return window.__spoken.length; });
     await page.locator("#playbackPause").click();
+    assert.equal(await page.evaluate(() => window.__speechState.active), null, "pausing actually stops the speech engine");
     await page.evaluate(() => window.__oldExampleEnd());
     assert.equal(await page.evaluate(() => window.__spoken.length), stale, "a paused example cannot advance");
     await page.locator("#playbackPause").click();
+    assert.equal(await page.evaluate(() => window.__speechState.active?.text), "Keep a record.", "resume starts real speech even when native resume does nothing");
+    assert.equal(await page.evaluate(() => window.__spoken.length), stale + 1, "resume creates a fresh utterance for the current example");
+    await page.evaluate(() => window.__oldExampleEnd());
+    assert.equal(await lastText(), "Keep a record.", "a cancelled callback cannot skip the resumed example");
+    for (let retry = 0; retry < 2; retry++) {
+      await page.locator("#playbackPause").click();
+      assert.equal(await page.evaluate(() => window.__speechState.active), null);
+      await page.locator("#playbackPause").click();
+      assert.equal(await page.evaluate(() => window.__speechState.active?.text), "Keep a record.", "repeated pause/resume keeps the same example");
+    }
     await end(); assert.equal(await lastText(), "This is another example.");
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    assert.equal(await page.evaluate(() => window.__speechState.active), null, "backgrounding stops example speech");
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    assert.equal(await page.locator("#playbackPause").textContent(), "再開", "returning stays paused");
+    await page.locator("#playbackPause").click();
+    assert.equal(await page.evaluate(() => window.__speechState.active?.text), "This is another example.", "foreground resume restarts the current example, not the first example");
     await page.evaluate(() => window.__oldExampleEnd());
     assert.equal(await lastText(), "This is another example.", "old example callbacks cannot skip the current example");
     assert.equal(await page.evaluate(() => window.__MWPlaybackTestClock.count()), 0, "next-word timer waits for all examples");

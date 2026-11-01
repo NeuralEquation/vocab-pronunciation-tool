@@ -2728,7 +2728,9 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           detachContinuousMediaCallbacks();
           if (resumeAction === "official-audio") playbackState.currentAudio?.pause();
           if (resumeAction === "speech-synthesis" && canUseContinuousSpeech()) {
-            try { window.speechSynthesis.pause(); } catch {}
+            // Some speech engines discard paused utterances or cannot resume.
+            // Retain the text and queue position; restart this sentence on resume.
+            try { window.speechSynthesis.cancel(); } catch {}
           }
           playbackState.paused = true;
           playbackState.resumeAction = resumeAction;
@@ -2744,9 +2746,11 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           attachOfficialAudioCallbacks(token, index, wordId);
           playbackState.currentAudio.play().catch(() => fallbackToContinuousSpeech(token, index, wordId));
         } else if (resumeAction === "speech-synthesis" && playbackState.currentUtterance && canUseContinuousSpeech()) {
-          attachSpeechCallbacks(playbackState.currentUtterance, token, index, wordId);
-          try { window.speechSynthesis.resume(); }
-          catch { skipUnplayableContinuousWord(token, index, wordId); }
+          const utterance = window.MWPlayback.englishUtterance(playbackState.currentUtterance.text);
+          playbackState.currentUtterance = utterance;
+          attachSpeechCallbacks(utterance, token, index, wordId);
+          try { window.speechSynthesis.speak(utterance); }
+          catch { utterance.onerror?.(); }
         } else if (resumeAction === "timer") {
           armContinuousTimer(playbackState.remainingDelayMs);
         } else {
