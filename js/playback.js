@@ -37,20 +37,46 @@
     return Math.min(timing.maxTotalMs, Math.max(0, Math.round(total)));
   }
 
-  function englishUtterance(text, environment = window) {
+  const MISSING_US_VOICE = "米国英語の音声を利用できません。設定の「読み上げ音声」を確認してください。音声の読み込み直後は、少し待って再生し直してください。";
+
+  function voiceId(voice) { return voice.voiceURI || voice.name || ""; }
+
+  function americanVoices(environment = window) {
+    const voices = environment.speechSynthesis?.getVoices?.() || [];
+    const quality = voice => {
+      const name = voice.name || "";
+      // Prefer explicitly labelled higher-quality voices, keeping vendor order
+      // for ties. A name is a hint, not a guarantee of naturalness.
+      if (/natural|neural|premium/i.test(name)) return 4;
+      if (/enhanced/i.test(name)) return 3;
+      if (/google|samantha|alex|ava|allison/i.test(name)) return 2;
+      return 1;
+    };
+    return voices.filter(voice => /^en[-_]US$/i.test(voice.lang))
+      .sort((a, b) => quality(b) - quality(a));
+  }
+
+  function englishUtterance(text, environment = window, options = {}) {
     if (!environment.speechSynthesis || !environment.SpeechSynthesisUtterance) return null;
+    const voices = americanVoices(environment);
+    // Never ask the engine to silently choose a different English accent.
+    if (!voices.length) return null;
     const utterance = new environment.SpeechSynthesisUtterance(text);
     utterance.lang = "en-US";
-    const voices = environment.speechSynthesis.getVoices?.() || [];
-    utterance.voice = voices.find(voice => /^en-US\b/i.test(voice.lang))
-      || voices.find(voice => /^en(?:[-_]|$)/i.test(voice.lang)) || null;
-    if (utterance.voice) utterance.lang = utterance.voice.lang;
+    utterance.voice = voices.find(voice => voiceId(voice) === options.voiceURI) || voices[0];
+    utterance.rate = [0.85, 1, 1.1].includes(Number(options.rate)) ? Number(options.rate) : 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
     return utterance;
+  }
+
+  function speechStatus(utterance) {
+    return `米国英語：${utterance.voice?.name || "端末音声"}（${utterance.rate}倍）`;
   }
 
   // Every callback belongs to one operation and one queue item. Cancelling an
   // HTMLAudioElement may reject play() later; that rejection must do nothing.
-  function createPreviewPlayer(environment = window, onStatus = () => {}) {
+  function createPreviewPlayer(environment = window, onStatus = () => {}, getSpeechOptions = () => ({})) {
     let generation = 0, audio = null, utterance = null, timeout = null;
     const clearMedia = () => {
       environment.clearTimeout(timeout);
@@ -87,8 +113,8 @@
           if (!valid("official")) return;
           phase = "tts";
           clearMedia();
-          utterance = englishUtterance(item.text, environment);
-          if (!utterance) { onStatus("公式音声・端末読み上げを利用できません。"); finish("tts"); return; }
+          utterance = englishUtterance(item.text, environment, item.speechOptions || getSpeechOptions());
+          if (!utterance) { onStatus(MISSING_US_VOICE); finish("tts"); return; }
           utterance.onend = () => finish("tts");
           utterance.onerror = () => { if (valid("tts")) { onStatus("端末読み上げを再生できません。音声設定を確認してください。"); finish("tts"); } };
           timeout = environment.setTimeout(() => {
@@ -98,7 +124,7 @@
             onStatus("端末読み上げが時間切れになりました。再生ボタンから再試行できます。");
             finish("tts");
           }, Math.min(120000, Math.max(15000, item.text.length * 160)));
-          onStatus("端末読み上げ（en-US指定）");
+          onStatus(speechStatus(utterance));
           try { environment.speechSynthesis.speak(utterance); }
           catch { finish("tts"); onStatus("端末読み上げを開始できませんでした。"); }
         };
@@ -123,6 +149,10 @@
     englishWordCount,
     japaneseCharacterCount,
     calculateUsageReviewDelayMs,
+    MISSING_US_VOICE,
+    voiceId,
+    americanVoices,
+    speechStatus,
     englishUtterance,
     createPreviewPlayer
   };

@@ -14,6 +14,12 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, chromium.executableP
  for(const width of [390, 820, 320]) {
   const context=await browser.newContext({viewport:{width,height:900},deviceScaleFactor:1});
   await context.route('https://**',route=>route.abort());
+  await context.addInitScript(() => {
+    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
+      getVoices: () => [{ lang: "en-US", name: "Test US" }], cancel() {}, speak() {}
+    } });
+  });
   const page=await context.newPage(); page.on('pageerror',e=>errors.push(e.message));
   await page.goto(process.env.MW_TEST_URL || 'http://127.0.0.1:8765/');
   await page.waitForFunction(()=>document.documentElement.dataset.appReady==='true');

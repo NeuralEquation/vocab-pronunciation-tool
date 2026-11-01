@@ -197,6 +197,40 @@ function audioEnvironment() {
   return { environment, audios, spoken, timers };
 }
 
+it("speech stays American, prefers quality voices and respects explicit voice and rate", () => {
+  const h = harness(), media = audioEnvironment();
+  const voices = [
+    { lang: "en-GB", name: "British Natural", voiceURI: "gb" },
+    { lang: "en-US", name: "Basic US", voiceURI: "basic" },
+    { lang: "en_US", name: "US Enhanced", voiceURI: "enhanced" },
+    { lang: "en-US", name: "US Natural", voiceURI: "natural" }
+  ];
+  media.environment.speechSynthesis.getVoices = () => voices;
+  const api = h.ctx.MWPlayback;
+  const automatic = api.englishUtterance("A full sentence.", media.environment);
+  assert.equal(automatic.voice.voiceURI, "natural");
+  assert.equal(automatic.lang, "en-US");
+  assert.equal(automatic.rate, 1);
+  const chosen = api.englishUtterance("A full sentence.", media.environment, { voiceURI: "basic", rate: 0.85 });
+  assert.equal(chosen.voice.voiceURI, "basic");
+  assert.equal(chosen.rate, 0.85);
+  assert.equal(api.englishUtterance("Example.", media.environment, { voiceURI: "gb", rate: 10 }).voice.voiceURI, "natural");
+  assert.equal(api.englishUtterance("Example.", media.environment, { rate: 10 }).rate, 1);
+  for (const available of [[voices[0]], []]) {
+    media.environment.speechSynthesis.getVoices = () => available;
+    assert.equal(api.englishUtterance("Example.", media.environment), null);
+    const statuses = [];
+    api.createPreviewPlayer(media.environment, status => statuses.push(status)).play([{ text: "Example." }]);
+    assert.equal(media.spoken.length, 0, "never silently use the default British voice");
+    assert.match(statuses.at(-1), /米国英語/);
+  }
+  media.environment.speechSynthesis.getVoices = () => voices;
+  assert.equal(api.englishUtterance("Loaded later.", media.environment).voice.voiceURI, "natural");
+  const saved = h.ctx.MWStorage.createBackup({ ...fixture(), settings: { speechVoiceURI: "basic", speechRate: 0.85 } });
+  assert.equal(saved.settings.speechVoiceURI, "basic");
+  assert.equal(saved.settings.speechRate, 0.85);
+});
+
 it("cancelled preview promises and stale queue callbacks cannot revive old speech", async () => {
   const h = harness(), media = audioEnvironment(); const player = h.ctx.MWPlayback.createPreviewPlayer(media.environment);
   player.play([{ text: "alpha", url: "a" }, { text: "obsolete", url: "old" }]);
@@ -273,7 +307,7 @@ it("service worker caches only the manifest shell, keeps a consistent offline bu
   let response;
   handlers.fetch({ request: { url: index, method: "GET", mode: "navigate" }, respondWith(promise) { response = promise; } });
   assert.equal(await response, "shell:./index.html");
-  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v64:"))[1];
+  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v65:"))[1];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+\?v=\d+)"/g)) assert.equal(shell.has(new URL(asset, scope).href), true, asset);
 });

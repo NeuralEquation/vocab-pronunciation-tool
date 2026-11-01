@@ -14,8 +14,11 @@ async function setup(browser, viewport, fixture) {
     window.__spoken = [];
     window.__speechState = { active: null, cancelled: 0 };
     window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    window.__voices = [{ lang: "en-GB", name: "British English" }, { lang: "en-US", name: "Basic English" }, { lang: "en-US", name: "US Natural", voiceURI: "us-natural" }];
+    window.__voiceEvents = new EventTarget();
     Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
-      getVoices: () => [{ lang: "en-GB", name: "English" }],
+      getVoices: () => window.__voices,
+      addEventListener: (...args) => window.__voiceEvents.addEventListener(...args),
       cancel() { window.__speechState.active = null; window.__speechState.cancelled++; },
       // Model engines that discard paused speech and cannot resume it.
       pause() { window.__speechState.active = null; }, resume() {},
@@ -104,7 +107,8 @@ async function setup(browser, viewport, fixture) {
     const advance = () => page.evaluate(() => window.__MWPlaybackTestClock.advance());
     await page.locator("#startUsageStudy").click();
     assert.equal(await lastText(), "Keep a record.");
-    assert.equal(await page.evaluate(() => window.__spoken.at(-1).lang), "en-GB", "an available English voice is selected");
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).lang), "en-US", "only an American voice is selected");
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).voice.name), "US Natural", "higher-quality US voice wins over browser order");
     await page.locator("[data-study-action='audio']").click();
     assert.equal(await lastText(), "Keep a record.", "replay reads the full example");
     await page.locator("#studySessionClose").click();
@@ -173,6 +177,50 @@ async function setup(browser, viewport, fixture) {
     await page.locator("#playbackPrevious").click();
     assert.equal(await lastText(), "record");
     await end(); assert.equal(await lastText(), "Keep a record.", "previous restarts examples from the selected word");
+    await page.locator("#playbackDockStop").click();
+    await page.locator("[data-tab='settings']").click();
+    await page.locator("#speechOptions > summary").click();
+    assert.equal(await page.locator("#speechVoice option").count(), 3, "British voice is absent from choices");
+    await page.locator("#speechVoice").selectOption("Basic English");
+    await page.locator("#speechRate").selectOption("0.85");
+    await page.locator("#previewSpeech").click();
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).voice.name), "Basic English");
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).rate), 0.85);
+    await page.evaluate(() => {
+      window.__availableUSVoices = window.__voices;
+      window.__voices = [{ lang: "en-GB", name: "British Natural" }];
+      window.__voiceEvents.dispatchEvent(new Event("voiceschanged"));
+    });
+    assert.match(await page.locator("#speechVoiceStatus").textContent(), /米国英語の音声を利用できません/);
+    const noUSCount = await page.evaluate(() => window.__spoken.length);
+    await page.locator("#previewSpeech").click();
+    assert.equal(await page.evaluate(() => window.__spoken.length), noUSCount, "no British fallback");
+    await page.evaluate(() => {
+      window.__voices = window.__availableUSVoices;
+      window.__voiceEvents.dispatchEvent(new Event("voiceschanged"));
+    });
+    assert.match(await page.locator("#speechVoiceStatus").textContent(), /Basic English/);
+    await page.locator("#saveApiSettings").click();
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.dataset.appReady === "true");
+    await page.locator("[data-tab='settings']").click();
+    await page.locator("#speechOptions > summary").click();
+    assert.equal(await page.locator("#speechVoice").inputValue(), "Basic English");
+    assert.equal(await page.locator("#speechRate").inputValue(), "0.85");
+    await page.screenshot({ path: path.join(os.tmpdir(), "mw-speech-settings-mobile.png"), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: path.join(os.tmpdir(), "mw-speech-settings-desktop.png"), fullPage: true });
+    await page.locator("[data-tab='ranges']").click();
+    await page.locator("[data-action='open']").click();
+    await page.locator("#startUsageStudy").click();
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).voice.name), "Basic English", "study uses saved voice");
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).rate), 0.85, "study uses saved rate");
+    await page.locator("#studySessionClose").click();
+    await page.locator("#vocabLearningOptions > summary").click();
+    await page.locator("#continuousStart").click();
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).rate), 0.85);
+    await end();
+    assert.equal(await page.evaluate(() => window.__spoken.at(-1).voice.name), "Basic English", "continuous examples use saved voice");
     await page.locator("#playbackDockStop").click();
     await context.close();
     console.log("PASS full-example study/replay, English voice selection, continuous example order/pause/seek/replay/stop and portrait controls at 320/360/390/412/820px");

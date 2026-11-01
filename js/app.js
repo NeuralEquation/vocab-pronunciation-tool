@@ -46,7 +46,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       const state = {
         ranges: [],
-        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, studyFilter: "all", playbackInterval: 2, usageReviewMode: "auto", usageReviewExtraSeconds: 5, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
+        settings: { demoMode: true, saveKey: false, apiKeySession: "", collegiateApiKeySession: "", dictionaryType: "learners", definitionLimit: 2, speechVoiceURI: "", speechRate: 1, studyFilter: "all", playbackInterval: 2, usageReviewMode: "auto", usageReviewExtraSeconds: 5, mondayEndTime: "", wednesdayEndTime: "", fridayEndTime: "" },
         studyLog: {},
         fetchingRangeId: "",
         selectedRangeId: null,
@@ -90,7 +90,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       const previewPlayer = window.MWPlayback.createPreviewPlayer(window, message => {
         const label = document.getElementById("audioStatus");
         if (label) label.textContent = message;
-      });
+      }, speechOptions);
       let lastAutoSpokenSpeedKey = "";
       let lastAutoSpokenUsageKey = "";
       let lastAutoSpokenStudyWordKey = "";
@@ -322,6 +322,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           $("saveKey").checked = state.settings.saveKey;
           $("dictionaryType").value = state.settings.dictionaryType;
           $("definitionLimit").value = String(state.settings.definitionLimit);
+          renderSpeechSettings(state.settings.speechVoiceURI);
+          $("speechRate").value = String(state.settings.speechRate);
           $("wordFilter").value = state.settings.studyFilter;
           $("playbackInterval").value = String(state.settings.playbackInterval);
           $("usageReviewMode").value = state.settings.usageReviewMode;
@@ -2468,12 +2470,31 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (fixedField) fixedField.classList.toggle("hidden", mode !== "fixed");
       }
 
+      function speechOptions() {
+        return { voiceURI: state.settings.speechVoiceURI, rate: state.settings.speechRate };
+      }
+
+      function renderSpeechSettings(selected = $("speechVoice").value) {
+        const voices = window.MWPlayback.americanVoices();
+        const select = $("speechVoice");
+        select.innerHTML = `<option value="">自動（高品質音声を優先）</option>` + voices.map(voice =>
+          `<option value="${escapeHtml(window.MWPlayback.voiceId(voice))}">${escapeHtml(voice.name || "米国英語")}</option>`).join("");
+        if (selected && !voices.some(voice => window.MWPlayback.voiceId(voice) === selected)) {
+          select.innerHTML += `<option value="${escapeHtml(selected)}">保存した声（現在利用できません・自動選択）</option>`;
+        }
+        select.value = selected || "";
+        const chosen = voices.find(voice => window.MWPlayback.voiceId(voice) === select.value) || voices[0];
+        $("speechVoiceStatus").textContent = chosen
+          ? `使用する声：${chosen.name || "米国英語"}。試聴して好みの声を選び、設定を保存してください。`
+          : window.MWPlayback.MISSING_US_VOICE;
+      }
+
       function canUseContinuousSpeech() {
         return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
       }
 
       function isContinuousWordPlayable(word) {
-        return Boolean(word && (officialAudioUrlForWord(word) || (word.word && canUseContinuousSpeech())));
+        return Boolean(word && (officialAudioUrlForWord(word) || (word.word && canUseContinuousSpeech() && window.MWPlayback.americanVoices().length > 0)));
       }
 
       function continuousUsageDelayMs(wordId = playbackState.currentWordId) {
@@ -2623,13 +2644,14 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!callbackMatches(token, index, wordId)) return;
         const text = playbackState.exampleTexts[++playbackState.exampleIndex];
         if (!text || !canUseContinuousSpeech()) return scheduleNextContinuousWord();
-        const utterance = window.MWPlayback.englishUtterance(text);
+        const utterance = window.MWPlayback.englishUtterance(text, window, speechOptions());
+        if (!utterance) { toast(window.MWPlayback.MISSING_US_VOICE, true); return scheduleNextContinuousWord(); }
         playbackState.phase = "examples";
         playbackState.currentUtterance = utterance;
         playbackState.transport = "speech-synthesis";
         playbackState.resumeAction = "speech-synthesis";
         attachSpeechCallbacks(utterance, token, index, wordId);
-        $("audioStatus").textContent = "例文全文を読み上げ（英語）";
+        $("audioStatus").textContent = window.MWPlayback.speechStatus(utterance);
         updatePlaybackControls();
         try { window.speechSynthesis.speak(utterance); }
         catch { utterance.onerror?.(); }
@@ -2637,11 +2659,12 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function startContinuousSpeech(word, token, index, wordId) {
         if (!canUseContinuousSpeech()) return false;
-        const utterance = window.MWPlayback.englishUtterance(word.word);
+        const utterance = window.MWPlayback.englishUtterance(word.word, window, speechOptions());
+        if (!utterance) { toast(window.MWPlayback.MISSING_US_VOICE, true); return false; }
         attachSpeechCallbacks(utterance, token, index, wordId);
         playbackState.currentUtterance = utterance;
         playbackState.transport = "speech-synthesis";
-        $("audioStatus").textContent = "端末読み上げ（en-US指定）";
+        $("audioStatus").textContent = window.MWPlayback.speechStatus(utterance);
         playbackState.resumeAction = "speech-synthesis";
         try {
           window.speechSynthesis.speak(utterance);
@@ -2746,7 +2769,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           attachOfficialAudioCallbacks(token, index, wordId);
           playbackState.currentAudio.play().catch(() => fallbackToContinuousSpeech(token, index, wordId));
         } else if (resumeAction === "speech-synthesis" && playbackState.currentUtterance && canUseContinuousSpeech()) {
-          const utterance = window.MWPlayback.englishUtterance(playbackState.currentUtterance.text);
+          const utterance = window.MWPlayback.englishUtterance(playbackState.currentUtterance.text, window, speechOptions());
+          if (!utterance) { stopContinuousPlayback(); toast(window.MWPlayback.MISSING_US_VOICE, true); return; }
           playbackState.currentUtterance = utterance;
           attachSpeechCallbacks(utterance, token, index, wordId);
           try { window.speechSynthesis.speak(utterance); }
@@ -2786,7 +2810,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const nextPlayableIndex = playableIndexFrom(playbackState.currentIndex, 1);
         if (nextPlayableIndex < 0) {
           stopContinuousPlayback();
-          toast("連続再生できる音声がありません。", true);
+          toast(window.MWPlayback.americanVoices().length ? "連続再生できる音声がありません。" : window.MWPlayback.MISSING_US_VOICE, true);
           return;
         }
         playbackState.currentIndex = nextPlayableIndex;
@@ -3178,6 +3202,16 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           switchTab(btn.dataset.tab);
           window.scrollTo(0, 0);
         }));
+        window.speechSynthesis?.addEventListener?.("voiceschanged", () => renderSpeechSettings());
+        $("speechVoice").addEventListener("change", () => renderSpeechSettings($("speechVoice").value));
+        $("previewSpeech").addEventListener("click", () => {
+          stopContinuousPlayback();
+          const options = { voiceURI: $("speechVoice").value, rate: Number($("speechRate").value) };
+          const sample = window.MWPlayback.englishUtterance("Keep a record of your expenses. I would like a cup of coffee, please.", window, options);
+          if (!sample) { toast(window.MWPlayback.MISSING_US_VOICE, true); return; }
+          // Use the same cancellable preview path as study playback.
+          previewPlayer.play([{ text: sample.text, speechOptions: options }]);
+        });
         $("saveApiSettings").addEventListener("click", () => {
           const wantsSave = $("saveKey").checked;
           const apiKey = cleanApiKey($("apiKey").value);
@@ -3188,6 +3222,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             state.settings.saveKey = wantsSave;
             state.settings.dictionaryType = $("dictionaryType").value;
             state.settings.definitionLimit = Number($("definitionLimit").value) || 2;
+            state.settings.speechVoiceURI = $("speechVoice").value;
+            state.settings.speechRate = Number($("speechRate").value) || 1;
             state.settings.mondayEndTime = $("mondayEndTime").value;
             state.settings.wednesdayEndTime = $("wednesdayEndTime").value;
             state.settings.fridayEndTime = $("fridayEndTime").value;

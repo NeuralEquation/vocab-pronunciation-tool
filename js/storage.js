@@ -65,6 +65,8 @@
       saveKey: source.saveKey === true,
       dictionaryType: source.dictionaryType === "collegiate" ? "collegiate" : "learners",
       definitionLimit: Number(source.definitionLimit) === 3 ? 3 : 2,
+      speechVoiceURI: clean(source.speechVoiceURI).slice(0, 300),
+      speechRate: [0.85, 1, 1.1].includes(Number(source.speechRate)) ? Number(source.speechRate) : 1,
       studyFilter: ["all", "unrated", "hard", "known"].includes(source.studyFilter) ? source.studyFilter : "all",
       playbackInterval: [1, 2, 3].includes(Number(source.playbackInterval)) ? Number(source.playbackInterval) : 2,
       usageReviewMode: source.usageReviewMode === "fixed" ? "fixed" : "auto",

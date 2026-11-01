@@ -20,7 +20,7 @@ const fixture = ["record", "expense", "apple"].map((word, i) => ({ word, meaning
         window.__studySpoken = [];
         window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
         Object.defineProperty(window, "speechSynthesis", { configurable: true, value: {
-          getVoices: () => [], cancel() {}, pause() {}, resume() {},
+          getVoices: () => [{ lang: "en-US", name: "Test US" }], cancel() {}, pause() {}, resume() {},
           speak(utterance) { window.__studySpoken.push(utterance.text); }
         } });
       });
