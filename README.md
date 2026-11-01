@@ -151,6 +151,8 @@ Example/phrase **学習モード** automatically reads the full English text, an
 
 ## Pronunciation and speech / 発音
 
+Example, phrase, and fallback word speech uses **American English only**. Under **設定 → 読み上げ音声**, choose an available US voice, preview it, and select 0.85×, 1×, or 1.1× speed; save with **設定を保存**. Automatic selection prefers voices labelled Natural/Neural/Premium, then Enhanced. These labels are quality hints; actual naturalness depends on the OS and browser. The full sentence is sent as one utterance, with normal pitch. The selected voice name and rate appear during playback. Voice lists refresh when the browser reports `voiceschanged`; when no US voice is exposed (including during initial loading), speech is unavailable with guidance rather than switching to a British/default voice. Install a US high-quality voice in device accessibility/TTS settings where supported, then verify that it appears in this browser. No cloud speech service has been added.
+
 Official Merriam-Webster audio is preferred. Pronunciation notation such as `ˈrekərd` remains visible in the pronunciation field, while the word spelling itself is always shown unchanged. In Speed Review and test-related playback, when official audio is unavailable, the app can use the device's English Web Speech voice instead; it does not fabricate an official audio URL. Playback actions are started from a user gesture for iOS compatibility, and leaving a learning mode stops queued speech and current preview playback to avoid overlap.
 
 Dictionary response-shape, network, and HTTP errors should be diagnosed without displaying the raw API key. If cached dictionary data no longer matches the current cache schema, use the app's re-fetch control after checking the range and selected dictionary type.
@@ -187,7 +189,7 @@ This project can be published as a static GitHub Pages site: publish the reposit
 - `revision`は端末内の保存用番号です。v57では別の`sync`領域に同期のrevision/dirty/pending/conflictを保持します（上記GAS同期ガイド参照）。端末間の自動マージは行いません。追加importは教材の追加であり、同じ教材の学習履歴を統合する機能ではありません。
 - JSON出力は許可したschema項目だけを組み立てます。未知の拡張項目は出力しません。範囲・単語・例文の未知項目はローカル側で保持し、元JSONのローカル退避も維持します。旧バックアップの出力にも同じ検証を適用します。
 - 端末で保持しているMWキーと一致する文字列が学習データや出力に見つかった場合は、保存・出力を中止します。MWへの認証以外にキーを送る経路は追加していません。応答本文や通信URLはアプリのログ・保存用エラーに入れません。
-- 単発音声・例文に関連する単語音声は、遅れて届く失敗通知を無視します。公式音声が失敗・時間切れになればen-US指定の端末TTSへ切り替えます。例文・熟語の学習画面には「全文を読み上げ」もあります。端末TTSの実音声・オフライン可否は端末の音声設定に依存します。
+- 単発音声・例文に関連する単語音声は、遅れて届く失敗通知を無視します。公式音声が失敗・時間切れになれば米国英語のみの端末TTSへ切り替えます。例文・熟語の学習画面には「全文を読み上げ」もあります。端末TTSの実音声・オフライン可否は端末の音声設定に依存します。
 - API通信は1回15秒で時間切れになり、取得中に中止できます。使用回数は候補検索・再試行も含む実通信の開始ごとに数えます。
 
 Verification: `npm test` runs the original unit suite and the audit regressions. Serve this directory over HTTP, then set `MW_TEST_URL` and run `npm run test:browser` for both learning/PWA smoke tests and corruption/quota/two-tab/secret-boundary browser tests. Tests use synthetic data and mocked dictionary/audio paths; they do not certify physical iPad audio, background behavior, or GAS authentication. Keep a separate JSON backup before testing an actual installed iPad PWA.

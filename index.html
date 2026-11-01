@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=64">
+  <link rel="stylesheet" href="styles.css?v=65">
 </head>
 <body>
   <aside id="saveStatus" class="save-status" role="status" aria-live="polite">
@@ -58,6 +58,14 @@
         </select>
         <label class="switch"><input id="demoMode" type="checkbox"> デモモードON</label>
         <label class="switch"><input id="saveKey" type="checkbox"> このブラウザにAPIキーを保存する</label><button class="danger" id="clearApiKey">APIキー削除</button>
+        </div></details><details class="disclosure" id="speechOptions"><summary>読み上げ音声<span>アメリカ英語・声・速度</span></summary><div class="disclosure-body">
+        <label for="speechVoice">アメリカ英語の声</label>
+        <select id="speechVoice"><option value="">自動（高品質音声を優先）</option></select>
+        <p id="speechVoiceStatus" class="meta" role="status"></p>
+        <label for="speechRate">読み上げ速度</label>
+        <select id="speechRate"><option value="0.85">ゆっくり（0.85倍）</option><option value="1" selected>標準（1倍）</option><option value="1.1">少し速く（1.1倍）</option></select>
+        <button class="soft" id="previewSpeech">この声を試聴</button>
+        <p class="meta">例文・熟語と単語の端末読み上げに使います。英国音声には切り替えません。声の自然さは端末によって異なります。iPhone・iPadでは端末の「設定」→「アクセシビリティ」から読み上げ用の英語（米国）の高品質音声を追加できる場合があります。Androidではテキスト読み上げの設定を確認してください。追加した声がこのブラウザに表示されるか確認して試聴してください。</p>
         </div></details><details class="disclosure"><summary>学校テストの予定<span>曜日ごとの終了時刻</span></summary><div class="disclosure-body"><p class="meta">未設定なら範囲ごとに手動で切り替えられます。</p>
         <div class="row"><div><label for="mondayEndTime">月曜英単語</label><input id="mondayEndTime" type="time"></div><div><label for="wednesdayEndTime">水曜英単語</label><input id="wednesdayEndTime" type="time"></div><div><label for="fridayEndTime">金曜暗記構文</label><input id="fridayEndTime" type="time"></div></div>
         </div></details><div class="actions">
@@ -353,14 +361,14 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=64"></script>
-  <script defer src="js/sync-protocol.js?v=64"></script>
-  <script defer src="js/sync.js?v=64"></script>
-  <script defer src="js/content.js?v=64"></script>
-  <script defer src="js/test.js?v=64"></script>
-  <script defer src="js/playback.js?v=64"></script>
-  <script defer src="js/dictionary.js?v=64"></script>
-  <script defer src="js/app.js?v=64"></script>
-  <script defer src="js/ux-overrides.js?v=64"></script>
+  <script defer src="js/storage.js?v=65"></script>
+  <script defer src="js/sync-protocol.js?v=65"></script>
+  <script defer src="js/sync.js?v=65"></script>
+  <script defer src="js/content.js?v=65"></script>
+  <script defer src="js/test.js?v=65"></script>
+  <script defer src="js/playback.js?v=65"></script>
+  <script defer src="js/dictionary.js?v=65"></script>
+  <script defer src="js/app.js?v=65"></script>
+  <script defer src="js/ux-overrides.js?v=65"></script>
 </body>
 </html>
