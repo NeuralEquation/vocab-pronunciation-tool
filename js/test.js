@@ -564,6 +564,7 @@ function renderTestQuestion(session, range) {
   return `<div class="test-progress"><span>${session.index + 1} / ${session.questions.length}</span><span>${directionLabel(session.direction)}</span></div>
     <div class="test-progressbar"><span style="width:${(session.index / session.questions.length) * 100}%"></span></div>
     <div class="test-prompt">${escapeHtml(prompt)}</div>
+    <div class="meta" data-test-pos="${escapeHtml(word.id)}">${escapeHtml(window.MWStorage.PART_OF_SPEECH_LABELS[window.MWStorage.pronunciationPartOfSpeech(word)] || "")}</div>
     ${session.direction === "enToJa" ? `<button class="soft test-replay" data-test-action="replay">もう一度聞く</button>` : ""}
     <button class="soft review-toggle" data-review-toggle="${escapeHtml(word.id)}" aria-pressed="${word.reviewMarked === true}" aria-label="${word.reviewMarked === true ? "あとでテストから外す" : "あとでテストに追加"}" title="${word.reviewMarked === true ? "あとでテストから外す" : "あとでテストに追加"}">${word.reviewMarked === true ? "★" : "☆"}</button>
     <div class="test-choices">${question.choices.map((choice, i) => `<button class="test-choice" data-test-choice="${i}">${escapeHtml(choice.label)}</button>`).join("")}</div>`;

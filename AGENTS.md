@@ -17,6 +17,8 @@
 - English-to-Japanese and Japanese-to-English evidence are independent.
 - A word is not ready from same-day repetitions alone. Each direction and spelling need successful evidence on two dates, a recent fast/certain result, and later-day recovery after a lapse.
 - Normal tests require 15 buildable questions; wrong-only tests can be shorter. Marked tests accept 1–10 buildable manually marked words and use the full range for distractors.
+- Imported `partsOfSpeech` and `pronunciations` are user content, independent of dictionary cache. Never overwrite them on fetch/clear-cache or rewrite legacy cache fields when changing the selected playback POS.
+- Verb-form controls require verb POS evidence (explicit metadata, dictionary POS, or legacy stored forms). POS-specific playback must not substitute a different POS or ambiguous TTS.
 - `reviewMarked` is a manual flag: ordinary tests, spelling, Speed Review and readiness calculations must never add or remove it automatically. The retired full-score UI must not be reintroduced; retain historical evidence and legacy backup compatibility.
 - Every multiple-choice question has four unique choices and a balanced, non-patterned correct position.
 - Speed Review persists only to `speedStats`; it may affect question priority/readiness but must not write ordinary test scores or mutate the manual `hard` flag.

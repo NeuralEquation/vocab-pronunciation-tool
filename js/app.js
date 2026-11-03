@@ -241,8 +241,17 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         });
       }
 
-      function preferredPronunciationVariant(word, reference = state.settings.dictionaryType || "learners") {
-        const variants = Array.isArray(word?.pronunciationVariants) ? word.pronunciationVariants : [];
+      function pronunciationChoices(word) {
+        const imported = (word?.pronunciations || []).map((item, index) => normalizePronunciationVariant({
+          id: `imported_${word.id}_${index}`, headword: word.word, partOfSpeech: item.partOfSpeech,
+          pronunciation: item.ipa, audioId: item.audioId, label: "教材"
+        }));
+        return [...imported, ...(word?.pronunciationVariants || [])];
+      }
+
+      function preferredPronunciationVariant(word, reference = state.settings.dictionaryType || "learners", cacheOnly = false, requestedPart = "") {
+        const part = cacheOnly ? "" : requestedPart || window.MWStorage.pronunciationPartOfSpeech(word);
+        const variants = (cacheOnly ? word?.pronunciationVariants || [] : pronunciationChoices(word)).filter(item => !part || window.MWStorage.partOfSpeechMatches(item.partOfSpeech, part));
         const target = normalizeLookupText(word?.normalized || word?.word || "");
         return variants.reduce((best, variant, index) => {
           const score = (variant.audioUrl ? 100 : 0)
@@ -255,7 +264,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
 
       function syncLegacyPronunciationFields(word, reference = state.settings.dictionaryType || "learners") {
         word.pronunciationVariants = dedupePronunciationVariants(word.pronunciationVariants || []);
-        const preferred = preferredPronunciationVariant(word, reference);
+        const preferred = preferredPronunciationVariant(word, reference, true);
         word.pronunciation = preferred?.pronunciation || "";
         word.syllabifiedHeadword = preferred?.syllabifiedHeadword || word.syllabifiedHeadword || "";
         word.audioId = preferred?.audioId || "";
@@ -858,14 +867,54 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         ]);
       }
 
+      function renderGrammar(word, editable = false) {
+        const grammar = window.MWStorage, parts = grammar.wordPartsOfSpeech(word), selected = grammar.pronunciationPartOfSpeech(word);
+        const label = part => grammar.PART_OF_SPEECH_LABELS[part] || part;
+        const variant = preferredPronunciationVariant(word);
+        return `<div class="word-grammar" data-grammar-word="${escapeHtml(word.id)}" data-grammar-editable="${editable}"><div class="meta">${parts.length ? parts.map(part => escapeHtml(label(part))).join("・") : "品詞未登録"}</div>
+          ${parts.length > 1 ? `<label class="meta">読み上げる品詞 <select data-pronunciation-pos="${escapeHtml(word.id)}" aria-label="読み上げる品詞">${parts.map(part => `<option value="${escapeHtml(part)}" ${part === selected ? "selected" : ""}>${escapeHtml(label(part))}</option>`).join("")}</select></label>` : ""}
+          <div class="meta pron-line">${selected ? escapeHtml(label(selected)) + "：" : ""}${escapeHtml(variant?.pronunciation || "発音未取得")}</div>${editable ? `<button class="soft" data-edit-pos="${escapeHtml(word.id)}">品詞を編集</button>` : ""}
+        </div>`;
+      }
+
+      function refreshGrammar(word) {
+        document.querySelectorAll(`[data-grammar-word="${CSS.escape(word.id)}"]`).forEach(panel => {
+          const holder = document.createElement("div"); holder.innerHTML = renderGrammar(word, panel.dataset.grammarEditable === "true"); panel.replaceWith(holder.firstElementChild);
+        });
+        document.querySelectorAll(`[data-word-id="${CSS.escape(word.id)}"] [data-word-action="play"]`).forEach(button => { button.disabled = !officialAudioUrlForWord(word); });
+        // The active test keeps its choices, answer, and timing while POS changes.
+        const testLabel = $("testContent").querySelector("[data-test-pos]");
+        if (testLabel?.dataset.testPos === word.id) testLabel.textContent = window.MWStorage.PART_OF_SPEECH_LABELS[window.MWStorage.pronunciationPartOfSpeech(word)] || "";
+      }
+
+      function editPartsOfSpeech(word) {
+        const grammar = window.MWStorage, selected = grammar.wordPartsOfSpeech(word);
+        showModal(`<h2>${escapeHtml(word.word)} の品詞</h2><p class="meta">教材に載っている品詞を選んでください。複数選べます。</p><div class="pos-picker">${Object.entries(grammar.PART_OF_SPEECH_LABELS).map(([part, label]) => `<label><input type="checkbox" data-pos-option="${part}" ${selected.includes(part) ? "checked" : ""}>${label}</label>`).join("")}</div><div class="actions"><button class="primary" data-modal-confirm>保存する</button><button class="soft" data-modal-cancel>キャンセル</button></div>`, () => {
+          if (!canWrite()) return false;
+          const parts = [...$("modalRoot").querySelectorAll("[data-pos-option]:checked")].map(input => input.dataset.posOption);
+          if (!parts.length) { toast("品詞を1つ以上選んでください。", true); return false; }
+          word.partsOfSpeech = parts;
+          word.preferredPartOfSpeech = parts.includes(word.preferredPartOfSpeech) ? word.preferredPartOfSpeech : parts[0];
+          if (!save(false)) return false;
+          if (!state.activeTest) renderWords();
+          else {
+            refreshGrammar(word);
+            const details = $("testContent").querySelector(".word-speech-details");
+            if (details) details.innerHTML = renderWordSpeechDetails(word, findRangeByWord(word.id));
+          }
+          return true;
+        });
+      }
+
       function renderVerbForms(word) {
+        if (!window.MWStorage.wordPartsOfSpeech(word).some(window.MWStorage.isVerbPartOfSpeech)) return "";
         const forms = Object.entries(window.MWStorage.VERB_FORM_LABELS).flatMap(([key, label]) =>
           (word.verbForms?.[key] || []).map((form, index) => `<span class="verb-form"><span>${label}：<strong>${escapeHtml(form)}</strong></span><button class="soft" data-verb-speak="${escapeHtml(word.id)}" data-form="${key}" data-form-index="${index}">${label}を聞く</button></span>`));
         return `<details class="verb-forms"><summary>動詞の活用${forms.length ? ` ${forms.length}形` : "を登録"}</summary><div class="verb-form-list">${forms.length ? `<span class="verb-form"><span>原形：<strong>${escapeHtml(word.word)}</strong></span><button class="soft" data-verb-speak="${escapeHtml(word.id)}" data-form="base">原形を聞く</button></span>` + forms.join("") + `<button class="soft" data-verb-speak="${escapeHtml(word.id)}" data-form="all">活用を順番に聞く</button>` : `<p class="meta">教材にある活用形を追加できます。</p>`}<button class="soft" data-verb-edit="${escapeHtml(word.id)}">活用形を${forms.length ? "編集" : "登録"}</button></div></details>`;
       }
 
       function renderWordSpeechDetails(word, range) {
-        return `<div class="word-speech-details">${renderLinkedUsage(range, word.id)}${renderVerbForms(word)}</div>`;
+        return `<div class="word-speech-details">${renderGrammar(word, true)}${renderLinkedUsage(range, word.id)}${renderVerbForms(word)}</div>`;
       }
 
       function editVerbForms(word) {
@@ -963,9 +1012,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
                   <div class="word-title">${escapeHtml(word.word)}</div>
                 </div>
                 <div class="word-meaning">${escapeHtml(word.meaningsJa?.join("／") || "日本語訳未登録")}</div>
-                <div class="pron-line">
-                  <span class="pron-text">発音1 : ${escapeHtml(word.pronunciation || "未取得")}</span>
-                </div>
+                ${renderGrammar(word)}
                 ${renderSpellingRisk(word)}
                 ${renderLinkedUsage(range, word.id)}
                 ${renderVerbForms(word)}
@@ -973,7 +1020,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
               ${wordFailureLabel(word) ? `<span class="failure-label">${wordFailureLabel(word)}</span>` : ""}
             </div>
             <div class="study-actions">
-              <button class="primary" data-word-action="play" data-id="${escapeHtml(word.id)}" ${word.audioUrl ? "" : "disabled"}>公式音声</button>
+              <button class="primary" data-word-action="play" data-id="${escapeHtml(word.id)}" ${officialAudioUrlForWord(word) ? "" : "disabled"}>公式音声</button>
               <button class="primary" data-word-action="next" data-id="${escapeHtml(word.id)}">次へ</button>
               <button class="soft play-from-here" data-word-action="play-from" data-id="${escapeHtml(word.id)}">▶ ここから再生</button>
             </div>
@@ -984,7 +1031,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
               <button class="soft study-toggle known" data-word-action="known" data-id="${escapeHtml(word.id)}" aria-pressed="${word.studyStatus === "known"}">覚えた</button>
             </div>
             <details class="technical-details"><summary>発音・辞書の詳細</summary><div class="technical-details-body">
-              <div class="meta">発音候補 ${(word.pronunciationVariants || []).length}件</div>
+              <div class="meta">発音候補 ${pronunciationChoices(word).length}件</div><button class="soft" data-edit-pos="${escapeHtml(word.id)}">品詞を編集</button>
               ${renderPronunciationVariants(word)}
               ${word.definitions?.length ? `<div class="mini"><strong>英語定義</strong>${word.definitions.map((d, i) => `<div>${i + 1}. ${escapeHtml(d)}</div>`).join("")}</div>` : ""}
               <div class="danger-actions"><button class="soft mw-small" data-word-action="mw" data-id="${escapeHtml(word.id)}">MWで開く</button><button class="compact refetch" data-word-action="refetch" data-id="${escapeHtml(word.id)}">再取得</button><button class="compact collegiate" data-word-action="refetch-collegiate" data-id="${escapeHtml(word.id)}">Collegiate</button></div>
@@ -1008,11 +1055,18 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         return range.words.find(word => word.id === wordId);
       }
 
+      function requiresPartOfSpeechAudio(word) {
+        if (word?.partsOfSpeech?.length || word?.pronunciations?.length) return true;
+        const variants = word?.pronunciationVariants || [];
+        return new Set(variants.map(item => window.MWStorage.partOfSpeechKey(item.partOfSpeech)).filter(Boolean)).size > 1;
+      }
+
       function playTestAudio(word) {
         if (!word) return;
-        const variant = (word.pronunciationVariants || []).find(item => item.audioUrl);
-        if (variant) playPronunciationVariant(word.id, variant.id);
-        else if (word.audioUrl) playOfficial(word.id);
+        const variant = preferredPronunciationVariant(word);
+        if (variant?.audioUrl) playPronunciationVariant(word.id, variant.id);
+        else if (!window.MWStorage.pronunciationPartOfSpeech(word) && word.audioUrl) playOfficial(word.id);
+        else if (requiresPartOfSpeechAudio(word)) return toast("この品詞の公式音声は未取得です。辞書音声を取得するか、品詞ごとの発音候補を確認してください。", true);
         else if (!speakWordText(word.word)) toast("この端末では代替読み上げを利用できません。", true);
       }
 
@@ -1026,7 +1080,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function officialAudioUrlForWord(word) {
-        return preferredPronunciationVariant(word)?.audioUrl || word?.audioUrl || "";
+        return preferredPronunciationVariant(word)?.audioUrl || (!window.MWStorage.pronunciationPartOfSpeech(word) ? word?.audioUrl : "") || "";
       }
 
       function usageAudioInfo(range, item) {
@@ -1044,7 +1098,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function playUsageLinkedWordAudio(range, item) {
         const { linkedWords } = usageAudioInfo(range, item);
         stopContinuousPlayback();
-        return previewPlayer.play(linkedWords.map(word => ({ text: word.word, url: officialAudioUrlForWord(word) })));
+        return previewPlayer.play(linkedWords.map(word => ({ text: word.word, url: officialAudioUrlForWord(word), requireOfficial: requiresPartOfSpeechAudio(word) })));
       }
 
       function autoPlayUsageLinkedWord(range, item, key) {
@@ -1123,7 +1177,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!session || session.finished || !word) return;
         const key = `${session.id}:${session.round}:${session.index}:${word.id}`;
         if (key === lastAutoSpokenSpeedKey) return;
-        const hasOfficial = Boolean(word.audioUrl || (word.pronunciationVariants || []).some(item => item.audioUrl));
+        const hasOfficial = Boolean(officialAudioUrlForWord(word));
         const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
         if (!hasOfficial && !canSpeak) return;
         lastAutoSpokenSpeedKey = key;
@@ -1151,7 +1205,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const etaMinutes = wordsPerMinute > 0 ? Math.ceil(remaining / wordsPerMinute) : 0;
         const progress = session.roundWordIds.length ? session.index / session.roundWordIds.length * 100 : 0;
         const meaning = word.meaningsJa?.length ? word.meaningsJa.join("／") : "日本語訳未登録";
-        const hasOfficial = Boolean(word.audioUrl || (word.pronunciationVariants || []).some(item => item.audioUrl));
+        const hasOfficial = Boolean(officialAudioUrlForWord(word));
         const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
         const audioLabel = hasOfficial ? "公式音声を自動再生" : canSpeak ? "端末音声を自動再生" : "利用できる音声なし";
         const fallbackReplay = !hasOfficial && canSpeak
@@ -1572,8 +1626,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function pronunciationFeedback(word) {
-        const variants = (word.pronunciationVariants || []).slice(0, 2);
-        return variants.length ? variants.map((variant, index) => `<span>発音${index + 1}: ${escapeHtml(variant.pronunciation || "表記なし")}</span>`).join("<br>") : `<span>発音: ${escapeHtml(word.pronunciation || "未取得")}</span>`;
+        const variants = pronunciationChoices(word).slice(0, 2);
+        return variants.length ? variants.map((variant, index) => `<span>${escapeHtml(window.MWStorage.PART_OF_SPEECH_LABELS[window.MWStorage.partOfSpeechKey(variant.partOfSpeech)] || variant.partOfSpeech || `発音${index + 1}`)}: ${escapeHtml(variant.pronunciation || "表記なし")}</span>`).join("<br>") : `<span>発音: ${escapeHtml(word.pronunciation || "未取得")}</span>`;
       }
 
       function hideForTest(active) {
@@ -1726,7 +1780,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function renderPronunciationVariants(word) {
-        const variants = Array.isArray(word.pronunciationVariants) ? word.pronunciationVariants : [];
+        const variants = pronunciationChoices(word);
         if (!variants.length) return "";
         const partTotals = variants.reduce((totals, variant) => {
           const key = variant.partOfSpeech || "";
@@ -1863,6 +1917,8 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           const word = createWord(row.word, row.normalized, row.meaningsJa);
           word.sourceId = row.sourceId;
           if (row.verbForms) word.verbForms = row.verbForms;
+          if (row.partsOfSpeech) word.partsOfSpeech = row.partsOfSpeech;
+          if (row.pronunciations) word.pronunciations = row.pronunciations;
           return word;
         });
         const sourceWordMap = new Map(rangeWords.filter(word => word.sourceId).map(word => [word.sourceId.toLowerCase(), word.id]));
@@ -2398,21 +2454,24 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         const word = findWord(wordId);
         if (!word) return;
         rememberWord(wordId);
-        previewPlayer.play([{ text: word.word, url: word.audioUrl }]);
+        const url = officialAudioUrlForWord(word);
+        if (!url) return playTestAudio(word);
+        previewPlayer.play([{ text: word.word, url, requireOfficial: requiresPartOfSpeechAudio(word) }]);
       }
 
       function playPronunciationVariant(wordId, variantId) {
         stopContinuousPlayback();
         const word = findWord(wordId);
-        const variant = word?.pronunciationVariants?.find(item => item.id === variantId);
+        const variant = pronunciationChoices(word).find(item => item.id === variantId);
         if (!word || !variant) return;
         rememberWord(wordId);
-        previewPlayer.play([{ text: word.word, url: variant.audioUrl }]);
+        previewPlayer.play([{ text: word.word, url: variant.audioUrl, label: window.MWStorage.PART_OF_SPEECH_LABELS[window.MWStorage.partOfSpeechKey(variant.partOfSpeech)] || variant.partOfSpeech, requireOfficial: requiresPartOfSpeechAudio(word) }]);
       }
 
       function speakWord(wordId) {
         stopContinuousPlayback();
         const word = findWord(wordId);
+        if (word && requiresPartOfSpeechAudio(word)) return playTestAudio(word);
         if (!word || !speakWordText(word.word)) return toast("このブラウザでは読み上げに対応していません。", true);
         rememberWord(wordId);
       }
@@ -2489,7 +2548,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function isContinuousWordPlayable(word) {
-        return Boolean(word && (officialAudioUrlForWord(word) || (word.word && canUseContinuousSpeech() && window.MWPlayback.americanVoices().length > 0)));
+        return Boolean(word && (officialAudioUrlForWord(word) || (word.word && !requiresPartOfSpeechAudio(word) && canUseContinuousSpeech() && window.MWPlayback.americanVoices().length > 0)));
       }
 
       function continuousUsageDelayMs(wordId = playbackState.currentWordId) {
@@ -2653,7 +2712,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function startContinuousSpeech(word, token, index, wordId) {
-        if (!canUseContinuousSpeech()) return false;
+        if (!canUseContinuousSpeech() || requiresPartOfSpeechAudio(word)) return false;
         const utterance = window.MWPlayback.englishUtterance(word.word, window, speechOptions());
         if (!utterance) { toast(window.MWPlayback.MISSING_US_VOICE, true); return false; }
         attachSpeechCallbacks(utterance, token, index, wordId);
@@ -3533,7 +3592,18 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         $("replaceJson").addEventListener("click", () => importJson(true));
         $("wipeAll").addEventListener("click", wipeAll);
         $("toast").addEventListener("click", dismissToast);
+        document.addEventListener("change", event => {
+          const select = event.target.closest?.("[data-pronunciation-pos]");
+          if (!select || !canWrite()) return;
+          const word = findWord(select.dataset.pronunciationPos);
+          if (!word || !window.MWStorage.wordPartsOfSpeech(word).includes(select.value)) return;
+          stopContinuousPlayback();
+          word.preferredPartOfSpeech = select.value;
+          save(false); refreshGrammar(word);
+        });
         document.addEventListener("click", event => {
+          const posButton = event.target.closest?.("[data-edit-pos]");
+          if (posButton) { const word = findWord(posButton.dataset.editPos); if (word) editPartsOfSpeech(word); return; }
           const usageButton = event.target.closest?.("[data-usage-speak]");
           if (usageButton) {
             const item = state.ranges.find(range => range.id === state.selectedRangeId)?.usageItems?.find(item => item.id === usageButton.dataset.usageSpeak);
@@ -3550,7 +3620,10 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             const key = verbButton.dataset.form;
             const text = key === "base" ? word.word : word.verbForms?.[key]?.[Number(verbButton.dataset.formIndex)];
             const forms = [word.word, ...Object.keys(window.MWStorage.VERB_FORM_LABELS).flatMap(key => word.verbForms?.[key] || [])];
-            if (key === "all") previewPlayer.play(forms.map(text => ({ text })));
+            const verbPart = window.MWStorage.wordPartsOfSpeech(word).find(window.MWStorage.isVerbPartOfSpeech);
+            const base = { text: word.word, url: preferredPronunciationVariant(word, undefined, false, verbPart)?.audioUrl, requireOfficial: requiresPartOfSpeechAudio(word) };
+            if (key === "all") previewPlayer.play([base, ...forms.slice(1).map(text => ({ text }))]);
+            else if (key === "base") previewPlayer.play([base]);
             else if (text) speakWordText(text);
             return;
           }

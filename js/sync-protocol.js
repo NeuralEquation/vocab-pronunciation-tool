@@ -18,9 +18,10 @@
   const allStats = { ...stats, enToJa: stats, jaToEn: stats };
   const variant = fields("id dictionarySource headword syllabifiedHeadword partOfSpeech label pronunciation audioId audioUrl", "string");
   const word = {
-    ...fields("id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus lastApiFetchedAt", "string"),
+    ...fields("id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus preferredPartOfSpeech lastApiFetchedAt", "string"),
     cacheVersion: "number",
     ...fields("hasAudio hasDefinition apiFetched reviewMarked", "boolean"),
+    partsOfSpeech: ["string"], pronunciations: [{ partOfSpeech: "string", ipa: "string", audioId: "string" }],
     meaningsJa: ["string"], acceptedSpellings: ["string"], definitions: ["string"], pronunciationVariants: [variant],
     verbForms: { past: ["string"], pastParticiple: ["string"], presentParticiple: ["string"], thirdPersonSingular: ["string"] },
     testStats: allStats, spellingStats: allStats, speedStats: allStats

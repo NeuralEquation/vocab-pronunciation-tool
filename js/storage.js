@@ -12,6 +12,42 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   const clean = value => String(value ?? "").trim();
   const uniqueStrings = value => [...new Set((Array.isArray(value) ? value : []).map(clean).filter(Boolean))];
+  const PART_OF_SPEECH_LABELS = Object.freeze({ noun: "名詞", verb: "動詞", adjective: "形容詞", adverb: "副詞", pronoun: "代名詞", preposition: "前置詞", conjunction: "接続詞", interjection: "間投詞", article: "冠詞", determiner: "限定詞", "auxiliary verb": "助動詞", "transitive verb": "他動詞", "intransitive verb": "自動詞", "phrasal verb": "句動詞", "proper noun": "固有名詞", "plural noun": "複数名詞" });
+  const POS_ALIASES = { n: "noun", "n.": "noun", "名詞": "noun", v: "verb", "v.": "verb", "動詞": "verb", adj: "adjective", "adj.": "adjective", "形容詞": "adjective", adv: "adverb", "adv.": "adverb", "副詞": "adverb", "代名詞": "pronoun", "前置詞": "preposition", "接続詞": "conjunction", "助動詞": "auxiliary verb", "自動詞": "intransitive verb", "他動詞": "transitive verb" };
+  const partOfSpeechKey = value => { const text = clean(value).toLowerCase(); return POS_ALIASES[text] || text; };
+  const isVerbPartOfSpeech = value => /^(?:verb|auxiliary verb|transitive verb|intransitive verb|phrasal verb)$/.test(partOfSpeechKey(value));
+  function partOfSpeechMatches(actual, requested) {
+    const a = partOfSpeechKey(actual), b = partOfSpeechKey(requested);
+    return a === b || (b === "verb" && isVerbPartOfSpeech(a)) || (b === "noun" && ["proper noun", "plural noun"].includes(a));
+  }
+  function normalizePartsOfSpeech(value) {
+    if (typeof value !== "string" && !Array.isArray(value)) throw new Error("品詞は partsOfSpeech の配列で入力してください。");
+    const list = typeof value === "string" ? value.split(/[,/／、;|]/) : value;
+    if (list.length > 16 || list.some(part => typeof part !== "string" || !Object.hasOwn(PART_OF_SPEECH_LABELS, partOfSpeechKey(part)))) throw new Error("品詞は noun、verb、adjective などの名称で入力してください。");
+    return [...new Set(list.map(partOfSpeechKey))];
+  }
+  function wordPartsOfSpeech(word) {
+    if (Array.isArray(word?.partsOfSpeech) && word.partsOfSpeech.length) return [...word.partsOfSpeech];
+    const parts = [word?.partOfSpeech, ...(word?.pronunciationVariants || []).map(item => item.partOfSpeech), ...(word?.pronunciations || []).map(item => item.partOfSpeech)].map(partOfSpeechKey).filter(Boolean);
+    // Older imports supplied forms before POS metadata was supported. Preserve them.
+    if (Object.values(word?.verbForms || {}).some(forms => forms.length) && !parts.some(isVerbPartOfSpeech)) parts.push("verb");
+    return [...new Set(parts)];
+  }
+  function pronunciationPartOfSpeech(word) {
+    const parts = wordPartsOfSpeech(word), preferred = partOfSpeechKey(word?.preferredPartOfSpeech);
+    return parts.includes(preferred) ? preferred : parts[0] || "";
+  }
+  function normalizeImportedPronunciations(value, declaredParts = []) {
+    if (!Array.isArray(value) || value.length > 30) throw new Error("pronunciations は30件以内の配列で入力してください。");
+    return value.map(item => {
+      if (!isObject(item)) throw new Error("発音は品詞とIPAを持つオブジェクトで入力してください。");
+      const parts = normalizePartsOfSpeech([item.partOfSpeech]);
+      if (declaredParts.length && !declaredParts.some(part => partOfSpeechMatches(parts[0], part))) throw new Error("発音の品詞を partsOfSpeech にも登録してください。");
+      const ipa = clean(item.ipa ?? item.pronunciation), audioId = clean(item.audioId);
+      if (ipa.length > 300 || (audioId && !/^[A-Za-z0-9_-]{1,100}$/.test(audioId)) || (!ipa && !audioId)) throw new Error("発音にはIPAまたは確認済みの音声IDが必要です。");
+      return { partOfSpeech: parts[0], ipa, audioId };
+    });
+  }
   const VERB_FORM_LABELS = Object.freeze({ past: "過去形", pastParticiple: "過去分詞", presentParticiple: "現在分詞", thirdPersonSingular: "三人称単数" });
   function normalizeVerbForms(value) {
     if (!isObject(value)) throw new Error("活用形は verbForms のオブジェクトで入力してください。");
@@ -189,6 +225,14 @@
         word.error = safeStoredError(word.error);
         word.studyStatus = ["unrated", "hard", "known"].includes(word.studyStatus) ? word.studyStatus
           : word.hard === true ? "hard" : word.checked === true ? "known" : "unrated";
+        try {
+          if (Object.hasOwn(word, "partsOfSpeech")) word.partsOfSpeech = normalizePartsOfSpeech(word.partsOfSpeech);
+          if (Object.hasOwn(word, "pronunciations")) word.pronunciations = normalizeImportedPronunciations(word.pronunciations);
+          if (Object.hasOwn(word, "preferredPartOfSpeech")) {
+            if (typeof word.preferredPartOfSpeech !== "string" || word.preferredPartOfSpeech.length > 100) throw new Error("読み上げる品詞を確認してください。");
+            word.preferredPartOfSpeech = partOfSpeechKey(word.preferredPartOfSpeech);
+          }
+        } catch (error) { errors.push(`範囲 ${rangeIndex + 1} の単語「${word.word}」: ${error.message}`); }
         if (Object.hasOwn(word, "verbForms")) {
           try { word.verbForms = normalizeVerbForms(word.verbForms); }
           catch (error) { errors.push(`範囲 ${rangeIndex + 1} の単語「${word.word}」: ${error.message}`); }
@@ -453,8 +497,10 @@
     const ranges = local.ranges.map(range => ({
       ...pickScalars(range, "id rangeName testDate materialType weekday pages deleteAt manualTestEndedDate currentWordId createdAt cacheClearedAt"),
       words: range.words.map(word => ({
-        ...pickScalars(word, "id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus reviewMarked hasAudio hasDefinition cacheVersion apiFetched lastApiFetchedAt"),
+        ...pickScalars(word, "id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus preferredPartOfSpeech reviewMarked hasAudio hasDefinition cacheVersion apiFetched lastApiFetchedAt"),
         ...(word.verbForms ? { verbForms: word.verbForms } : {}),
+        ...(word.partsOfSpeech ? { partsOfSpeech: word.partsOfSpeech } : {}),
+        ...(word.pronunciations ? { pronunciations: word.pronunciations } : {}),
         meaningsJa: word.meaningsJa, acceptedSpellings: word.acceptedSpellings, definitions: word.definitions,
         pronunciationVariants: word.pronunciationVariants,
         testStats: portableStats(word.testStats), spellingStats: portableStats(word.spellingStats), speedStats: portableStats(word.speedStats)
@@ -496,6 +542,14 @@
   root.MWStorage = Object.freeze({
     SCHEMA_VERSION,
     APP_VERSION,
+    PART_OF_SPEECH_LABELS,
+    partOfSpeechKey,
+    partOfSpeechMatches,
+    isVerbPartOfSpeech,
+    normalizePartsOfSpeech,
+    wordPartsOfSpeech,
+    pronunciationPartOfSpeech,
+    normalizeImportedPronunciations,
     VERB_FORM_LABELS,
     normalizeVerbForms,
     safeSettings,

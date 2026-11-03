@@ -1,0 +1,17 @@
+[
+  {
+    "word": "record",
+    "meaning": "記録／記録する",
+    "partsOfSpeech": ["noun", "verb"],
+    "pronunciations": [
+      { "partOfSpeech": "noun", "ipa": "ˈrekɚd" },
+      { "partOfSpeech": "verb", "ipa": "rɪˈkɔrd" }
+    ],
+    "verbForms": { "past": ["recorded"], "pastParticiple": ["recorded"] },
+    "examples": [{ "en": "Keep a record.", "ja": "記録をつける。" }],
+    "phrases": [{ "en": "on record", "ja": "記録されて" }]
+  },
+  { "word": "go", "meaning": "行く", "partsOfSpeech": ["verb"], "verbForms": { "past": ["went"], "pastParticiple": ["gone"], "presentParticiple": ["going"], "thirdPersonSingular": ["goes"] } },
+  { "word": "apple", "meaning": "りんご", "partsOfSpeech": ["noun"] },
+  { "word": "quickly", "meaning": "すばやく", "partsOfSpeech": ["adverb"] }
+]

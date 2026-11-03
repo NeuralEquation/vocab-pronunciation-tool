@@ -69,6 +69,11 @@
     if (!entry || typeof entry !== "object") return null;
     const word = clean(entry.word ?? entry.headword).replace(/^[^A-Za-z'-]+|[^A-Za-z'-]+$/g, "");
     if (!/^[A-Za-z][A-Za-z'-]{0,59}$/.test(word)) return null;
+    const partsOfSpeech = entry.partsOfSpeech !== undefined || entry.partOfSpeech
+      ? window.MWStorage.normalizePartsOfSpeech(entry.partsOfSpeech ?? entry.partOfSpeech) : undefined;
+    const pronunciations = entry.pronunciations !== undefined
+      ? window.MWStorage.normalizeImportedPronunciations(entry.pronunciations, partsOfSpeech || []) : undefined;
+    if (partsOfSpeech?.length && !partsOfSpeech.some(window.MWStorage.isVerbPartOfSpeech) && Object.values(entry.verbForms || {}).some(forms => forms?.length)) throw new Error("動詞以外の品詞に活用形は登録できません。動詞の品詞も指定してください。");
     const meaningsValue = entry.meaningsJa ?? entry.meaning ?? entry.japanese ?? "";
     const meaningsJa = Array.isArray(meaningsValue) ? unique(meaningsValue.map(clean)) : splitJapanese(meaningsValue);
     return {
@@ -77,6 +82,8 @@
       meaningsJa,
       examples: normalizeUsageList(entry.examples ?? entry.example),
       phrases: normalizeUsageList(entry.phrases ?? entry.expressions ?? entry.phrase),
+      ...(partsOfSpeech !== undefined ? { partsOfSpeech } : {}),
+      ...(pronunciations !== undefined ? { pronunciations } : {}),
       ...(entry.verbForms !== undefined ? { verbForms: window.MWStorage.normalizeVerbForms(entry.verbForms) } : {})
     };
   }

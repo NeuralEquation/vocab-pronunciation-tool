@@ -27,6 +27,10 @@ GitHub PagesのPWAは引き続き使えます。同期は保存タブから手�
 
 The service worker only caches the app files. Merriam-Webster API responses and audio files are not stored in the PWA cache.
 
+## 教材JSONの品詞・発音
+
+推奨形式と項目の仕様は [インポート形式](docs/import-format.md)、貼り付け可能な例は [vocabulary-import.json](examples/vocabulary-import.json) を参照してください。出力担当のChatGPTには [教材抽出用の指示書](docs/chatgpt-instructions.md) の全文を貼り付けてください。`partsOfSpeech`で複数品詞、`pronunciations`で品詞ごとの米国英語IPAを保持します。活用欄は動詞に限定し、品詞別再生は一致した辞書音声を使います。旧データも読めます。
+
 ## Vocabulary, Examples, and Phrases
 
 Choose **英単語・例文・熟語** on the registration screen. Paste all words, examples, and phrases once into the single field. The recommended Custom GPT output is one JSON array containing the complete range.

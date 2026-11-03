@@ -57,11 +57,16 @@ test("manual review marks sync both true and false without changing legacy unmar
   const initial = data();
   initial.ranges[0].words[0].reviewMarked = true;
   initial.ranges[0].words[0].verbForms = { past: ["recorded"], pastParticiple: ["recorded"] };
+  initial.ranges[0].words[0].partsOfSpeech = ["noun", "verb"];
+  initial.ranges[0].words[0].preferredPartOfSpeech = "verb";
+  initial.ranges[0].words[0].pronunciations = [{ partOfSpeech: "noun", ipa: "ˈrekɚd", audioId: "" }, { partOfSpeech: "verb", ipa: "rɪˈkɔrd", audioId: "" }];
   const r = server(), a = device(r, initial), b = device(r, data("other"), false);
   assert.equal(await a.client.push(), "verified");
   assert.equal(await b.client.pull(), "verified");
   assert.equal(b.get().data.ranges[0].words[0].reviewMarked, true);
   assert.equal(b.get().data.ranges[0].words[0].verbForms.past[0], "recorded");
+  assert.equal(b.get().data.ranges[0].words[0].preferredPartOfSpeech, "verb");
+  assert.equal(b.get().data.ranges[0].words[0].pronunciations[1].partOfSpeech, "verb");
   const changed = a.get();
   changed.data.ranges[0].words[0].reviewMarked = false;
   changed.sync = S.changed(changed.sync);

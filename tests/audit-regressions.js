@@ -31,7 +31,7 @@ function harness(raw = JSON.stringify(fixture())) {
   const source = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
   assert.ok(source.includes("      initializeStorage();"));
   // Expose only inside this isolated VM, without production hooks or DOM boot.
-  vm.runInContext(source.replace("      initializeStorage();", "window.audit = { state, persistence, load, save, canWrite, commitReplacement, exportPreUpgrade, exportJson, download, audioUrlFromId, safeApiError, fetchReal, initializeSync };"), ctx);
+  vm.runInContext(source.replace("      initializeStorage();", "window.audit = { state, persistence, load, save, canWrite, commitReplacement, exportPreUpgrade, exportJson, download, audioUrlFromId, safeApiError, fetchReal, initializeSync, preferredPronunciationVariant, syncLegacyPronunciationFields, renderVerbForms, officialAudioUrlForWord };"), ctx);
   ctx.audit.persistence.writer = true;
   return { ctx, a: ctx.audit, values, elements, blobs, timers, fail(key) { failKey = key; } };
 }
@@ -231,6 +231,44 @@ it("speech stays American, prefers quality voices and respects explicit voice an
   assert.equal(saved.settings.speechRate, 0.85);
 });
 
+it("dictionary fl and prs preserve noun/verb audio separately through the full API response parser", async () => {
+  const h = harness();
+  h.ctx.fetch = async () => ({ ok: true, text: async () => JSON.stringify([
+    { meta: { id: "record:1", stems: ["record"] }, fl: "noun", hwi: { hw: "rec*ord", prs: [{ ipa: "noun stress", sound: { audio: "nounfixture" } }] }, shortdef: ["a written account"] },
+    { meta: { id: "record:2", stems: ["record"] }, fl: "verb", hwi: { hw: "re*cord", prs: [{ ipa: "verb stress", sound: { audio: "verbfixture" } }] }, shortdef: ["to write down"] }
+  ]) });
+  const result = await h.a.fetchReal("record", "AUDIT_KEY", "learners");
+  assert.equal(result.pronunciationVariants.length, 2);
+  const word = { ...result, id: "w", word: "record", partsOfSpeech: ["noun", "verb"], preferredPartOfSpeech: "verb" };
+  assert.match(h.a.officialAudioUrlForWord(word), /verbfixture/);
+});
+
+it("POS selection chooses matching audio, keeps dictionary cache stable, and never exposes verb controls on nouns", () => {
+  const h = harness();
+  const word = { id: "w", word: "record", normalized: "record", partsOfSpeech: ["noun", "verb"], pronunciationVariants: [
+    { id: "noun", partOfSpeech: "noun", pronunciation: "noun stress", audioUrl: "https://media.merriam-webster.com/audio/prons/en/us/mp3/r/record01.mp3" },
+    { id: "verb", partOfSpeech: "verb", pronunciation: "verb stress", audioUrl: "https://media.merriam-webster.com/audio/prons/en/us/mp3/r/record02.mp3" }
+  ] };
+  h.a.syncLegacyPronunciationFields(word);
+  const originalCache = { audioUrl: word.audioUrl, partOfSpeech: word.partOfSpeech };
+  word.preferredPartOfSpeech = "verb";
+  assert.equal(h.a.preferredPronunciationVariant(word).partOfSpeech, "verb");
+  assert.match(h.a.officialAudioUrlForWord(word), /record02/);
+  h.a.syncLegacyPronunciationFields(word);
+  assert.equal(word.audioUrl, originalCache.audioUrl, "changing selected POS cannot rewrite a cloud-verified legacy cache on reload");
+  assert.equal(word.partOfSpeech, originalCache.partOfSpeech);
+  assert.equal(h.a.renderVerbForms({ word: "apple", partsOfSpeech: ["noun"] }), "");
+  assert.equal(h.a.renderVerbForms({ word: "unknown" }), "");
+  assert.match(h.a.renderVerbForms({ word: "go", partsOfSpeech: ["verb"] }), /動詞の活用/);
+  word.pronunciationVariants = word.pronunciationVariants.filter(item => item.partOfSpeech === "noun");
+  assert.equal(h.a.officialAudioUrlForWord(word), "", "missing verb recording must never substitute noun audio");
+  const media = audioEnvironment(), statuses = [];
+  h.ctx.MWPlayback.createPreviewPlayer(media.environment, status => statuses.push(status)).play([{ text: "record", url: "fixture", requireOfficial: true }]);
+  media.audios[0].onerror();
+  assert.equal(media.spoken.length, 0, "POS-specific failed official media must not use ambiguous TTS");
+  assert.match(statuses.at(-1), /公式音声を再生できません/);
+});
+
 it("cancelled preview promises and stale queue callbacks cannot revive old speech", async () => {
   const h = harness(), media = audioEnvironment(); const player = h.ctx.MWPlayback.createPreviewPlayer(media.environment);
   player.play([{ text: "alpha", url: "a" }, { text: "obsolete", url: "old" }]);
@@ -307,7 +345,7 @@ it("service worker caches only the manifest shell, keeps a consistent offline bu
   let response;
   handlers.fetch({ request: { url: index, method: "GET", mode: "navigate" }, respondWith(promise) { response = promise; } });
   assert.equal(await response, "shell:./index.html");
-  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v67:"))[1];
+  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v68:"))[1];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+\?v=\d+)"/g)) assert.equal(shell.has(new URL(asset, scope).href), true, asset);
 });

@@ -263,7 +263,7 @@ async function main() {
     await startFrom(0);
     assert.equal(await page.evaluate(() => window.__speechHarness.utterances.length), speechCountBeforeOfficial, "official audio is attempted before TTS");
     await page.evaluate(() => window.__audioHarness.fireLatestError());
-    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "record", "failed official audio falls back to English TTS for the same word");
+    assert.equal(await page.evaluate(() => window.__speechHarness.utterances.at(-1)?.text), "expense", "failed noun/verb recording is skipped instead of using ambiguous TTS");
     await stopPlayback();
 
     await startFrom(0);
@@ -566,7 +566,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v67:")));
+    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v68:")));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("[data-tab='ranges']").click();

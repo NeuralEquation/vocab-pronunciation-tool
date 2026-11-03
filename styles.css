@@ -970,3 +970,7 @@ body.session-active .save-status[data-state="saved"] { z-index:0; }
 .verb-form-list { display: grid; gap: 8px; margin: 8px 0; }
 .verb-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .word-speech-details { width: 100%; }
+
+.pos-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pos-picker label { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; }
+.pos-picker input { width: 20px; height: 20px; flex: 0 0 20px; }

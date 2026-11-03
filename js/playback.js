@@ -111,6 +111,10 @@
         };
         const fallback = () => {
           if (!valid("official")) return;
+          if (item.requireOfficial) {
+            clearMedia(); onStatus("この品詞の公式音声を再生できません。別の品詞や端末音声には切り替えません。");
+            finish("official"); return;
+          }
           phase = "tts";
           clearMedia();
           utterance = englishUtterance(item.text, environment, item.speechOptions || getSpeechOptions());
@@ -134,7 +138,7 @@
           audio.onended = () => finish("official");
           audio.onerror = fallback;
           timeout = environment.setTimeout(fallback, 15000);
-          onStatus("Merriam-Webster公式音声");
+          onStatus(`Merriam-Webster公式音声${item.label ? `（${item.label}）` : ""}`);
           Promise.resolve(audio.play()).catch(fallback);
         } catch { fallback(); }
       };

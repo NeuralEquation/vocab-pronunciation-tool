@@ -195,6 +195,43 @@ it("verb forms import as optional text, validate before saving and survive backu
   assert.equal(Object.hasOwn(storage.createBackup({ ranges: [{ id: "r", words: [{ id: "w", word: "apple", meaningsJa: ["りんご"] }] }] }).ranges[0].words[0], "verbForms"), false);
 });
 
+it("imports multiple POS and POS-specific US pronunciations while preserving legacy and rejecting conflicts", () => {
+  const entry = { word: "record", meaning: "記録／記録する", partsOfSpeech: ["noun", "verb"], pronunciations: [{ partOfSpeech: "noun", ipa: "ˈrekɚd" }, { partOfSpeech: "verb", ipa: "rɪˈkɔrd" }], verbForms: { past: "recorded" } };
+  const imported = content.parseUnifiedRows(JSON.stringify([entry]));
+  assert.equal(imported.invalid, 0);
+  assert.equal(imported.rows[0].partsOfSpeech.join(","), "noun,verb");
+  const sample = content.parseUnifiedRows(fs.readFileSync(path.join(root, "examples/vocabulary-import.json"), "utf8"));
+  assert.equal(sample.invalid, 0);
+  assert.equal(sample.rows.length, 4);
+  assert.equal(storage.partOfSpeechMatches("transitive verb", "verb"), true);
+  assert.equal(storage.partOfSpeechMatches("noun", "verb"), false);
+  assert.equal(imported.rows[0].pronunciations[1].partOfSpeech, "verb");
+  const row = { id: "w", ...imported.rows[0], preferredPartOfSpeech: "verb" };
+  const backup = storage.createBackup({ ranges: [{ id: "r", words: [row] }] });
+  const restored = storage.parseBackup(JSON.stringify(backup));
+  assert.equal(restored.ok, true);
+  assert.equal(restored.data.ranges[0].words[0].preferredPartOfSpeech, "verb");
+  assert.equal(restored.data.ranges[0].words[0].pronunciations[0].ipa, "ˈrekɚd");
+  const changedLesson = storage.createBackup({ ranges: [{ id: "r", words: [{ ...row, partsOfSpeech: ["noun"], preferredPartOfSpeech: "noun" }] }] });
+  assert.equal(changedLesson.ranges[0].words[0].pronunciations.length, 2, "a lesson POS edit must retain other pronunciation evidence");
+  assert.equal(storage.wordPartsOfSpeech({ word: "apple", partOfSpeech: "noun" }).some(storage.isVerbPartOfSpeech), false);
+  assert.equal(storage.wordPartsOfSpeech({ word: "apple" }).length, 0);
+  assert.equal(storage.wordPartsOfSpeech({ word: "go", verbForms: { past: ["went"] } }).some(storage.isVerbPartOfSpeech), true);
+  assert.equal(content.parseUnifiedRows('[{"word":"go","meaning":"行く","partOfSpeech":"v."}]').rows[0].partsOfSpeech[0], "verb");
+  for (const bad of [
+    { ...entry, partsOfSpeech: ["noun"] },
+    { ...entry, partsOfSpeech: ["not-a-pos"] },
+    { ...entry, pronunciations: [{ partOfSpeech: "verb" }] },
+    { ...entry, pronunciations: [{ partOfSpeech: "adjective", ipa: "x" }] }
+  ]) {
+    const parsed = content.parseUnifiedRows(JSON.stringify([bad]));
+    assert.equal(parsed.invalid, 1);
+    assert.equal(parsed.rows.length, 0);
+  }
+  const legacy = storage.createBackup({ ranges: [{ id: "r", words: [{ id: "w", word: "apple", meaningsJa: ["りんご"], partOfSpeech: "noun" }] }] });
+  assert.equal(Object.hasOwn(legacy.ranges[0].words[0], "partsOfSpeech"), false);
+});
+
 it("rejects malformed or too-small choice pools and produces unique choices for both directions", () => {
   const pool = words(8);
   ["enToJa", "jaToEn"].forEach(direction => {
