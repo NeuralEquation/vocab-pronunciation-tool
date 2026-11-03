@@ -76,7 +76,8 @@
       normalized: word.toLowerCase(),
       meaningsJa,
       examples: normalizeUsageList(entry.examples ?? entry.example),
-      phrases: normalizeUsageList(entry.phrases ?? entry.expressions ?? entry.phrase)
+      phrases: normalizeUsageList(entry.phrases ?? entry.expressions ?? entry.phrase),
+      ...(entry.verbForms !== undefined ? { verbForms: window.MWStorage.normalizeVerbForms(entry.verbForms) } : {})
     };
   }
 
@@ -161,7 +162,13 @@
         });
         return;
       }
-      const row = normalizeUnifiedEntry(candidate);
+      let row;
+      try { row = normalizeUnifiedEntry(candidate); }
+      catch (error) {
+        invalid++;
+        issues.push({ line: entry.line, message: error.message });
+        return;
+      }
       if (!row) {
         invalid++;
         issues.push({ line: entry.line, message: "英単語の形式を確認してください。" });

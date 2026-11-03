@@ -11,7 +11,7 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="apple-touch-icon" href="icon.png">
   <title>Merriam-Webster 発音確認ツール</title>
-  <link rel="stylesheet" href="styles.css?v=65">
+  <link rel="stylesheet" href="styles.css?v=67">
 </head>
 <body>
   <aside id="saveStatus" class="save-status" role="status" aria-live="polite">
@@ -228,6 +228,17 @@
         </div>
         <div class="learning-toolbar" id="learningControls">
           <div class="primary-mode-grid" id="vocabPrimaryModes">
+            <section class="mode-card marked-review" id="markedReview">
+              <div><strong>★ あとでテスト <span id="markedReviewCount">0語</span></strong><span>覚え切れていない単語だけ、1回最大10問。正解してもマークは残ります。</span></div>
+              <div class="mode-card-actions">
+                <button class="primary" id="startMarkedEnglish">英語 → 日本語</button>
+                <button class="primary" id="startMarkedJapanese">日本語 → 英語</button>
+              </div>
+              <details class="disclosure" id="markedWordPicker"><summary>単語を選ぶ・マークを外す</summary><div class="disclosure-body">
+                <label for="markedWordSearch">単語・意味で探す</label><input id="markedWordSearch" type="search" placeholder="単語または日本語訳">
+                <div id="markedWordList" class="marked-word-list"></div>
+              </div></details>
+            </section>
             <section class="mode-card first-study-mode">
               <div><strong>学習モード</strong><span>音声と意味を確認します。採点はしません。</span></div>
               <div class="mode-card-actions">
@@ -235,7 +246,7 @@
                 <button class="soft" id="startUsageStudy">例文・熟語を学習</button>
               </div>
             </section>
-            <details class="disclosure more-practice" id="morePractice"><summary>復習・テストを選ぶ<span>高速周回・確認テスト・仕上げ</span></summary><div class="practice-grid">
+            <details class="disclosure more-practice" id="morePractice"><summary>復習・テストを選ぶ<span>高速周回・通常テスト</span></summary><div class="practice-grid">
             <section class="mode-card speed-study-mode">
               <div><strong>高速周回</strong><span>定着状況をすばやく確認</span></div>
               <div class="mode-card-actions">
@@ -248,16 +259,10 @@
               <div class="mode-card-actions">
                 <button class="primary" id="startWordTestMenu">単語</button>
                 <button class="primary" id="startUsageTest">例文・熟語</button>
-              </div>
-            </section>
-            <section class="mode-card finish-study-mode">
-              <div><strong>仕上げ</strong><span>未定着だけを満点まで確認</span></div>
-              <div class="mode-card-actions finish-mode-actions">
-                <button class="warn" id="startWordFinishMenu">単語</button>
-                <button class="warn" id="startUsageFinish">例文・熟語</button>
                 <button class="soft" id="startSpellingFinish">スペル</button>
               </div>
             </section>
+
             </div></details>
           </div>
           <div class="primary-mode-grid hidden" id="memoryPrimaryModes">
@@ -361,14 +366,14 @@
     <button class="danger" id="playbackDockStop">即時停止</button>
   </div>
 
-  <script defer src="js/storage.js?v=65"></script>
-  <script defer src="js/sync-protocol.js?v=65"></script>
-  <script defer src="js/sync.js?v=65"></script>
-  <script defer src="js/content.js?v=65"></script>
-  <script defer src="js/test.js?v=65"></script>
-  <script defer src="js/playback.js?v=65"></script>
-  <script defer src="js/dictionary.js?v=65"></script>
-  <script defer src="js/app.js?v=65"></script>
-  <script defer src="js/ux-overrides.js?v=65"></script>
+  <script defer src="js/storage.js?v=67"></script>
+  <script defer src="js/sync-protocol.js?v=67"></script>
+  <script defer src="js/sync.js?v=67"></script>
+  <script defer src="js/content.js?v=67"></script>
+  <script defer src="js/test.js?v=67"></script>
+  <script defer src="js/playback.js?v=67"></script>
+  <script defer src="js/dictionary.js?v=67"></script>
+  <script defer src="js/app.js?v=67"></script>
+  <script defer src="js/ux-overrides.js?v=67"></script>
 </body>
 </html>

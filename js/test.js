@@ -346,18 +346,27 @@ function createTestSession(range, direction, options = {}, legacyRandom = Math.r
   if (!DIRECTIONS.includes(direction)) throw new Error("Invalid direction");
   // Old callers passed a random function as the third argument. Keep that API working.
   const random = typeof options === "function" ? options : (typeof legacyRandom === "function" ? legacyRandom : Math.random);
-  const mode = typeof options === "object" && ["normal", "wrong", "ready"].includes(options.mode) ? options.mode : "normal";
+  const mode = typeof options === "object" && ["normal", "wrong", "ready", "marked"].includes(options.mode) ? options.mode : "normal";
   const words = range.words || [];
   const requestedIds = typeof options === "object" && Array.isArray(options.wordIds) ? new Set(options.wordIds) : null;
   const buildable = words.filter(word => word.word && meanings(word).length && buildChoices(word, words, direction, 0, random));
   let selected;
-  if (requestedIds) {
+  if (mode === "marked") {
+    const targets = buildable.filter(word => word.reviewMarked === true && (!requestedIds || requestedIds.has(word.id)));
+    // Oldest tested first gives every marked word a turn across short sessions.
+    selected = shuffle(targets, random).sort((a, b) =>
+      (Date.parse(statFor(a, direction).lastTestedAt) || 0) - (Date.parse(statFor(b, direction).lastTestedAt) || 0))
+      .slice(0, 10).map(word => ({ word, category: "marked" }));
+  } else if (requestedIds) {
     selected = buildable.filter(word => requestedIds.has(word.id)).slice(0, 15).map(word => ({ word, category: mode === "ready" ? "ready" : mode }));
   } else if (mode === "ready") {
     selected = selectTestReadyItems(buildable, direction, 15).map(word => ({ word, category: "ready" }));
   } else {
     selected = selectTestWords(words, direction, 15, random, mode);
   }
+  if (!selected.length && mode === "marked") return { error: (words.some(word => word.reviewMarked === true && (!requestedIds || requestedIds.has(word.id)))
+    ? "マークした単語の4択を作れません。教材内に意味の異なる単語が4語以上必要です。"
+    : "「あとでテスト」に単語をマークしてください。") };
   if (!selected.length) return { error: mode === "wrong" ? "現在、間違い集中モードの対象単語はありません。" : "出題できる単語がありません。" };
   if (selected.length < 15 && mode === "normal") return { error: "日本語訳と有効な選択肢がある単語が15語必要です。" };
   const order = buildQuestionOrder(selected, random);
@@ -556,6 +565,7 @@ function renderTestQuestion(session, range) {
     <div class="test-progressbar"><span style="width:${(session.index / session.questions.length) * 100}%"></span></div>
     <div class="test-prompt">${escapeHtml(prompt)}</div>
     ${session.direction === "enToJa" ? `<button class="soft test-replay" data-test-action="replay">もう一度聞く</button>` : ""}
+    <button class="soft review-toggle" data-review-toggle="${escapeHtml(word.id)}" aria-pressed="${word.reviewMarked === true}" aria-label="${word.reviewMarked === true ? "あとでテストから外す" : "あとでテストに追加"}" title="${word.reviewMarked === true ? "あとでテストから外す" : "あとでテストに追加"}">${word.reviewMarked === true ? "★" : "☆"}</button>
     <div class="test-choices">${question.choices.map((choice, i) => `<button class="test-choice" data-test-choice="${i}">${escapeHtml(choice.label)}</button>`).join("")}</div>`;
 }
 
@@ -574,7 +584,7 @@ function finishTest(session, range) {
   session.finishedAt = new Date().toISOString();
   const correct = session.answers.filter(a => a.correct).length;
   const result = { id: session.id, direction: session.direction, mode: session.mode || "normal", startedAt: session.startedAt, finishedAt: session.finishedAt, total: session.questions.length, correct, accuracy: Math.round(correct / session.questions.length * 100), averageResponseMs: Math.round(session.answers.reduce((sum, a) => sum + a.responseMs, 0) / Math.max(1, session.answers.length)), categoryCorrect: {}, wrongWordIds: session.answers.filter(a => !a.correct).map(a => a.wordId) };
-  ["urgent", "untested", "normal", "wrong", "ready"].forEach(category => { result.categoryCorrect[category] = session.answers.filter(a => a.category === category && a.correct).length; });
+  ["urgent", "untested", "normal", "wrong", "ready", "marked"].forEach(category => { result.categoryCorrect[category] = session.answers.filter(a => a.category === category && a.correct).length; });
   range.testHistory = [...(range.testHistory || []), result].slice(-30);
   return result;
 }
