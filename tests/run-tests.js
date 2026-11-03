@@ -121,6 +121,80 @@ it("limits wrong mode to the requested direction and supports one to three items
   assert.ok(noMatchingDirection.error.includes("間違い集中"));
 });
 
+it("marked quizzes accept 1-10 manual targets, keep balanced full-range choices and rotate oldest words", () => {
+  for (const count of [1, 2, 3, 10, 13]) {
+    for (const direction of ["enToJa", "jaToEn"]) {
+      const pool = words(18, i => ({ reviewMarked: i < count }));
+      const range = { id: "marked", words: pool };
+      const session = test.createTestSession(range, direction, { mode: "marked" }, seeded(count));
+      assert.equal(session.error, undefined);
+      assert.equal(session.questions.length, Math.min(10, count));
+      const positions = [0, 0, 0, 0];
+      for (const q of session.questions) {
+        assert.equal(pool.find(w => w.id === q.wordId).reviewMarked, true);
+        assert.equal(new Set(q.choices.map(c => c.label)).size, 4);
+        assert.equal(q.choices[q.correctPosition].wordId, q.wordId);
+        positions[q.correctPosition]++;
+        test.applyDirectionAttempt(pool.find(w => w.id === q.wordId), direction,
+          { correct: true, responseMs: 1200 }, day("2026-11-02"));
+      }
+      assert.ok(Math.max(...positions) - Math.min(...positions) <= 1);
+      assert.equal(pool.filter(w => w.reviewMarked).length, count, "correct answers never clear manual marks");
+      const next = test.createTestSession(range, direction, { mode: "marked" }, seeded(54));
+      if (count > 10) {
+        const tested = new Set(session.questions.map(q => q.wordId));
+        for (const w of pool.filter(w => w.reviewMarked && !tested.has(w.id))) {
+          assert.ok(next.questions.some(q => q.wordId === w.id), "not-yet-tested marked words are selected next");
+        }
+      }
+      const target = session.questions[0].wordId;
+      const retry = test.createTestSession(range, direction, { mode: "marked", wordIds: [target] });
+      assert.equal(retry.questions.length, 1);
+      assert.equal(retry.questions[0].wordId, target);
+      pool.find(w => w.id === target).reviewMarked = false;
+      assert.ok(!test.createTestSession(range, direction, { mode: "marked" }).questions?.some(q => q.wordId === target));
+    }
+  }
+  assert.ok(test.createTestSession({ words: words(5) }, "enToJa", { mode: "marked" }).error.includes("マーク"));
+  assert.ok(test.createTestSession({ words: words(3, () => ({ reviewMarked: true })) }, "enToJa", { mode: "marked" }).error.includes("4語"));
+});
+
+it("manual marks and marked histories survive portable backups without changing legacy payloads", () => {
+  const data = { schemaVersion: 3, settings: {}, ranges: [{ id: "r", words: words(4, i => i < 2 ? ({ reviewMarked: i === 0 }) : ({})), testHistory: [{ id: "t", mode: "marked", direction: "enToJa", total: 1, correct: 1 }] }] };
+  const backup = storage.createBackup(data);
+  assert.equal(backup.ranges[0].words[0].reviewMarked, true);
+  assert.equal(backup.ranges[0].words[1].reviewMarked, false);
+  assert.equal(Object.hasOwn(backup.ranges[0].words[2], "reviewMarked"), false, "do not rewrite a cloud-verified legacy payload");
+  const restored = storage.parseBackup(JSON.stringify(backup));
+  assert.equal(restored.ok, true);
+  assert.equal(restored.data.ranges[0].words[0].reviewMarked, true);
+  assert.equal(restored.data.ranges[0].testHistory[0].mode, "marked");
+  data.ranges[0].words[0].reviewMarked = "false";
+  assert.equal(storage.createBackup(data).ranges[0].words[0].reviewMarked, false);
+});
+
+it("verb forms import as optional text, validate before saving and survive backup without changing spelling answers", () => {
+  const source = { word: "go", meaning: "行く", verbForms: { past: "went", pastParticiple: ["gone"], presentParticiple: "going", thirdPersonSingular: "goes" }, phrases: [{ en: "on the go", ja: "活動中で" }] };
+  const parsed = content.parseUnifiedRows(JSON.stringify([source]));
+  assert.equal(parsed.invalid, 0);
+  assert.equal(parsed.rows[0].verbForms.past[0], "went");
+  assert.equal(parsed.rows[0].phrases[0].english, "on the go");
+  const row = { id: "w", word: "go", meaningsJa: ["行く"], verbForms: parsed.rows[0].verbForms };
+  const backup = storage.createBackup({ ranges: [{ id: "r", words: [row] }] });
+  assert.equal(storage.parseBackup(JSON.stringify(backup)).data.ranges[0].words[0].verbForms.pastParticiple[0], "gone");
+  assert.equal(test.evaluateSpellingAnswer(row, "went").correct, false, "a conjugation is not an alternative spelling of the headword");
+  for (const bad of [false, { past: 2 }, { past: ["went", 42] }, { past: "<script>" }, { future: "will go" }]) {
+    const invalid = content.parseUnifiedRows(JSON.stringify([{ ...source, verbForms: bad }]));
+    assert.equal(invalid.invalid, 1);
+    assert.equal(invalid.rows.length, 0);
+    const invalidBackup = storage.parseBackup(JSON.stringify({ ranges: [{ id: "r", words: [{ ...row, verbForms: bad }] }] }));
+    assert.equal(invalidBackup.ok, false, "reject malformed forms instead of silently dropping stored content");
+  }
+  const legacy = content.parseUnifiedRows('[{"word":"apple","meaning":"りんご"}]');
+  assert.equal(Object.hasOwn(legacy.rows[0], "verbForms"), false);
+  assert.equal(Object.hasOwn(storage.createBackup({ ranges: [{ id: "r", words: [{ id: "w", word: "apple", meaningsJa: ["りんご"] }] }] }).ranges[0].words[0], "verbForms"), false);
+});
+
 it("rejects malformed or too-small choice pools and produces unique choices for both directions", () => {
   const pool = words(8);
   ["enToJa", "jaToEn"].forEach(direction => {

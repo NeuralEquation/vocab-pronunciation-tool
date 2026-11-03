@@ -954,3 +954,19 @@ body.session-active .save-status[data-state="saved"] { z-index:0; }
 .tap-next-hint span { font-size:.8rem; font-weight:400; }
 @keyframes studyCardExitBack { to { opacity:0; transform:translateX(115%); } }
 @keyframes studyCardEnterBack { from { opacity:0; transform:translateX(-28px); } to { opacity:1; transform:translateX(0); } }
+
+/* Manually selected words: compact list and short quizzes. */
+.marked-review { margin-bottom: 14px; border-color: var(--accent, #3198ef); }
+.marked-word-list { max-height: 340px; overflow-y: auto; overscroll-behavior: contain; }
+.marked-word-row { display: flex; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); min-height: 52px; cursor: pointer; }
+.marked-word-row input { width: 22px; height: 22px; flex: 0 0 22px; }
+.marked-word-row > span, .marked-result-row > span { min-width: 0; overflow-wrap: anywhere; }
+.marked-word-row span span, .marked-result-row span span { display: block; color: var(--muted); }
+.review-toggle { min-width: 44px; min-height: 44px; margin: 6px 0; white-space: nowrap; }
+.review-toggle[aria-pressed="true"] { border-color: #e9b950; color: #f4cd78; background: #4a361c; }
+.marked-result-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+
+.marked-test-result .result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.verb-form-list { display: grid; gap: 8px; margin: 8px 0; }
+.verb-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.word-speech-details { width: 100%; }

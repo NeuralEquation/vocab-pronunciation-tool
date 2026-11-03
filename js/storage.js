@@ -12,6 +12,19 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   const clean = value => String(value ?? "").trim();
   const uniqueStrings = value => [...new Set((Array.isArray(value) ? value : []).map(clean).filter(Boolean))];
+  const VERB_FORM_LABELS = Object.freeze({ past: "過去形", pastParticiple: "過去分詞", presentParticiple: "現在分詞", thirdPersonSingular: "三人称単数" });
+  function normalizeVerbForms(value) {
+    if (!isObject(value)) throw new Error("活用形は verbForms のオブジェクトで入力してください。");
+    const forms = {};
+    Object.entries(value).forEach(([key, raw]) => {
+      if (!Object.hasOwn(VERB_FORM_LABELS, key)) throw new Error("活用形の項目名を確認してください。");
+      if (typeof raw !== "string" && !Array.isArray(raw)) throw new Error("活用形は文字列または文字列の配列で入力してください。");
+      const values = typeof raw === "string" ? raw.split(/\s*\/\s*/) : raw;
+      if (values.length > 10 || values.some(form => typeof form !== "string" || (form.trim() && !/^[A-Za-z][A-Za-z'’ -]{0,99}$/.test(form.trim())))) throw new Error("活用形は100文字以内の英語で、各項目10個まで入力してください。");
+      forms[key] = uniqueStrings(values);
+    });
+    return forms;
+  }
   const validDateKey = value => {
     const text = clean(value);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return "";
@@ -176,6 +189,11 @@
         word.error = safeStoredError(word.error);
         word.studyStatus = ["unrated", "hard", "known"].includes(word.studyStatus) ? word.studyStatus
           : word.hard === true ? "hard" : word.checked === true ? "known" : "unrated";
+        if (Object.hasOwn(word, "verbForms")) {
+          try { word.verbForms = normalizeVerbForms(word.verbForms); }
+          catch (error) { errors.push(`範囲 ${rangeIndex + 1} の単語「${word.word}」: ${error.message}`); }
+        }
+        if (Object.hasOwn(word, "reviewMarked")) word.reviewMarked = word.reviewMarked === true;
         const usedVariantIds = new Set();
         word.pronunciationVariants = (Array.isArray(word.pronunciationVariants) ? word.pronunciationVariants : []).map((variant, variantIndex) => {
           if (!isObject(variant)) return null;
@@ -247,7 +265,7 @@
       range.testHistory = (Array.isArray(range.testHistory) ? range.testHistory : []).map(item => {
         if (!isObject(item)) return null;
         const direction = ["enToJa", "jaToEn"].includes(item.direction) ? item.direction : "enToJa";
-        const mode = ["normal", "wrong", "ready"].includes(item.mode) ? item.mode : "normal";
+        const mode = ["normal", "wrong", "ready", "marked"].includes(item.mode) ? item.mode : "normal";
         const total = Math.max(0, Math.min(100, Math.floor(Number(item.total) || 0)));
         const correct = Math.max(0, Math.min(total, Math.floor(Number(item.correct) || 0)));
         const finishedAt = safeIso(item.finishedAt);
@@ -435,7 +453,8 @@
     const ranges = local.ranges.map(range => ({
       ...pickScalars(range, "id rangeName testDate materialType weekday pages deleteAt manualTestEndedDate currentWordId createdAt cacheClearedAt"),
       words: range.words.map(word => ({
-        ...pickScalars(word, "id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus hasAudio hasDefinition cacheVersion apiFetched lastApiFetchedAt"),
+        ...pickScalars(word, "id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus reviewMarked hasAudio hasDefinition cacheVersion apiFetched lastApiFetchedAt"),
+        ...(word.verbForms ? { verbForms: word.verbForms } : {}),
         meaningsJa: word.meaningsJa, acceptedSpellings: word.acceptedSpellings, definitions: word.definitions,
         pronunciationVariants: word.pronunciationVariants,
         testStats: portableStats(word.testStats), spellingStats: portableStats(word.spellingStats), speedStats: portableStats(word.speedStats)
@@ -477,6 +496,8 @@
   root.MWStorage = Object.freeze({
     SCHEMA_VERSION,
     APP_VERSION,
+    VERB_FORM_LABELS,
+    normalizeVerbForms,
     safeSettings,
     normalizeStudyLog,
     migrateBackup,

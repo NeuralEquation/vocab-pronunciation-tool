@@ -20,8 +20,9 @@
   const word = {
     ...fields("id sourceId word normalized mwUrl audioUrl audioId pronunciation syllabifiedHeadword partOfSpeech dictionarySource error studyStatus lastApiFetchedAt", "string"),
     cacheVersion: "number",
-    ...fields("hasAudio hasDefinition apiFetched", "boolean"),
+    ...fields("hasAudio hasDefinition apiFetched reviewMarked", "boolean"),
     meaningsJa: ["string"], acceptedSpellings: ["string"], definitions: ["string"], pronunciationVariants: [variant],
+    verbForms: { past: ["string"], pastParticiple: ["string"], presentParticiple: ["string"], thirdPersonSingular: ["string"] },
     testStats: allStats, spellingStats: allStats, speedStats: allStats
   };
   const item = { ...fields("id sourceId type label english japanese", "string"), linkedWordIds: ["string"], unresolvedRefs: ["string"], recallStats: allStats };

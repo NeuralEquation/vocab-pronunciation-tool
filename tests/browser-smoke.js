@@ -65,18 +65,17 @@ async function startMode(page, value) {
     "word-enToJa-wrong": "en-wrong",
     "word-jaToEn-wrong": "ja-wrong"
   };
-  const readyTests = {
-    "ready-enToJa": "en-ready",
-    "ready-jaToEn": "ja-ready"
+  const markedTests = {
+    "marked-enToJa": "startMarkedEnglish",
+    "marked-jaToEn": "startMarkedJapanese"
   };
   if (wordTests[value]) {
     await page.locator("#startWordTestMenu").click();
     await page.locator(`[data-learning-choice='${wordTests[value]}']`).click();
     return;
   }
-  if (readyTests[value]) {
-    await page.locator("#startWordFinishMenu").click();
-    await page.locator(`[data-learning-choice='${readyTests[value]}']`).click();
+  if (markedTests[value]) {
+    await page.locator(`#${markedTests[value]}`).click();
     return;
   }
   if (value === "spelling") {
@@ -221,11 +220,11 @@ async function main() {
     await page.locator("#wordPanel:not(.hidden)").waitFor();
     await expand(page, "#materialContents");
     await expand(page, "#morePractice");
-    assert.match(await page.locator("#wordPanel .readiness-state").first().textContent(), /未確認|危険/);
-    assert.equal(await page.locator(".readiness-detail-grid").count(), 0, "risk reasons stay collapsed until requested");
-    await page.locator("#wordPanel .readiness-state").first().click();
-    await page.locator("#modalRoot .readiness-detail-grid").waitFor();
-    await page.locator("#modalRoot [data-modal-cancel]").click();
+    assert.equal(await page.locator(".readiness-state").count(), 0, "full-score assessment is removed");
+    assert.equal(await page.locator("#startWordFinishMenu").count(), 0);
+    await page.locator("#markedWordPicker > summary").click();
+    await page.locator("[data-marked-word]").first().check();
+    await page.locator("#markedWordPicker > summary").click();
     assert.match(await page.locator(".word-card .word-meaning").first().textContent(), /意味\d+/);
     assert.equal(await page.locator(".word-card details.technical-details").first().getAttribute("open"), null);
     const recordCard = page.locator(".word-card").first();
@@ -425,9 +424,9 @@ async function main() {
     assert.match(await page.locator("#testContent .result-score").textContent(), /1\s*\/\s*1/);
     await returnFromTest(page);
 
-    await startMode(page, "ready-jaToEn");
+    await startMode(page, "marked-jaToEn");
     await answerTest(page);
-    assert.match(await page.locator("#testContent .result-score").textContent(), /15\s*\/\s*15/);
+    assert.match(await page.locator("#testContent .result-score").textContent(), /1\s*\/\s*1/);
     await returnFromTest(page);
 
     const studyStatusBeforeSpeed = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].words.map(word => word.studyStatus));
@@ -484,7 +483,7 @@ async function main() {
     assert.equal(await page.locator("#startWordStudy").count(), 1);
     assert.equal(await page.locator("#startUsageSpeed").count(), 1);
     assert.equal(await page.locator("#startUsageTest").count(), 1);
-    assert.equal(await page.locator("#startUsageFinish").count(), 1);
+    assert.equal(await page.locator("#startUsageFinish").count(), 0);
     assert.equal(await page.getByText("関連単語を編集", { exact: true }).count(), 0);
 
     const usageHistoryBeforeStudy = await page.evaluate(() => JSON.parse(localStorage.getItem("mwPronunciationTool.v1")).ranges[0].usageItems.map(item => item.recallStats));
@@ -513,14 +512,6 @@ async function main() {
     assert.match(await page.locator("#recallContent").textContent(), /各項目を一度ずつ確認/);
     await page.locator("[data-recall-action='return']").click();
 
-    await page.locator("#startUsageFinish").click();
-    assert.match(await page.locator("#recallContent").textContent(), /例文・熟語・仕上げ/);
-    await page.locator("[data-recall-action='reveal']").click();
-    await page.locator("[data-recall-rating='cross']").click();
-    assert.equal(await page.locator("#recallContent .test-result").count(), 0, "finish mode requeues missed items");
-    await page.locator("#studySessionClose").click();
-    await page.locator("#modalRoot [data-modal-confirm]").click();
-    await page.locator("#wordPanel:not(.hidden)").waitFor();
     await expand(page, "#materialContents");
     await expand(page, "#morePractice");
 
@@ -575,7 +566,7 @@ async function main() {
     await page.evaluate(() => navigator.serviceWorker.ready.then(() => true));
     const cacheState = await page.evaluate(async () => ({ keys: await caches.keys(), controller: Boolean(navigator.serviceWorker.controller) }));
     assert.equal(cacheState.controller, true);
-    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v65:")));
+    assert.ok(cacheState.keys.some(key => key.startsWith("mw-pronunciation-pwa-v67:")));
     await context.setOffline(true);
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("[data-tab='ranges']").click();
@@ -606,7 +597,7 @@ async function main() {
       selfChecks: checks,
       normalScore: "14/15",
       wrongScore: "1/1",
-      reverseReadyScore: "15/15",
+      markedReverseScore: "1/1",
       spellingScore: "14/15",
       serviceWorker: cacheState,
       offlineReloadAndSave: true,

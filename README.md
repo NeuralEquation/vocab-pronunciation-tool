@@ -46,9 +46,23 @@ Vocabulary test dates must be Monday or Wednesday. The app derives the weekday f
 
 Examples and phrases are recalled from Japanese to the complete English text. After revealing the answer, rate it with `○`, `△`, or `×`. `×` returns after a few questions, while `△` returns near the end of the session. Repeating `○` on the same day does not mark an item as settled; an `○` on two different dates is required. There are no cloze or word-order questions.
 
-Each range shows a full-score readiness checklist for unconfirmed or unsettled words, hard words, unsettled examples and phrases, and latest mistakes. The range is marked **満点準備完了** only when every applicable count is zero.
+**★ あとでテスト** is a manual subset within each vocabulary range. Select words in the compact searchable list, from an existing word view, during any word test, or from the test results. Start English→Japanese or Japanese→English directly; each session asks up to 10 marked words, including a single marked word when four distinct choices can be built from the full range. Older last-tested words get priority across sessions. Results offer another pass and a retry of the missed marked words. Correct answers never clear marks; remove them yourself when comfortable. Marks are independent of the old automatic hard/known status and survive reload, portable backup/restore, and synchronization with the updated GAS bundle. Existing GAS deployments need the rebuilt shared storage/protocol files before syncing this new field; local use does not require GAS.
+
+The full-score check, readiness badges, and finishing-mode entry points have been removed. Historical test evidence and older backups remain supported. No new flashcard workflow is required.
 
 The Quizlet export contains examples only in `English[TAB]Japanese` format. Phrase rows and internal IDs are excluded.
+
+## Phrase and verb-form speech
+
+The existing `phrases` English text can be played individually from the phrase list, linked usage, and the revealed word-test answer. No embedded audio or paid API is needed: playback uses the same selected US device voice and speed.
+
+Vocabulary JSON may optionally include `verbForms`. The headword in `word` supplies the base form; these extra fields are independent of spelling-test accepted answers:
+
+```json
+[{"word":"go","meaning":"行く","verbForms":{"past":["went"],"pastParticiple":["gone"],"presentParticiple":["going"],"thirdPersonSingular":["goes"]},"phrases":[{"en":"on the go","ja":"活動中で"}]}]
+```
+
+Each field accepts a string or an array of strings (canonical backups use arrays); `/` separates alternatives in string input. Existing JSON/TSV and older backups remain valid with no `verbForms`. Stored forms are not guessed or auto-generated. Add or edit them on existing words under **動詞の活用**, including after answering a marked test. Listen to each form or the full sequence. The fields survive backup and sync with the updated GAS bundle; no audio binaries are added to localStorage or exports. Full text remains optional for old words.
 
 ## Friday Memorization
 
@@ -130,18 +144,17 @@ For **金曜の暗記構文**, paste TSV containing English full text and its Ja
 
 Examples and phrases are always handled together. **学習モード（初見用）** offers separate word and example/phrase passes; both are unrated, tap-to-advance sessions that do not create study history. **高速周回** remains a separate mode for words or examples/phrases. Example/phrase Speed Review keeps the existing recall history and ratings, and automatically plays the official pronunciation of the linked word when that audio is available. Notifications are dismissed with a tap.
 
-The main vocabulary menu is grouped by purpose: **学習モード**, **高速周回**, **確認テスト**, and **仕上げ**. Example/phrase confirmation asks each selected item once, while example/phrase finish selects unsettled items and requeues misses in the same session. Both write to the existing `recallStats`; they do not create a second history system.
+The vocabulary menu starts with **★ あとでテスト**, a compact manual word picker and direct short-test buttons. **学習モード** remains available, with **高速周回** and regular **確認テスト** under the optional practice menu. Example/phrase confirmation asks each selected item once and writes to the existing `recallStats`. The finishing-mode entry points are retired.
 
-## Tests, spelling, and readiness / テスト・スペル・準備判定
+## Tests and spelling / テスト・スペル
 
 Vocabulary tests are direction-specific: **English → Japanese** and **Japanese → English** write separate `testStats`. Each question has four choices, and the test engine avoids duplicate meanings/answers where it cannot build a valid set.
 
 - **Normal / 通常** always requires and presents 15 buildable questions. It prioritizes recent mistakes or manually marked hard words, then untested words, then other review candidates.
-- **Wrong / 間違い集中** and **Ready / 満点確認** may be shorter (up to 15). They are focused queues for recent wrong answers or current readiness risks; they are not evidence that a normal 15-question test was run.
+- **Wrong / 間違い集中** asks up to 15 recent wrong answers in that direction.
+- **Marked / ★ あとでテスト** asks 1–10 manually marked targets in that direction, with distractors from the full range. Success does not clear marks. Both shorter modes are recorded separately from normal tests. Legacy `ready` histories remain readable.
 
-Readiness is stricter than one high score. For every word, both test directions need evidence, correct success on at least two different local calendar days, a latest correct and non-hesitant/non-slow answer, no unresolved repeated choice confusion, a successful check within the last 14 days, and a later-day recovery after any wrong answer. The spelling check is also required. It asks the user to type English from the Japanese meaning and accepts only the headword or an explicitly supplied accepted form (`acceptedSpellings`, `acceptedForms`, or `spellingForms`). Typography is normalized for common width, apostrophe, and hyphen variants, but there is no fuzzy matching or typo correction. A spelling lapse likewise needs a correct answer on a later day. Example, phrase, and memorization recall also expires from test readiness when its latest successful evidence is older than 14 days.
-
-The range checklist reports unverified items, missing cross-day success, latest mistakes, slow/hesitant answers, repeated choice confusion, and spelling risk. The normal screen shows only a short **危険 N語** or **未確認あり** summary; tap it to inspect the detailed reasons. **満点準備完了 / ready** means every applicable risk count is zero; it is a study rule, not a guarantee of a real examination result.
+The optional spelling check asks for the English headword from the Japanese meaning. It accepts only the headword or an explicitly supplied accepted spelling (`acceptedSpellings`, `acceptedForms`, or `spellingForms`); verb conjugations are separate reference data. Typography is normalized for common width, apostrophe, and hyphen variants, with no fuzzy matching. Historical cross-day direction, spelling, and recall evidence is retained for compatibility and existing automatic priorities; the retired full-score checklist and readiness badges are not displayed and do not control manual marks.
 
 **Speed Review / 高速周回** records per-word `speedStats` and keeps `unknown` and `unsure` cards in the next round until they are rated `instant`. These ratings are persisted and directly feed readiness risk and normal-test question priority, without changing the user's manual `hard` flag. They do **not** write ordinary `testStats`, alter a 15-question test score, or replace the direction-specific cross-day test evidence.
 

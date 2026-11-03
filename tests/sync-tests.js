@@ -53,6 +53,23 @@ test("normal push/pull round-trips study data, excludes device settings, keeps r
   assert.equal(JSON.stringify(r.store.rows).includes("LOCAL_ONLY_FIXTURE"), false);
   assert.equal(Object.hasOwn(r.store.rows[0].request.payload, "settings"), false);
 });
+test("manual review marks sync both true and false without changing legacy unmarked words", async () => {
+  const initial = data();
+  initial.ranges[0].words[0].reviewMarked = true;
+  initial.ranges[0].words[0].verbForms = { past: ["recorded"], pastParticiple: ["recorded"] };
+  const r = server(), a = device(r, initial), b = device(r, data("other"), false);
+  assert.equal(await a.client.push(), "verified");
+  assert.equal(await b.client.pull(), "verified");
+  assert.equal(b.get().data.ranges[0].words[0].reviewMarked, true);
+  assert.equal(b.get().data.ranges[0].words[0].verbForms.past[0], "recorded");
+  const changed = a.get();
+  changed.data.ranges[0].words[0].reviewMarked = false;
+  changed.sync = S.changed(changed.sync);
+  a.set(changed);
+  assert.equal(await a.client.push(), "verified");
+  assert.equal(await b.client.pull(), "verified");
+  assert.equal(b.get().data.ranges[0].words[0].reviewMarked, false);
+});
 test("stale baseRevision and two devices reject overwrite without auto merge", async () => {
   const r = server(), a = device(r), b = device(r);
   await a.client.push(); assert.equal(await b.client.push(), "rejected");

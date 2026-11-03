@@ -1,10 +1,10 @@
-const CACHE_NAME = "mw-pronunciation-pwa-v65";
+const CACHE_NAME = "mw-pronunciation-pwa-v67";
 const CACHE_PREFIX = "mw-pronunciation-pwa-";
 const APP_SHELL = [
-  "./index.html", "./styles.css?v=65", "./js/storage.js?v=65",
-  "./js/sync-protocol.js?v=65", "./js/sync.js?v=65",
-  "./js/content.js?v=65", "./js/test.js?v=65", "./js/playback.js?v=65",
-  "./js/dictionary.js?v=65", "./js/app.js?v=65", "./js/ux-overrides.js?v=65",
+  "./index.html", "./styles.css?v=67", "./js/storage.js?v=67",
+  "./js/sync-protocol.js?v=67", "./js/sync.js?v=67",
+  "./js/content.js?v=67", "./js/test.js?v=67", "./js/playback.js?v=67",
+  "./js/dictionary.js?v=67", "./js/app.js?v=67", "./js/ux-overrides.js?v=67",
   "./manifest.webmanifest", "./icon.png"
 ];
 const SHELL_URLS = new Set(APP_SHELL.map(path => new URL(path, self.registration.scope).href));
