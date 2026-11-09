@@ -94,7 +94,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       let lastAutoSpokenUsageKey = "";
       let lastAutoSpokenStudyWordKey = "";
       let sessionReturnFocus = null;
-      const persistence = { writer: false, loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
+      const persistence = { writer: false, lockState: "pending", loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
       let syncClient = null;
       let syncRuntime = "";
       const SYNC_ENDPOINT_KEY = "mwPronunciationTool.syncEndpoint.v1";
@@ -354,7 +354,13 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         if (!root) return;
         root.dataset.state = persistence.readError ? "recovery" : !persistence.writer || persistence.conflict ? "readonly" : persistence.dirty ? "unsaved" : "saved";
         $("saveStatusText").textContent = persistence.readError ? persistence.message
-          : !persistence.writer ? "別のタブで編集中、または安全な保存に未対応です。この画面は閲覧専用です。他のタブを閉じて再読込してください。"
+          : !persistence.writer ? ({
+            busy: "別の画面が保存を使用中です。この画面は閲覧専用です。ほかの画面を閉じて、このアプリに戻ってください。",
+            unsupported: "この環境では安全な保存機能を利用できません。この画面は閲覧専用です。ブラウザを更新して開き直してください。",
+            error: "保存機能を開始できませんでした。この画面は閲覧専用です。アプリに戻ると再試行します。改善しない場合はJSONで退避してください。",
+            released: "アプリの復帰時に保存機能を確認します。",
+            pending: "保存領域を確認しています。"
+          }[persistence.lockState] || "保存機能を確認しています。")
           : persistence.conflict ? "別の画面でデータが変更されました。上書きを停止しました。未保存の内容はJSONで退避してから再読込してください。"
           : persistence.credentialError ? "APIキーを保存できませんでした。設定画面からキーの保存を再試行してください。学習データはJSONで退避できます。"
           : persistence.dirty ? "未保存です。この画面を閉じず、再試行するかJSONで退避してください。"
@@ -3238,12 +3244,9 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (persistence.dirty) { event.preventDefault(); event.returnValue = ""; }
         });
         window.addEventListener("pagehide", () => {
-          persistence.writer = false;
           stopContinuousPlayback();
           apiController?.abort();
-          releaseWriter?.();
         });
-        window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
         document.querySelectorAll("[data-tab]").forEach(btn => btn.addEventListener("click", () => {
           if (btn.dataset.tab === "ranges") {
             state.temporaryWordIds = null;
@@ -3641,7 +3644,13 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       }
 
       function initializeStorage() {
+        let started = false;
+        let suspended = false;
+        let requesting = false;
+        let generation = 0;
         const start = () => {
+          if (started) { renderPersistence(); return; }
+          started = true;
           persistence.message = "";
           load();
           bindEvents();
@@ -3649,20 +3658,60 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           render();
           document.documentElement.dataset.appReady = "true";
         };
-        if (!navigator.locks?.request) { start(); return; }
-        // A lifetime single-writer lock makes synchronous localStorage saves safe
-        // across tabs. Other tabs remain read-only until explicitly reloaded.
-        navigator.locks.request(`${STORAGE_KEY}.writer`, { ifAvailable: true }, async lock => {
-          persistence.writer = Boolean(lock);
-          if (!lock) { start(); return; }
-          const released = new Promise(resolve => { releaseWriter = resolve; });
-          start();
-          await released;
-        }).catch(() => {
+        // Hold one writer lock while this page is active. A PWA can resume the
+        // same document after pagehide, so reacquire rather than staying read-only.
+        const acquire = () => {
+          if (suspended || requesting || persistence.writer) return;
+          if (!navigator.locks?.request) {
+            persistence.lockState = "unsupported";
+            start();
+            return;
+          }
+          requesting = true;
+          const attempt = generation;
+          Promise.resolve().then(() => navigator.locks.request(`${STORAGE_KEY}.writer`, { ifAvailable: true }, async lock => {
+            if (attempt !== generation || suspended) return;
+            persistence.writer = Boolean(lock);
+            persistence.lockState = lock ? "held" : "busy";
+            if (!lock) { start(); return; }
+            const released = new Promise(resolve => { releaseWriter = resolve; });
+            // A suspended or read-only screen must never overwrite newer data.
+            if (started && localStorage.getItem(STORAGE_KEY) !== persistence.raw) persistence.conflict = true;
+            start();
+            await released;
+          })).catch(() => {
+            if (attempt !== generation) return;
+            persistence.writer = false;
+            persistence.lockState = "error";
+            releaseWriter = null;
+            start();
+          }).finally(() => {
+            requesting = false;
+            // Wait for the previous request to release its browser lock before
+            // resuming; otherwise ifAvailable can see our own retiring lock.
+            if (attempt !== generation && !suspended) acquire();
+          });
+        };
+        const resume = () => {
+          suspended = false;
+          acquire();
+        };
+        window.addEventListener("pagehide", () => {
+          suspended = true;
+          generation++;
           persistence.writer = false;
-          if (!persistence.loaded && !persistence.readError) start();
-          else renderPersistence();
+          persistence.lockState = "released";
+          const release = releaseWriter;
+          releaseWriter = null;
+          release?.();
         });
+        window.addEventListener("pageshow", event => {
+          if (event.persisted) { location.reload(); return; }
+          resume();
+        });
+        window.addEventListener("focus", () => { if (!document.hidden) resume(); });
+        document.addEventListener("visibilitychange", () => { if (!document.hidden) resume(); });
+        acquire();
       }
       initializeStorage();
       if (!window.MW_GAS_HOST && "serviceWorker" in navigator) {
