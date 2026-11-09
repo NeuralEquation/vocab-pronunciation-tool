@@ -31,13 +31,34 @@ function harness(raw = JSON.stringify(fixture())) {
   const source = fs.readFileSync(path.join(root, "js/app.js"), "utf8");
   assert.ok(source.includes("      initializeStorage();"));
   // Expose only inside this isolated VM, without production hooks or DOM boot.
-  vm.runInContext(source.replace("      initializeStorage();", "window.audit = { state, persistence, load, save, canWrite, commitReplacement, exportPreUpgrade, exportJson, download, audioUrlFromId, safeApiError, fetchReal, initializeSync, preferredPronunciationVariant, syncLegacyPronunciationFields, renderVerbForms, officialAudioUrlForWord };"), ctx);
+  vm.runInContext(source.replace("      initializeStorage();", "window.audit = { state, persistence, load, save, canWrite, commitReplacement, exportPreUpgrade, exportJson, download, audioUrlFromId, safeApiError, fetchReal, initializeSync, preferredPronunciationVariant, syncLegacyPronunciationFields, renderVerbForms, officialAudioUrlForWord, startupDiagnostic };"), ctx);
   ctx.audit.persistence.writer = true;
   return { ctx, a: ctx.audit, values, elements, blobs, timers, fail(key) { failKey = key; } };
 }
 
 const cases = [];
 const it = (name, fn) => cases.push({ name, fn });
+
+it("startup diagnostics expose only fixed phases, error names and source coordinates", () => {
+  const h = harness(), secret = "DIAGNOSTIC_FIXTURE_SECRET";
+  const error = new TypeError(secret);
+  error.stack = `TypeError: ${secret}\n at render (https://example.test/js/app.js?v=70:734:9)`;
+  assert.equal(h.a.startupDiagnostic("RENDER", error), "MW70-RENDER-TypeError-app-734-9");
+  error.name = secret;
+  error.stack = `Error: ${secret}\n at https://example.test/private/${secret}:1:1`;
+  assert.equal(h.a.startupDiagnostic("LOCK", error), "MW70-LOCK-OtherError");
+});
+
+it("startup failure blocks all data writes and exports the saved snapshot instead of partial UI state", async () => {
+  const h = harness(), before = h.values.get(MAIN);
+  h.a.load(); h.a.state.ranges = []; h.a.persistence.startupError = "MW70-RENDER-TypeError";
+  assert.equal(h.a.canWrite(), false);
+  assert.equal(h.a.commitReplacement(fixture(), "fixture.recovery"), false);
+  h.a.exportJson();
+  assert.equal(h.blobs.length, 1);
+  assert.equal(JSON.parse(await h.blobs[0].text()).ranges[0].words[0].word, "record");
+  assert.equal(h.values.get(MAIN), before);
+});
 
 it("actual replacement keeps current sync baseline and pending request while marking import or restore dirty", () => {
   const h = harness();
@@ -345,7 +366,7 @@ it("service worker caches only the manifest shell, keeps a consistent offline bu
   let response;
   handlers.fetch({ request: { url: index, method: "GET", mode: "navigate" }, respondWith(promise) { response = promise; } });
   assert.equal(await response, "shell:./index.html");
-  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v69:"))[1];
+  const shell = [...entries.entries()].find(([key]) => key.startsWith("mw-pronunciation-pwa-v70:"))[1];
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   for (const [, asset] of html.matchAll(/(?:src|href)="([^"]+\?v=\d+)"/g)) assert.equal(shell.has(new URL(asset, scope).href), true, asset);
 });
