@@ -19,12 +19,12 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
 (async () => {
   const browser = await playwright.chromium.launch({ headless: true, executablePath });
   const contexts = [], errors = [];
-  const contextFor = async ({ raw = JSON.stringify(data), quota = "", secret = "" } = {}) => {
+  const contextFor = async ({ raw = JSON.stringify(data), quota = "", secret = "", locks = "" } = {}) => {
     const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1024, height: 768 } });
     contexts.push(context);
     // All dictionary requests are forbidden in these fixture-only tests.
     await context.route("https://www.dictionaryapi.com/**", route => { errors.push("unexpected real API request"); return route.abort(); });
-    await context.addInitScript(({ raw, quota, secret, MAIN, KEY }) => {
+    await context.addInitScript(({ raw, quota, secret, locks, MAIN, KEY }) => {
       if (localStorage.getItem(MAIN) == null) localStorage.setItem(MAIN, raw);
       if (secret) localStorage.setItem(KEY, secret);
       const original = Storage.prototype.setItem;
@@ -33,7 +33,11 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
         if (key === quota) throw new DOMException("fixture quota", "QuotaExceededError");
         return original.call(this, key, value);
       };
-    }, { raw, quota, secret, MAIN, KEY });
+      const originalLocks = navigator.locks;
+      window.__restoreLocks = () => Object.defineProperty(navigator, "locks", { configurable: true, value: originalLocks });
+      if (locks === "unsupported") Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+      if (locks === "error") Object.defineProperty(navigator, "locks", { configurable: true, value: { request() { return Promise.reject(new DOMException("fixture unavailable", "SecurityError")); } } });
+    }, { raw, quota, secret, locks, MAIN, KEY });
     return context;
   };
   const open = async context => {
@@ -105,6 +109,93 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
     await second.waitForFunction(() => document.documentElement.dataset.appReady === "true");
     assert.equal(await second.locator("#saveStatus").getAttribute("data-state"), "saved");
 
+    const unsupported = await open(await contextFor({ locks: "unsupported" }));
+    assert.equal(await unsupported.locator("#saveStatus").getAttribute("data-state"), "readonly");
+    assert.match(await unsupported.locator("#saveStatusText").textContent(), /この環境では安全な保存機能を利用できません/);
+    assert.doesNotMatch(await unsupported.locator("#saveStatusText").textContent(), /別の/);
+    assert.equal(await stored(unsupported), JSON.stringify(data));
+
+    const unavailable = await open(await contextFor({ locks: "error" }));
+    assert.match(await unavailable.locator("#saveStatusText").textContent(), /保存機能を開始できませんでした/);
+    await unavailable.evaluate(() => { window.__restoreLocks(); window.dispatchEvent(new Event("focus")); });
+    await unavailable.waitForFunction(() => document.querySelector("#saveStatus").dataset.state === "saved");
+
+    // Resume while the original browser lock request is still completing.
+    const racingContext = await contextFor();
+    await racingContext.addInitScript(() => {
+      const locks = navigator.locks;
+      let interrupted = false;
+      Object.defineProperty(navigator, "locks", { value: {
+        request(name, options, callback) {
+          return locks.request(name, options, lock => {
+            if (!interrupted) {
+              interrupted = true;
+              window.dispatchEvent(new PageTransitionEvent("pagehide"));
+              window.dispatchEvent(new PageTransitionEvent("pageshow"));
+            }
+            return callback(lock);
+          });
+        }
+      } });
+    });
+    const racing = await open(racingContext);
+    assert.equal(await racing.locator("#saveStatus").getAttribute("data-state"), "saved");
+
+    // Android PWA resume may keep this document after a non-BFCache pagehide.
+    // It must reacquire the released lock, without duplicating event handlers.
+    const resumed = await open(await contextFor());
+    const resumedBefore = await stored(resumed);
+    for (let i = 0; i < 3; i++) {
+      await resumed.evaluate(() => {
+        window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+      });
+      await resumed.evaluate(() => {
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false }));
+        window.dispatchEvent(new Event("focus"));
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await resumed.waitForFunction(() => document.querySelector("#saveStatus").dataset.state === "saved");
+    }
+    assert.equal(await stored(resumed), resumedBefore);
+    await resumed.evaluate(key => {
+      window.__mainWrites = 0;
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (name, value) {
+        if (name === key) window.__mainWrites++;
+        return original.call(this, name, value);
+      };
+    }, MAIN);
+    await resumed.locator("[data-tab='settings']").click(); await expand(resumed, "#dictionaryOptions");
+    await resumed.locator("#dictionaryType").selectOption("collegiate");
+    await resumed.locator("#saveApiSettings").click();
+    assert.equal(JSON.parse(await stored(resumed)).settings.dictionaryType, "collegiate");
+    assert.equal(await resumed.evaluate(() => window.__mainWrites), 1);
+
+    const transferContext = await contextFor();
+    const owner = await open(transferContext), waiting = await open(transferContext);
+    assert.equal(await waiting.locator("#saveStatus").getAttribute("data-state"), "readonly");
+    await owner.close();
+    await waiting.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await waiting.waitForFunction(() => document.querySelector("#saveStatus").dataset.state === "saved");
+
+    // Another page can write while this PWA is suspended. Never revive its
+    // stale in-memory state as a writer over the newer saved data.
+    const staleContext = await contextFor();
+    const stale = await open(staleContext);
+    await stale.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+    const newer = await open(staleContext);
+    await newer.locator("[data-tab='settings']").click(); await expand(newer, "#dictionaryOptions");
+    await newer.locator("#dictionaryType").selectOption("collegiate");
+    await newer.locator("#saveApiSettings").click();
+    const newerRaw = await stored(newer);
+    await newer.close();
+    await stale.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow")));
+    await stale.waitForFunction(() => /別の画面でデータが変更/.test(document.querySelector("#saveStatusText").textContent));
+    assert.equal(await stale.locator("#saveStatus").getAttribute("data-state"), "readonly");
+    await stale.locator("[data-tab='settings']").click(); await expand(stale, "#dictionaryOptions");
+    await stale.locator("#saveApiSettings").click();
+    assert.equal(await stored(stale), newerRaw);
+
     const secret = "AUDIT_ONLY_NOT_A_REAL_KEY";
     const secretData = structuredClone(data); secretData.ranges[0].words[0].apiKey = secret;
     const portable = await open(await contextFor({ raw: JSON.stringify(secretData), secret }));
@@ -122,7 +213,7 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
     assert.match(await blocked.locator("#toast").textContent(), /安全に作成できません/);
     assert.equal(downloads, 0);
     assert.deepEqual(errors, []);
-    console.log("PASS browser safety: corrupt recovery, quota, retry, writer lock, lock transfer, portable secret boundary");
+    console.log("PASS browser safety: corrupt recovery, quota, retry, writer lock, PWA resume, lock transfer, stale resume, lock failures, portable secret boundary");
   } finally {
     for (const context of contexts) await context.close();
     await browser.close();
