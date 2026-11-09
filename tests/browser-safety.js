@@ -40,11 +40,11 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
     }, { raw, quota, secret, locks, MAIN, KEY });
     return context;
   };
-  const open = async context => {
+  const open = async (context, ready = "true") => {
     const page = await context.newPage();
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(baseUrl);
-    await page.waitForFunction(() => document.documentElement.dataset.appReady === "true");
+    await page.waitForFunction(expected => document.documentElement.dataset.appReady === expected, ready);
     return page;
   };
   const stored = page => page.evaluate(key => localStorage.getItem(key), MAIN);
@@ -117,8 +117,52 @@ const executablePath = [process.env.MW_CHROMIUM_EXECUTABLE, playwright.chromium.
 
     const unavailable = await open(await contextFor({ locks: "error" }));
     assert.match(await unavailable.locator("#saveStatusText").textContent(), /保存機能を開始できませんでした/);
-    await unavailable.evaluate(() => { window.__restoreLocks(); window.dispatchEvent(new Event("focus")); });
+    assert.match(await unavailable.locator("#saveStatusText").textContent(), /MW70-LOCK-SecurityError/);
+    assert.equal(await unavailable.locator("#retryStorage").isVisible(), true);
+    await unavailable.evaluate(() => window.__restoreLocks());
+    await unavailable.locator("#retryStorage").click();
     await unavailable.waitForFunction(() => document.querySelector("#saveStatus").dataset.state === "saved");
+    assert.equal(await unavailable.locator("#retryStorage").isVisible(), false);
+
+    // An early UI binding exception must not become a lock error or disable
+    // the independent export/reload controls. Nothing may overwrite the data.
+    const startupContext = await contextFor();
+    await startupContext.addInitScript(() => {
+      const query = document.querySelector.bind(document);
+      document.querySelector = function (selector) {
+        if (selector === ".tabs" && !sessionStorage.getItem("fixture.bootFailed")) {
+          sessionStorage.setItem("fixture.bootFailed", "true");
+          throw new TypeError("FIXTURE_PRIVATE_DIAGNOSTIC_DATA");
+        }
+        return query(selector);
+      };
+    });
+    const startup = await open(startupContext, "error");
+    assert.equal(await startup.locator("#saveStatus").getAttribute("data-state"), "recovery");
+    const startupText = await startup.locator("#saveStatusText").textContent();
+    assert.match(startupText, /MW70-EVENTS-TypeError/);
+    assert.doesNotMatch(startupText, /保存機能を開始できません|FIXTURE_PRIVATE_DIAGNOSTIC_DATA/);
+    assert.equal(await stored(startup), JSON.stringify(data));
+    const startupDownload = startup.waitForEvent("download");
+    await startup.locator("#saveStatusExport").click();
+    const startupBackup = JSON.parse(fs.readFileSync(await (await startupDownload).path(), "utf8"));
+    assert.equal(startupBackup.ranges[0].words[0].word, "record");
+    await startup.locator("#reloadData").click();
+    await startup.waitForFunction(() => document.documentElement.dataset.appReady === "true");
+    assert.equal(await startup.locator("#saveStatus").getAttribute("data-state"), "saved");
+
+    // A later renderer failure also keeps local saves and replacement blocked.
+    const renderContext = await contextFor();
+    await renderContext.route("**/js/content.js?*", route => route.fulfill({
+      contentType: "application/javascript",
+      body: fs.readFileSync(path.join(__dirname, "../js/content.js"), "utf8") + '\nwindow.MWContent = { ...window.MWContent, contentStats: () => { throw new TypeError("FIXTURE_PRIVATE_RENDER_DATA"); } };'
+    }));
+    const failedRender = await open(renderContext, "error");
+    assert.match(await failedRender.locator("#saveStatusText").textContent(), /MW70-RENDER-TypeError/);
+    assert.doesNotMatch(await failedRender.locator("#saveStatusText").textContent(), /FIXTURE_PRIVATE_RENDER_DATA/);
+    await failedRender.locator("[data-tab='settings']").click(); await expand(failedRender, "#dictionaryOptions");
+    await failedRender.locator("#saveApiSettings").click();
+    assert.equal(await stored(failedRender), JSON.stringify(data));
 
     // Resume while the original browser lock request is still completing.
     const racingContext = await contextFor();

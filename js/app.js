@@ -94,7 +94,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       let lastAutoSpokenUsageKey = "";
       let lastAutoSpokenStudyWordKey = "";
       let sessionReturnFocus = null;
-      const persistence = { writer: false, lockState: "pending", loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
+      const persistence = { writer: false, lockState: "pending", lockError: "", startupError: "", loaded: false, readError: false, conflict: false, dirty: false, credentialError: false, raw: null, message: "保存領域を確認しています。" };
       let syncClient = null;
       let syncRuntime = "";
       const SYNC_ENDPOINT_KEY = "mwPronunciationTool.syncEndpoint.v1";
@@ -352,12 +352,13 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         renderSync();
         const root = $("saveStatus");
         if (!root) return;
-        root.dataset.state = persistence.readError ? "recovery" : !persistence.writer || persistence.conflict ? "readonly" : persistence.dirty ? "unsaved" : "saved";
+        root.dataset.state = persistence.readError || persistence.startupError ? "recovery" : !persistence.writer || persistence.conflict ? "readonly" : persistence.dirty ? "unsaved" : "saved";
         $("saveStatusText").textContent = persistence.readError ? persistence.message
+          : persistence.startupError ? `画面の初期化でエラーが起きたため、上書きを停止しています。JSONで退避してから再読込してください。診断コード: ${persistence.startupError}`
           : !persistence.writer ? ({
             busy: "別の画面が保存を使用中です。この画面は閲覧専用です。ほかの画面を閉じて、このアプリに戻ってください。",
             unsupported: "この環境では安全な保存機能を利用できません。この画面は閲覧専用です。ブラウザを更新して開き直してください。",
-            error: "保存機能を開始できませんでした。この画面は閲覧専用です。アプリに戻ると再試行します。改善しない場合はJSONで退避してください。",
+            error: `保存機能を開始できませんでした。この画面は閲覧専用です。「保存機能を再試行」を押してください。診断コード: ${persistence.lockError}`,
             released: "アプリの復帰時に保存機能を確認します。",
             pending: "保存領域を確認しています。"
           }[persistence.lockState] || "保存機能を確認しています。")
@@ -365,11 +366,12 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           : persistence.credentialError ? "APIキーを保存できませんでした。設定画面からキーの保存を再試行してください。学習データはJSONで退避できます。"
           : persistence.dirty ? "未保存です。この画面を閉じず、再試行するかJSONで退避してください。"
           : persistence.message || "端末に保存済み";
-        $("retrySave").hidden = !persistence.dirty || persistence.credentialError || persistence.readError || persistence.conflict || !persistence.writer;
+        $("retrySave").hidden = !persistence.dirty || persistence.credentialError || persistence.readError || persistence.startupError || persistence.conflict || !persistence.writer;
+        $("retryStorage").hidden = Boolean(persistence.writer || persistence.startupError || !["busy", "error"].includes(persistence.lockState));
       }
 
       function canWrite(recovery = false) {
-        if (!persistence.writer || persistence.conflict || (persistence.readError && !recovery)) { renderPersistence(); return false; }
+        if (!persistence.writer || persistence.startupError || persistence.conflict || (persistence.readError && !recovery)) { renderPersistence(); return false; }
         try {
           if (localStorage.getItem(STORAGE_KEY) !== persistence.raw) {
             persistence.conflict = true;
@@ -410,7 +412,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           const labels = { disconnected: "未接続", dirty: "端末に未送信の変更があります", unknown: "送信結果が不明です。結果照会または同じ要求を再試行してください", rejected: "サーバーが保存を拒否しました。要求を退避・解除できます", committed: "クラウド保存確認済み。端末の確定処理を再試行してください", syncing: "同期中（学習は続けられます）", verified: "クラウド最新版を直近の通信で確認済み", "local-clean": "端末に未送信変更なし（クラウド最新版は未確認）", conflict: "競合：自動では統合しません", changed: "同期中に端末が変更されたため適用を中止しました", SYNC_FAILED: "通信・認証・保存に失敗しました。未確定要求は結果照会してください", SECRET: "秘密情報を検出したため送信を中止しました", MALFORMED: "同期データの形式が不正です", NON_CANONICAL: "受信データと端末保存形式が一致しないため停止しました", RECOVERY_REQUIRED: "同期の復旧が必要です。学習・JSON保存は続けられます", "recovery-required": "同期情報を隔離しました。学習は続けられます。同期には明示的な再接続が必要です", "dataset-mismatch": "接続先データセットが異なります。再接続・復旧が必要です", DATASET_MISMATCH: "接続先データセットが異なります", SIZE: "同期データがサイズ上限を超えています" };
           label.dataset.state = status;
           label.textContent = `${labels[status] || status} ｜ server ${sync.serverRevision} / base ${sync.baseRevision} / local ${sync.localRevision} / dirty ${sync.dirty}`;
-          ["syncConnect", "syncReconnect", "syncPush", "syncPull", "syncKeepLocal", "syncUseRemote", "syncCheck", "syncCancel", "syncClear"].forEach(id => { if ($(id)) $(id).disabled = Boolean(syncClient?.isBusy()) || !persistence.writer || persistence.readError || persistence.conflict || persistence.dirty; });
+          ["syncConnect", "syncReconnect", "syncPush", "syncPull", "syncKeepLocal", "syncUseRemote", "syncCheck", "syncCancel", "syncClear"].forEach(id => { if ($(id)) $(id).disabled = Boolean(syncClient?.isBusy()) || !persistence.writer || persistence.readError || persistence.startupError || persistence.conflict || persistence.dirty; });
         } catch { label.dataset.state = "recovery"; label.textContent = "同期メタデータを読み込めません。端末JSONを退避し、復旧手順を確認してください。"; }
       }
 
@@ -2978,7 +2980,13 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
       function exportJson() {
         if (persistence.readError) return toast("元データを読み込めないため、空のJSONは出力しません。正常なバックアップを選んで復元してください。", true);
         try {
-          const payload = createBackup(currentData(), new Date().toISOString(), localSecrets());
+          let source = currentData();
+          if (persistence.startupError && !persistence.dirty) {
+            const saved = parseBackup(localStorage.getItem(STORAGE_KEY));
+            if (!saved.ok) throw new Error("RECOVERY_REQUIRED");
+            source = saved.data;
+          }
+          const payload = createBackup(source, new Date().toISOString(), localSecrets());
           const text = JSON.stringify(payload, null, 2);
           if (!download(`mw-pronunciation-${todayKey()}.json`, text, "application/json")) return;
           toast(`学習履歴・設定を含むschema v${payload.schemaVersion}のJSONを書き出しました。APIキーは含まれていません。サイズ: ${formatBytes(new Blob([text]).size)}`);
@@ -3201,8 +3209,6 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (target) { switchTab(target.dataset.go); window.scrollTo(0, 0); $("rangeName").focus(); }
         });
         $("retrySave").addEventListener("click", () => save());
-        $("reloadData").addEventListener("click", () => location.reload());
-        $("saveStatusExport").addEventListener("click", exportJson);
         $("restorePreRestore").addEventListener("click", () => {
           try {
             const raw = localStorage.getItem(PRE_RESTORE_BACKUP_KEY);
@@ -3210,16 +3216,6 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             else toast("復元直前の退避データはありません。", true);
           } catch { toast("退避データを読み込めません。", true); }
         });
-        document.addEventListener("click", event => {
-          if (persistence.writer && !persistence.conflict && !persistence.readError) return;
-          const control = event.target.closest?.("button");
-          if (!control) return;
-          if (control.matches("[data-tab], [data-go], #reloadData, #exportJson, #exportCsv, #exportPreUpgrade, #exportQuizlet, #saveStatusExport, [data-modal-cancel], [data-progress-close], #continuousStop, #playbackDockStop")) return;
-          if (persistence.writer && !persistence.conflict && control.matches("#replaceJson, #restorePreUpgrade, #restorePreImport, #restorePreRestore, [data-modal-confirm]")) return;
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          renderPersistence();
-        }, true);
         document.addEventListener("keydown", event => {
           const root = $("modalRoot");
           if (root.classList.contains("hidden")) return;
@@ -3643,6 +3639,15 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         window.addEventListener("focus", render);
       }
 
+      function startupDiagnostic(stage, error) {
+        // Only fixed error names and coordinates in our own scripts may reach
+        // the UI. Exception messages/stacks can contain API keys or user data.
+        const allowed = ["Error", "TypeError", "ReferenceError", "RangeError", "SyntaxError", "AbortError", "SecurityError", "UnknownError", "InvalidStateError", "NotAllowedError", "NotSupportedError", "QuotaExceededError"];
+        const name = allowed.includes(error?.name) ? error.name : "OtherError";
+        const frame = String(error?.stack || "").match(/\/(app|storage|content|test|playback|dictionary|sync|sync-protocol)\.js(?:\?v=\d+)?:([0-9]{1,6}):([0-9]{1,6})\b/);
+        return `MW70-${stage}-${name}${frame ? `-${frame[1]}-${frame[2]}-${frame[3]}` : ""}`;
+      }
+
       function initializeStorage() {
         let started = false;
         let suspended = false;
@@ -3652,12 +3657,37 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
           if (started) { renderPersistence(); return; }
           started = true;
           persistence.message = "";
-          load();
-          bindEvents();
-          initializeSync();
-          render();
-          document.documentElement.dataset.appReady = "true";
+          let stage = "LOAD";
+          try {
+            load();
+            stage = "EVENTS";
+            bindEvents();
+            stage = "SYNC";
+            initializeSync();
+            stage = "RENDER";
+            render();
+            document.documentElement.dataset.appReady = "true";
+          } catch (error) {
+            // A UI exception must not masquerade as a browser lock failure.
+            persistence.startupError = startupDiagnostic(stage, error);
+            document.documentElement.dataset.appReady = "error";
+            renderPersistence();
+          }
         };
+        // Keep export/reload and write protection available even if UI setup
+        // stops before bindEvents reaches its normal event handlers.
+        $("reloadData").addEventListener("click", () => location.reload());
+        $("saveStatusExport").addEventListener("click", exportJson);
+        document.addEventListener("click", event => {
+          if (persistence.writer && !persistence.startupError && !persistence.conflict && !persistence.readError) return;
+          const control = event.target.closest?.("button");
+          if (!control) return;
+          if (control.matches("[data-tab], [data-go], #reloadData, #retryStorage, #exportJson, #exportCsv, #exportPreUpgrade, #exportQuizlet, #saveStatusExport, [data-modal-cancel], [data-progress-close], #continuousStop, #playbackDockStop")) return;
+          if (persistence.writer && !persistence.startupError && !persistence.conflict && control.matches("#replaceJson, #restorePreUpgrade, #restorePreImport, #restorePreRestore, [data-modal-confirm]")) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          renderPersistence();
+        }, true);
         // Hold one writer lock while this page is active. A PWA can resume the
         // same document after pagehide, so reacquire rather than staying read-only.
         const acquire = () => {
@@ -3668,6 +3698,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             return;
           }
           requesting = true;
+          persistence.lockError = "";
           const attempt = generation;
           Promise.resolve().then(() => navigator.locks.request(`${STORAGE_KEY}.writer`, { ifAvailable: true }, async lock => {
             if (attempt !== generation || suspended) return;
@@ -3676,13 +3707,21 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
             if (!lock) { start(); return; }
             const released = new Promise(resolve => { releaseWriter = resolve; });
             // A suspended or read-only screen must never overwrite newer data.
-            if (started && localStorage.getItem(STORAGE_KEY) !== persistence.raw) persistence.conflict = true;
+            if (started) {
+              try {
+                if (localStorage.getItem(STORAGE_KEY) !== persistence.raw) persistence.conflict = true;
+              } catch (error) {
+                persistence.readError = true;
+                persistence.message = `保存データを読み直せなかったため、上書きを停止しています。診断コード: ${startupDiagnostic("READ", error)}`;
+              }
+            }
             start();
             await released;
-          })).catch(() => {
+          })).catch(error => {
             if (attempt !== generation) return;
             persistence.writer = false;
             persistence.lockState = "error";
+            persistence.lockError = startupDiagnostic("LOCK", error);
             releaseWriter = null;
             start();
           }).finally(() => {
@@ -3711,6 +3750,7 @@ var { calculateUsageReviewDelayMs } = window.MWPlayback;
         });
         window.addEventListener("focus", () => { if (!document.hidden) resume(); });
         document.addEventListener("visibilitychange", () => { if (!document.hidden) resume(); });
+        $("retryStorage").addEventListener("click", () => acquire());
         acquire();
       }
       initializeStorage();
